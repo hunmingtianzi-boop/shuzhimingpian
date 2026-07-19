@@ -241,6 +241,62 @@ export type FooterConfig = {
   backToTopAction: CardAction;
 };
 
+export type ResponsiveMediaAsset = MediaAsset & {
+  srcSet?: string;
+  sizes?: string;
+};
+
+export type CardSolution = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export type CardCaseStudy = {
+  title: string;
+  category: string;
+  description: string;
+  detail: string;
+  visual: ResponsiveMediaAsset;
+};
+
+export type OwnerExperience = {
+  period: string;
+  organization: string;
+  role: string;
+  description: string;
+};
+
+export type OwnerPresentation = {
+  demoLabel: string;
+  name: string;
+  role: string;
+  summary: string;
+  valueProposition: string;
+  capabilities: string[];
+  experiences: OwnerExperience[];
+  portrait: ResponsiveMediaAsset;
+};
+
+export type AssistantRecommendation = {
+  title: string;
+  description: string;
+  question: string;
+};
+
+export type CardPresentation = {
+  /** Keep a reviewed homepage narrative instead of replacing it with raw catalog copy. */
+  homepageContentMode?: "curated" | "published";
+  heroVisual: ResponsiveMediaAsset;
+  heroSummary?: string;
+  solutions: CardSolution[];
+  caseStudy: CardCaseStudy;
+  owner: OwnerPresentation;
+  assistantVisual: ResponsiveMediaAsset;
+  assistantQuestionIds?: string[];
+  assistantRecommendations: AssistantRecommendation[];
+};
+
 export type EnterpriseCardSection =
   | FeatureGridSection
   | MediaShowcaseSection
@@ -262,4 +318,6 @@ export type EnterpriseCardConfig = {
   sections: EnterpriseCardSection[];
   assistant: AssistantConfig;
   footer: FooterConfig;
+  /** Optional visitor-card fallback presentation. Published API data overrides matching fields. */
+  presentation?: CardPresentation;
 };

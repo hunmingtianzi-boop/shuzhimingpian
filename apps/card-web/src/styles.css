@@ -1775,6 +1775,53 @@ img {
   gap: 0.5rem;
 }
 
+.message-markdown .message-flow,
+.message-markdown .message-point-list {
+  list-style: none;
+}
+
+.message-markdown .message-flow {
+  padding-left: 0;
+  counter-reset: message-flow;
+}
+
+.message-markdown .message-flow > li {
+  position: relative;
+  min-height: 2.25rem;
+  padding-left: 2.5rem;
+  counter-increment: message-flow;
+}
+
+.message-markdown .message-flow > li::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  content: counter(message-flow, decimal-leading-zero);
+  color: var(--accent-strong);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.message-markdown .message-flow > li::after {
+  position: absolute;
+  top: 1.75rem;
+  bottom: -0.5rem;
+  left: 0.85rem;
+  width: 1px;
+  content: "";
+  background: var(--line);
+}
+
+.message-markdown .message-flow > li:last-child::after {
+  display: none;
+}
+
 .message-markdown ul {
   list-style: disc;
 }
@@ -1833,19 +1880,99 @@ img {
   text-underline-offset: 0.15em;
 }
 
-.message-markdown table {
-  display: block;
+.message-table-scroll {
   max-width: 100%;
   overflow-x: auto;
+  border: 1px solid var(--line);
+  overscroll-behavior-inline: contain;
+}
+
+.message-table-scroll:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.message-markdown table {
+  width: 100%;
+  min-width: 20rem;
   border-collapse: collapse;
 }
 
 .message-markdown th,
 .message-markdown td {
-  padding: 0.3em 0.45em;
-  border: 1px solid var(--line);
+  padding: 0.55em 0.65em;
+  border: 0;
+  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+}
+
+.message-markdown th {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.message-markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.message-diagram {
+  margin: 0 0 0.875rem;
+  padding: 0.75rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border: 1px solid var(--line);
+}
+
+.message-diagram figcaption {
+  margin-bottom: 0.625rem;
+  color: var(--accent-strong);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.message-diagram-canvas {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.message-diagram-canvas svg {
+  display: block;
+  width: 100%;
+  min-width: 18rem;
+  height: auto;
+  margin-inline: auto;
+}
+
+.message-diagram-loading {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.message-diagram-loading i {
+  display: block;
+  height: 0.65rem;
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+}
+
+.message-diagram-loading i:nth-child(2) {
+  width: 78%;
+}
+
+.message-diagram-loading i:nth-child(3) {
+  width: 58%;
+}
+
+.message-diagram-error {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.message-diagram-error pre {
+  margin: 0.625rem 0 0;
 }
 
 .message small {

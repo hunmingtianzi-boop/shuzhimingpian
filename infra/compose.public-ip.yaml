@@ -1,0 +1,12 @@
+# Temporary bare-IP transport for a public server that does not yet have a
+# DNS name and TLS certificate. Keep this override last in the Compose file
+# list so it can relax only the browser cookie transport settings that require
+# HTTPS. Host Nginx must block API documentation and expose only the gateway.
+services:
+  api:
+    environment:
+      APP_ENV: staging
+      API_DOCS_ENABLED: "false"
+      STAFF_AUTH_COOKIE_SECURE: "false"
+      PUBLIC_CARD_BASE_URL: ${PUBLIC_CARD_BASE_URL:?required}
+      ALLOW_INSECURE_PUBLIC_CARD_HTTP: "true"

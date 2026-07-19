@@ -1,0 +1,46 @@
+x-api-reuse-build: &api-reuse-build
+  context: ..
+  dockerfile: infra/Dockerfile.api-reuse
+  args:
+    BASE_IMAGE: ${API_BASE_IMAGE:-cf-ai-card-api:14a3ad0}
+
+x-worker-reuse-build: &worker-reuse-build
+  context: ..
+  dockerfile: infra/Dockerfile.worker-reuse
+  args:
+    BASE_IMAGE: ${WORKER_BASE_IMAGE:-cf-ai-card-worker:14a3ad0}
+    PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+
+services:
+  migrate:
+    build: *api-reuse-build
+  seed:
+    build: *api-reuse-build
+  api:
+    build: *api-reuse-build
+  worker:
+    build: *worker-reuse-build
+    command:
+      - celery
+      - -A
+      - cf_worker.celery_app:celery_app
+      - worker
+      - --loglevel=INFO
+      - --queues=outbox.poll,outbox.process
+      - --concurrency=1
+  embedding:
+    image: ${EMBEDDING_IMAGE:-cf-ai-card-prod-embedding:20260719}
+    build: !reset null
+    environment:
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+  card-web:
+    build:
+      context: ../apps/card-web
+      dockerfile: Dockerfile.prebuilt
+      args: !reset []
+  admin-web:
+    build:
+      context: ../apps/admin-web
+      dockerfile: Dockerfile.prebuilt
+      args: !reset []

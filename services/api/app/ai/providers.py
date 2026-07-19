@@ -33,49 +33,21 @@ from .schemas import (
 _STRUCTURED_OUTPUT_INSTRUCTION = """
 Return only one valid JSON object. It must match this exact shape:
 {
-  "answer": "one short factual sentence, otherwise an empty string",
+  "answer": "the complete user-facing answer as GitHub Flavored Markdown",
   "answer_emphasis": [],
   "presentation": null,
   "cited_evidence_ids": ["evidence ids used by the answer"],
   "refusal_reason": null,
   "needs_human_review": false
 }
-The answer compatibility path is only for a greeting, acknowledgement, or one
-factual sentence under 60 Chinese characters. Long prose is never a short answer.
-For every substantive explanation or response with two or more independent
-points, set answer to an empty string and replace presentation with this shape:
-{
-  "lead": "one direct plain-text sentence",
-  "lead_emphasis": ["exact important phrase"],
-  "blocks": [
-    {
-      "type": "paragraph | bullets | steps | facts | note",
-      "title": "specific short title or null",
-      "text": "paragraph or note copy, otherwise null",
-      "emphasis": ["exact important phrase from text"],
-      "items": [{"label": "optional label or null", "text": "item copy or null"}]
-    }
-  ]
-}
-Use an empty blocks array only when lead is the complete short response;
-otherwise use one to three blocks and two to five items per list block.
-Paragraph and note blocks use block-level text with an empty items array.
-Bullets, steps and facts use items and set the block-level text to null. Every
-facts item requires a label. All presentation copy is plain text, never
-Markdown. Do not repeat the presentation in answer. When a bullet has a leading
-name and an explanation,
-put the name in label and the explanation in text. For a name-only bullet, use
-label and set text to null.
-For each substantive answer, select one to three shortest meaningful phrases
-that carry the main conclusion, named direction, decision, number, or warning.
-Put exact substrings from answer in answer_emphasis, exact substrings from lead
-in lead_emphasis, and exact substrings from paragraph or note text in emphasis.
-Each emphasis value must be one concept of at most 24 characters, never a
-comma-, semicolon-, or enumeration-separated sequence.
-Use an empty emphasis array only for greetings, acknowledgements, refusals, or
-copy whose hierarchy is already fully expressed by titled list labels. Never
-emphasize an entire sentence, the company name merely because it is repeated,
-or connective wording.
+Always put the complete user-facing response in answer. The model may freely
+choose concise headings, paragraphs, lists, blockquotes, GFM tables, and fenced
+Mermaid diagrams according to the content. Use tables only for actual comparison
+or repeated labelled data. Use Mermaid only when a process, hierarchy,
+dependency, or branch is materially clearer as a diagram. Keep diagrams compact
+and mobile-readable. Set answer_emphasis to an empty array and presentation to
+null. Older stored responses may still contain presentation data, but never use
+that compatibility path for a new response.
 Use refusal_reason only when the request cannot be answered safely. Ordinary
 conversation may omit evidence only when the server payload explicitly sets
 general_answer_allowed to true. Never wrap the JSON in Markdown fences.
@@ -83,11 +55,10 @@ general_answer_allowed to true. Never wrap the JSON in Markdown fences.
 
 _STRUCTURED_OUTPUT_REPAIR_INSTRUCTION = """
 The previous JSON object did not match the required response schema. Reformat
-the same factual content only; do not add, remove, or reinterpret claims. Use
-only the documented fields, keep emphasis arrays to at most three exact source
-substrings of at most 24 characters each, never emphasize a separated sequence,
-keep blocks to at most three, and keep list items to two through five. Return
-only the corrected JSON object.
+the same factual content only; do not add, remove, or reinterpret claims. Put
+the complete user-facing Markdown in answer, preserve its useful formatting,
+set answer_emphasis to an empty array and presentation to null, and use only the
+documented fields. Return only the corrected JSON object.
 """.strip()
 
 

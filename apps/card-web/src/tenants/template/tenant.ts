@@ -341,6 +341,108 @@ export const templateTenant = defineTenant({
       source,
     },
   },
+  presentation: {
+    heroVisual: {
+      src: assets("card-ui/enterprise-city-1600.webp"),
+      srcSet: `${assets("card-ui/enterprise-city-800.webp")} 800w, ${assets("card-ui/enterprise-city-1600.webp")} 1600w`,
+      sizes: "(max-width: 480px) 100vw, 480px",
+      alt: "企业数智名片通用城市科技场景",
+      width: 1600,
+      height: 1200,
+    },
+    heroSummary: "统一展示企业身份、业务能力、可信案例和合作入口，正式发布内容以企业审核资料为准。",
+    solutions: [
+      {
+        id: "company-profile",
+        title: "企业资料展示",
+        description: "集中呈现企业定位、核心能力与服务范围。",
+      },
+      {
+        id: "products-and-cases",
+        title: "产品与案例",
+        description: "展示企业已审核发布的产品、服务与实践案例。",
+      },
+      {
+        id: "ai-reception",
+        title: "AI 智能接待",
+        description: "基于企业已发布知识回答问题并承接合作需求。",
+      },
+    ],
+    caseStudy: {
+      title: "企业案例待发布",
+      category: "通用模板",
+      description: "企业审核并发布案例后，这里将自动展示真实案例内容。",
+      detail: "通用模板不提供虚构案例。请在后台录入具备公开授权的案例背景、实施方案、结果和图片，发布后即可自动替换本区域。",
+      visual: {
+        src: assets("template-review.webp"),
+        alt: "企业案例发布前的资料审核示意",
+        width: 1599,
+        height: 900,
+      },
+    },
+    owner: {
+      demoLabel: "演示资料，待替换",
+      name: "个人姓名",
+      role: "职务 / 岗位",
+      summary: "介绍个人负责的业务、专业方向与可以公开的合作范围。",
+      valueProposition: "以真实资料建立信任，用专业能力推动合作落地。",
+      capabilities: ["专业能力", "业务协同", "客户服务"],
+      experiences: [
+        {
+          period: "20XX - 至今",
+          organization: "当前企业",
+          role: "当前职务",
+          description: "填写当前负责的业务与工作范围。",
+        },
+        {
+          period: "20XX - 20XX",
+          organization: "过往企业 A",
+          role: "过往职务",
+          description: "填写经本人确认并允许公开的职业经历。",
+        },
+        {
+          period: "20XX - 20XX",
+          organization: "过往企业 B",
+          role: "过往职务",
+          description: "未获授权的信息保持隐藏或占位。",
+        },
+      ],
+      portrait: {
+        src: assets("card-ui/demo-owner-1024.webp"),
+        srcSet: `${assets("card-ui/demo-owner-512.webp")} 512w, ${assets("card-ui/demo-owner-1024.webp")} 1024w`,
+        sizes: "(max-width: 480px) 44vw, 210px",
+        alt: "通用模板的演示商务人物形象",
+        width: 1024,
+        height: 1280,
+      },
+    },
+    assistantVisual: {
+      src: assets("card-ui/ai-assistant-1200.webp"),
+      srcSet: `${assets("card-ui/ai-assistant-600.webp")} 600w, ${assets("card-ui/ai-assistant-1200.webp")} 1200w`,
+      sizes: "(max-width: 480px) 52vw, 250px",
+      alt: "企业数智名片通用 AI 助手形象",
+      width: 1200,
+      height: 1200,
+    },
+    assistantQuestionIds: ["materials", "adaptation", "missing", "safety", "onboarding"],
+    assistantRecommendations: [
+      {
+        title: "企业资料清单",
+        description: "了解制作企业数智名片需要准备的资料。",
+        question: "制作企业数智名片需要哪些资料？",
+      },
+      {
+        title: "内容审核",
+        description: "了解正式发布前需要确认的事实与授权。",
+        question: "发布前需要做哪些安全审核？",
+      },
+      {
+        title: "新企业接入",
+        description: "了解从资料收集到正式发布的完整流程。",
+        question: "一家新企业如何接入？",
+      },
+    ],
+  },
   footer: {
     brandNote: "企业数智名片通用模板 · 占位内容",
     disclaimer: "本页不是任何真实企业页面，所有品牌、业务、案例、数据和联系方式都需在接入后替换并审核。",

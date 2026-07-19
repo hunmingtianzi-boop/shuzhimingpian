@@ -140,7 +140,7 @@ async def list_platform_audit(
 
 
 async def _probe(
-    service: Literal["database", "redis"],
+    service: Literal["database", "redis", "object_storage", "worker"],
     operation: Awaitable[object],
 ) -> PlatformServiceHealthRecord:
     started = time.perf_counter()
@@ -167,6 +167,11 @@ async def _database_ping(request: Request) -> None:
         await session.execute(text("SELECT 1"))
 
 
+async def _http_ready_ping(request: Request, url: str) -> None:
+    response = await request.app.state.http_client.get(url, timeout=1.5)
+    response.raise_for_status()
+
+
 @router.get(
     "/health",
     response_model=PlatformServiceHealthEnvelope,
@@ -177,9 +182,21 @@ async def get_platform_service_health(
     principal: StaffDependency,
 ) -> PlatformServiceHealthEnvelope:
     _require_platform_admin(principal)
-    database, redis = await asyncio.gather(
+    object_storage_url = (
+        request.app.state.settings.object_storage_endpoint.rstrip("/")
+        + "/minio/health/ready"
+    )
+    database, redis, object_storage, worker = await asyncio.gather(
         _probe("database", _database_ping(request)),
         _probe("redis", request.app.state.redis.ping()),
+        _probe(
+            "object_storage",
+            _http_ready_ping(request, object_storage_url),
+        ),
+        _probe(
+            "worker",
+            _http_ready_ping(request, "http://worker:8020/health/ready"),
+        ),
     )
     now = datetime.now(UTC)
     return PlatformServiceHealthEnvelope(
@@ -189,18 +206,8 @@ async def get_platform_service_health(
             ),
             database,
             redis,
-            PlatformServiceHealthRecord(
-                service="object_storage",
-                status="degraded",
-                checked_at=now,
-                error_code="DIRECT_PROBE_NOT_CONFIGURED",
-            ),
-            PlatformServiceHealthRecord(
-                service="worker",
-                status="degraded",
-                checked_at=now,
-                error_code="DIRECT_PROBE_NOT_CONFIGURED",
-            ),
+            object_storage,
+            worker,
         ]
     )
 

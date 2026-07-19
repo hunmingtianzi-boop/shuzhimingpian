@@ -354,4 +354,45 @@ describe("assistant API", () => {
       },
     ]);
   });
+
+  it("forgets an expired server conversation so the next question can create a new one", async () => {
+    const sessionKey = getAssistantSessionStorageKey("tenant-a");
+    sessionStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        token: "visitor-token",
+        expiresAt: "2099-01-01T00:00:00Z",
+        privacyVersion: "privacy-v3",
+        chatNoticeVersion: "chat-v5",
+        conversationId: "conversation-expired",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "CONVERSATION_EXPIRED",
+              message: "会话已过期。",
+              retryable: true,
+            },
+          },
+          410,
+        ),
+      ),
+    );
+
+    await expect(
+      streamAssistantMessage({
+        cardSlug: "tenant-a",
+        content: "继续介绍它的第二项服务",
+        onEvent: () => undefined,
+      }),
+    ).rejects.toMatchObject({
+      code: "CONVERSATION_EXPIRED",
+      status: 410,
+    });
+    expect(sessionStorage.getItem(sessionKey)).toBeNull();
+  });
 });

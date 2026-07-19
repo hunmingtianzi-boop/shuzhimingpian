@@ -325,6 +325,18 @@ def test_scheduled_publishing_is_scoped_leased_and_versioned(migration_sql: str)
         "lease_expires_at",
         "version",
     } <= set(job.columns.keys())
+    indexes = {index.name: index for index in job.indexes}
+    active_resource = indexes["uq_scheduled_publish_jobs_active_resource"]
+    assert active_resource.unique
+    assert [column.name for column in active_resource.columns] == [
+        "tenant_id",
+        "company_id",
+        "resource_type",
+        "resource_id",
+    ]
+    assert str(active_resource.dialect_options["postgresql"]["where"]) == (
+        "status IN ('pending', 'processing', 'failed')"
+    )
     assert "alter table scheduled_publish_jobs force row level security" in migration_sql
     assert "create policy scheduled_publish_jobs_scope_isolation" in migration_sql
     assert "create function app.claim_scheduled_publish_jobs" in migration_sql

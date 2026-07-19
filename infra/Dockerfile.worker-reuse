@@ -1,0 +1,21 @@
+ARG BASE_IMAGE=cf-ai-card-worker:14a3ad0
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+
+FROM ${BASE_IMAGE}
+ARG PIP_INDEX_URL
+
+USER root
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_DEFAULT_TIMEOUT=120
+RUN python -c "import onnxruntime" \
+    || python -m pip install --no-deps "onnxruntime==1.27.0"
+RUN python -m pip uninstall --yes opencv-python \
+    && python -m pip install --no-deps "opencv-python-headless==5.0.0.93"
+RUN python -c "from rapidocr import RapidOCR; RapidOCR()"
+RUN rm -rf /usr/local/lib/python3.13/site-packages/app \
+    /usr/local/lib/python3.13/site-packages/cf_worker \
+    /eval-data
+COPY --chown=worker:worker services/api/app /usr/local/lib/python3.13/site-packages/app
+COPY --chown=worker:worker services/worker/cf_worker /usr/local/lib/python3.13/site-packages/cf_worker
+COPY --chown=worker:worker packages/evals /eval-data
+USER worker

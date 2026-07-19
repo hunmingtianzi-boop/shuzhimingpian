@@ -720,6 +720,8 @@ export async function streamAssistantMessage({
       error instanceof AssistantApiError &&
       (error.status === 401 ||
         error.status === 403 ||
+        error.status === 404 ||
+        error.status === 410 ||
         (error.status === 409 && error.code === "POLICY_VERSION_MISMATCH"))
     ) {
       clearAssistantSession(normalizedSlug);

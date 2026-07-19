@@ -607,7 +607,7 @@ describe("BusinessCardPrototypeApp", () => {
 
     try {
       render(<App tenant={blankEnterpriseTenant} />);
-      fireEvent.click(screen.getByRole("button", { name: "分享模板" }));
+      fireEvent.click(screen.getByRole("button", { name: "分享名片" }));
       await waitFor(() => {
         expect(screen.getByRole("status")).toHaveTextContent("名片链接已复制");
       });

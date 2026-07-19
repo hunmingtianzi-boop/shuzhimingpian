@@ -5,7 +5,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-import anyio
 from app.core.pii import PiiCipher, PiiCipherError
 from app.db.models import (
     ContentStatus,
@@ -21,13 +20,13 @@ from app.services.audit import append_audit
 from app.services.knowledge_import import (
     KnowledgeImportError,
     decode_draft,
-    parse_payload,
     validate_upload,
 )
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cf_worker.config import WorkerSettings
+from cf_worker.import_parser import parse_import_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +69,11 @@ class KnowledgeImportExecutor:
             drafts = [decode_draft(plaintext)]
         else:
             source_type = validate_upload(claim.file_name, claim.content_type, plaintext)
-            drafts = await anyio.to_thread.run_sync(
-                parse_payload, source_type, claim.file_name, plaintext, abandon_on_cancel=True
+            drafts = parse_import_payload(
+                source_type,
+                claim.file_name,
+                plaintext,
+                timeout_seconds=self._settings.knowledge_import_parse_timeout_seconds,
             )
         if len(drafts) != 1:
             # A file is one auditable import item. CSV is intentionally rendered

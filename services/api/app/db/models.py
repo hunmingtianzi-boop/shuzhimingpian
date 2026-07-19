@@ -2633,6 +2633,15 @@ class ScheduledPublishJob(
         ),
         Index("ix_scheduled_publish_jobs_due", "status", "next_attempt_at", "scheduled_at"),
         Index("ix_scheduled_publish_jobs_company_created", "company_id", "created_at"),
+        Index(
+            "uq_scheduled_publish_jobs_active_resource",
+            "tenant_id",
+            "company_id",
+            "resource_type",
+            "resource_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing', 'failed')"),
+        ),
     )
 
     resource_type: Mapped[ScheduledPublishResourceType] = mapped_column(

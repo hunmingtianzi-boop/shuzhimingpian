@@ -4,7 +4,11 @@ import csv
 import html
 import io
 import json
+import math
 import re
+import subprocess
+import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from functools import lru_cache
@@ -28,6 +32,8 @@ MAX_TEXT_CHARS = 1_000_000
 MAX_PDF_PAGES = 500
 MAX_OCR_PAGES = 50
 MAX_IMAGE_PIXELS = 20_000_000
+MAX_OCR_RENDER_PIXELS = 4_000_000
+MAX_OCR_RENDER_SCALE = 2.0
 MAX_PPTX_SLIDES = 500
 MAX_XLSX_SHEETS = 100
 MAX_ARCHIVE_ENTRIES = 2_000
@@ -53,6 +59,8 @@ _MIMES = {
     "bmp": {"image/bmp"},
 }
 _IMAGE_TYPES = frozenset({"png", "jpg", "jpeg", "webp", "tiff", "bmp"})
+_OCR_RESULT_PREFIX = b"CF_PDF_OCR_RESULT="
+_OCR_PAGE_TIMEOUT_SECONDS = 120
 
 
 class KnowledgeImportError(ValueError):
@@ -430,18 +438,81 @@ def _ocr_pdf(payload: bytes, *, max_pages: int) -> str:
 
         document = fitz.open(stream=payload, filetype="pdf")
         try:
-            values: list[str] = []
-            for page_number in range(min(document.page_count, max_pages)):
-                page = document.load_page(page_number)
-                pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-                values.append(_ocr_image(pixmap.tobytes("png")))
-            return "\n\n".join(value for value in values if value).strip()
+            page_count = min(document.page_count, max_pages)
         finally:
             document.close()
+
+        # RapidOCR/ONNX can retain native allocations between calls. Large,
+        # image-only slide decks therefore grow until the worker cgroup is
+        # killed even though Python references are released per iteration.
+        # Run each page in a disposable process so the OS deterministically
+        # reclaims all raster and inference memory before the next page.
+        values: list[str] = []
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as temporary_pdf:
+            temporary_pdf.write(payload)
+            temporary_pdf.flush()
+            for page_number in range(page_count):
+                values.append(
+                    _ocr_pdf_page_isolated(temporary_pdf.name, page_number=page_number)
+                )
+        return "\n\n".join(value for value in values if value).strip()
     except KnowledgeImportError:
         raise
     except Exception as exc:
         raise KnowledgeImportError("IMPORT_PDF_OCR_FAILED") from exc
+
+
+def _ocr_pdf_page_isolated(pdf_path: str, *, page_number: int) -> str:
+    command = [
+        sys.executable,
+        "-m",
+        "app.services.pdf_ocr_runner",
+        "--pdf-path",
+        pdf_path,
+        "--page-number",
+        str(page_number),
+    ]
+    process = subprocess.Popen(  # noqa: S603
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        stdout, _stderr = process.communicate(timeout=_OCR_PAGE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        process.kill()
+        process.communicate()
+        raise KnowledgeImportError("IMPORT_OCR_FAILED") from exc
+    if process.returncode != 0 or _OCR_RESULT_PREFIX not in stdout:
+        raise KnowledgeImportError("IMPORT_OCR_FAILED")
+    try:
+        result = json.loads(stdout.rsplit(_OCR_RESULT_PREFIX, 1)[1].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise KnowledgeImportError("IMPORT_OCR_FAILED") from exc
+    if not isinstance(result, dict):
+        raise KnowledgeImportError("IMPORT_OCR_FAILED")
+    error = result.get("error")
+    if isinstance(error, str) and error:
+        raise KnowledgeImportError(error)
+    text = result.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise KnowledgeImportError("IMPORT_OCR_EMPTY")
+    return text.strip()
+
+
+def _pdf_ocr_render_scale(width: float, height: float) -> float:
+    """Render normal pages sharply while bounding image-only slide decks.
+
+    PDF points are not always physical page units.  Some export tools encode
+    source pixels directly as points, so a fixed zoom can turn one slide into
+    an 18+ megapixel OCR input.  Cap the raster budget without penalizing A4
+    and Letter documents, which still render at the normal 2x scale.
+    """
+
+    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+        raise KnowledgeImportError("IMPORT_PDF_INVALID")
+    pixel_limited_scale = math.sqrt(MAX_OCR_RENDER_PIXELS / (width * height))
+    return min(MAX_OCR_RENDER_SCALE, pixel_limited_scale)
 
 
 class _TextExtractor(HTMLParser):

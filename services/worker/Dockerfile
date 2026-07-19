@@ -11,6 +11,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libgl1 \
+        libglib2.0-0t64 \
+        libgomp1 \
+        libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system worker && adduser --system --ingroup worker worker
 
 COPY services/worker/requirements-prod.lock /tmp/requirements-prod.lock
@@ -25,9 +33,14 @@ COPY services/worker/pyproject.toml /src/worker/pyproject.toml
 COPY services/worker/cf_worker /src/worker/cf_worker
 RUN python -m pip install --no-deps /src/worker
 
+# Import and initialize the exact OCR stack during the image build.  Merely
+# installing rapidocr is insufficient because its default ONNX engine is an
+# explicit dependency and OpenCV also needs Linux shared libraries.
+RUN python -c "from rapidocr import RapidOCR; RapidOCR()"
+
 COPY packages/evals /eval-data
 
 USER worker
 EXPOSE 8020
 
-CMD ["celery", "-A", "cf_worker.celery_app:celery_app", "worker", "--beat", "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO", "--queues=outbox.poll,outbox.process", "--concurrency=1"]
+CMD ["celery", "-A", "cf_worker.celery_app:celery_app", "worker", "--loglevel=INFO", "--queues=outbox.poll,outbox.process", "--concurrency=1"]

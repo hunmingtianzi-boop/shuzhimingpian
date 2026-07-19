@@ -1,9 +1,18 @@
 import "@testing-library/jest-dom/vitest";
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { MarkdownMessage } from "./MarkdownMessage";
+
+const mermaidMock = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(async () => ({
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>需求到交付</text></svg>',
+  })),
+}));
+
+vi.mock("mermaid", () => ({ default: mermaidMock }));
 
 describe("MarkdownMessage", () => {
   it("renders normal model formatting as semantic text", () => {
@@ -31,5 +40,36 @@ describe("MarkdownMessage", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("renders ordered steps as a flow and keeps GFM tables scrollable", () => {
+    render(
+      <MarkdownMessage
+        content={
+          "### 合作流程\n\n1. 提交需求\n2. 场景评估\n3. 阶段验证\n\n" +
+          "| 项目 | 信息 |\n| --- | --- |\n| 周期 | 按项目确认 |\n| 验收 | 分阶段完成 |"
+        }
+      />,
+    );
+
+    expect(screen.getByRole("list")).toHaveClass("message-flow");
+    expect(screen.getByRole("region", { name: "回答数据表" })).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("table")).toHaveTextContent("按项目确认");
+  });
+
+  it("renders a fenced Mermaid block as an accessible diagram", async () => {
+    render(
+      <MarkdownMessage
+        content={"```mermaid\nflowchart TD\n  A[需求] --> B[交付]\n```"}
+      />,
+    );
+
+    expect(screen.getByLabelText("正在绘制图示")).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "AI 生成的关系图" })).toHaveTextContent(
+      "需求到交付",
+    );
+    expect(mermaidMock.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ securityLevel: "strict", startOnLoad: false }),
+    );
   });
 });

@@ -3,19 +3,18 @@ import { useRef, useState } from "react";
 import "./styles.css";
 
 import {
-  DeferredAIAssistant,
-  type AIAssistantHandle,
-} from "./components/DeferredAIAssistant";
-import {
   DeferredPublicExperience,
   type PublicExperienceHandle,
 } from "./components/DeferredPublicExperience";
+import {
+  BusinessCardExperience,
+  type BusinessCardExperienceHandle,
+} from "./card-ui/BusinessCardExperience";
 import type { EnterpriseCardConfig } from "./domain/card";
 import { copyText } from "./lib/clipboard";
 import { createMockPublicCard, resolveMockCardKind } from "./lib/mockPublicCard";
 import type { PublicCardData } from "./lib/publicCardApi";
 import { canonicalShareUrl } from "./lib/publicExperienceApi";
-import { BusinessCardPrototypeApp } from "./prototype/BusinessCardPrototypeApp";
 
 export default function App({
   tenant,
@@ -24,7 +23,7 @@ export default function App({
   tenant: EnterpriseCardConfig;
   publishedCard?: PublicCardData;
 }) {
-  const assistantRef = useRef<AIAssistantHandle>(null);
+  const cardExperienceRef = useRef<BusinessCardExperienceHandle>(null);
   const publicExperienceRef = useRef<PublicExperienceHandle>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const mockEnabled =
@@ -39,12 +38,7 @@ export default function App({
     !mockCard && !isUnconfiguredTemplate && (publishedCard?.ai_assistant.available ?? true);
 
   const openAssistant = (question?: string) => {
-    if (mockCard) {
-      setShareNotice(`模拟 AI 接待${question?.trim() ? `：${question.trim()}` : "已打开"}`);
-      return;
-    }
-    if (question?.trim()) assistantRef.current?.openWithQuestion(question.trim());
-    else assistantRef.current?.open();
+    cardExperienceRef.current?.openAssistant(question?.trim());
   };
 
   const openLead = () => {
@@ -81,10 +75,11 @@ export default function App({
 
   return (
     <>
-      <BusinessCardPrototypeApp
+      <BusinessCardExperience
+        ref={cardExperienceRef}
         tenant={tenant}
         card={renderedCard}
-        onAssistant={openAssistant}
+        assistantEnabled={assistantEnabled}
         onLead={openLead}
         onPrivacy={() => {
           if (mockCard) setShareNotice("模拟隐私与个人信息入口");
@@ -110,16 +105,6 @@ export default function App({
           card={renderedCard}
           controllerOnly
           onAssistant={openAssistant}
-        />
-      )}
-
-      {assistantEnabled && (
-        <DeferredAIAssistant
-          key={tenant.id}
-          ref={assistantRef}
-          config={tenant.assistant}
-          cardSlug={publishedCard?.slug ?? tenant.id}
-          onLeadPrompt={publishedCard ? openLead : undefined}
         />
       )}
     </>

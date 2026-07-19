@@ -208,6 +208,16 @@ class RAGOrchestrator:
 
         direct_question_scope = classify_question_scope(normalized)
         question_scope = classify_question_scope(normalized, request.history)
+        include_history_for_retrieval = _should_include_history_for_retrieval(
+            normalized,
+            direct_question_scope=direct_question_scope,
+            history=request.history,
+        )
+        retrieval_text = _compose_retrieval_text(
+            normalized,
+            request.history,
+            include_history=include_history_for_retrieval,
+        )
         trace.extra["question_scope"] = question_scope.value
         trace.extra["question_scope_source"] = (
             "conversation" if direct_question_scope is QuestionScope.AMBIGUOUS else "direct"
@@ -215,13 +225,17 @@ class RAGOrchestrator:
         if question_scope is QuestionScope.AMBIGUOUS:
             return _scope_clarification(trace)
 
-        fast_faq = await self._try_fast_faq(
-            request=request,
-            policy=policy,
-            normalized=normalized,
-            trace=trace,
-            question_scope=question_scope,
-        )
+        fast_faq = None
+        if not include_history_for_retrieval:
+            fast_faq = await self._try_fast_faq(
+                request=request,
+                policy=policy,
+                normalized=normalized,
+                trace=trace,
+                question_scope=question_scope,
+            )
+        else:
+            trace.extra["fast_faq_skipped"] = "contextual_follow_up"
         if fast_faq is not None:
             return fast_faq
 
@@ -230,7 +244,7 @@ class RAGOrchestrator:
             embedding_started = time.perf_counter()
             try:
                 batch = await self._embedding_provider.embed(
-                    [normalized],
+                    [retrieval_text],
                     credentials=embedding_credentials,
                     trace_id=trace_id,
                 )
@@ -266,11 +280,6 @@ class RAGOrchestrator:
 
         trace.retrieval_mode = "hybrid" if embedding is not None else "lexical"
         top_k = request.top_k if request.top_k is not None else self.config.top_k
-        retrieval_text = _compose_retrieval_text(
-            normalized,
-            request.history,
-            include_history=direct_question_scope is QuestionScope.AMBIGUOUS,
-        )
         retrieval_started = time.perf_counter()
         try:
             evidence = tuple(
@@ -331,9 +340,12 @@ class RAGOrchestrator:
             )
 
         prompt = self._prompt_registry.get(self.config.prompt_version)
+        prompt_evidence = (
+            () if question_scope is QuestionScope.GENERAL else pre_gate.evidence
+        )
         messages = prompt.render(
             question=normalized,
-            evidence=pre_gate.evidence,
+            evidence=prompt_evidence,
             policy=policy,
             history=request.history,
             general_answer_allowed=pre_gate.general_answer_allowed,
@@ -366,6 +378,14 @@ class RAGOrchestrator:
             answer_presentation = "deduplicated_continuation"
             trace.extra["answer_deduplicated"] = True
             trace.extra["deduplicated_line_count"] = removed_lines
+        display_answer, bridge_action = _ensure_enterprise_bridge(
+            display_answer,
+            question=normalized,
+            history=request.history,
+            question_scope=question_scope,
+        )
+        if bridge_action is not None:
+            trace.extra["enterprise_bridge"] = bridge_action
         policy_output = completion.output.model_copy(update={"answer": display_answer})
         post_gate = self._evidence_gate.after_generation(
             policy,
@@ -507,6 +527,7 @@ _MARKDOWN_BLOCK_PATTERN = re.compile(
 )
 
 AnswerPresentationMode = Literal[
+    "model_markdown",
     "structured_blocks",
     "structured_emphasis",
     "metadata_markdown",
@@ -514,6 +535,71 @@ AnswerPresentationMode = Literal[
     "source_text",
     "deduplicated_continuation",
 ]
+
+_ENTERPRISE_TOPIC_PATTERN = re.compile(
+    r"(?:这家(?:企业|公司)|企业(?:业务|产品|服务|案例|合作)|"
+    r"公司(?:业务|产品|服务|案例|合作)|业务|产品|服务|案例|合作)"
+)
+_ENTERPRISE_BRIDGE_PATTERN = re.compile(
+    r"(?:也可以|可以继续|欢迎|如果(?:你)?愿意|想继续时).{0,28}"
+    r"(?:这家企业|这家公司|企业|公司|业务|产品|服务|案例|合作)"
+)
+_CASUAL_CHAT_PATTERN = re.compile(
+    r"(?:你好|您好|在吗|早上好|下午好|晚上好|心情|有点累|累了|聊两句|"
+    r"随便聊|闲聊|谢谢|辛苦了|晚安)"
+)
+_ENTERPRISE_GENERAL_BRIDGE = (
+    "如果你愿意，也可以继续问我这家企业的业务、产品、案例或合作方式。"
+)
+_ENTERPRISE_CASUAL_BRIDGE = (
+    "先轻松一下也好；想继续时，我也可以陪你了解这家企业的业务、产品或合作方式。"
+)
+
+
+def _ensure_enterprise_bridge(
+    answer: str,
+    *,
+    question: str,
+    history: Sequence[ChatMessage],
+    question_scope: QuestionScope,
+) -> tuple[str, Literal["appended", "normalized"] | None]:
+    """Guarantee one light enterprise bridge in open chat without repetition."""
+
+    if question_scope is not QuestionScope.GENERAL or not answer.strip():
+        return answer, None
+
+    bridge = (
+        _ENTERPRISE_CASUAL_BRIDGE
+        if _CASUAL_CHAT_PATTERN.search(question)
+        else _ENTERPRISE_GENERAL_BRIDGE
+    )
+    paragraphs = re.split(r"\n\s*\n", answer.rstrip())
+    for index, paragraph in enumerate(paragraphs):
+        match = _ENTERPRISE_BRIDGE_PATTERN.search(paragraph)
+        if match is None:
+            continue
+        useful_prefix = paragraph[: match.start()].rstrip(" ；;")
+        paragraphs[index] = (
+            f"{useful_prefix}\n\n{bridge}" if useful_prefix else bridge
+        )
+        return "\n\n".join(paragraphs), "normalized"
+
+    if _ENTERPRISE_TOPIC_PATTERN.search(answer):
+        return answer, None
+
+    recent_assistant = (
+        item.content
+        for item in reversed(history[-6:])
+        if item.role == "assistant"
+    )
+    if any(
+        _ENTERPRISE_BRIDGE_PATTERN.search(message)
+        or _ENTERPRISE_TOPIC_PATTERN.search(message)
+        for message in recent_assistant
+    ):
+        return answer, None
+
+    return f"{answer.rstrip()}\n\n{bridge}", "appended"
 
 
 def _model_answer_for_display(
@@ -525,11 +611,9 @@ def _model_answer_for_display(
         output.answer,
         output.answer_emphasis,
     ) if output.answer_emphasis else output.answer
-    formatted = _format_answer_for_display(emphasized)
     if output.answer_emphasis:
-        return formatted, "structured_emphasis"
-    presentation = "normalized_list" if formatted != output.answer.strip() else "source_text"
-    return formatted, presentation
+        return emphasized.strip(), "structured_emphasis"
+    return emphasized.strip(), "model_markdown"
 
 
 def _deduplicate_continuation_answer(
@@ -606,6 +690,18 @@ def _render_answer_block(block: AnswerPresentationBlock) -> str:
         text = _render_plain_text_with_emphasis(str(block.text), block.emphasis)
         return f"> {prefix}{text}"
 
+    if block.type == "facts":
+        rows = [
+            "| 项目 | 信息 |",
+            "| --- | --- |",
+            *(
+                f"| **{_markdown_table_cell(str(item.label))}** | "
+                f"{_markdown_table_cell(str(item.text))} |"
+                for item in block.items
+            ),
+        ]
+        return f"**{title}**\n\n" + "\n".join(rows)
+
     marker = "{index}." if block.type == "steps" else "-"
     items = []
     for index, item in enumerate(block.items, start=1):
@@ -660,6 +756,10 @@ def _markdown_copy(value: str) -> str:
 
 def _markdown_label(value: str) -> str:
     return _markdown_copy(value)
+
+
+def _markdown_table_cell(value: str) -> str:
+    return _markdown_copy(value).replace("|", "\\|")
 
 
 def _faq_answer_for_display(
@@ -885,6 +985,26 @@ def _elapsed_ms(started_at: float) -> int:
     return max(0, round((time.perf_counter() - started_at) * 1000))
 
 
+_CONTEXTUAL_RETRIEVAL_PATTERN = re.compile(
+    r"^(?:(?:它|其)(?:的|们的)?|这个(?:产品|服务|项目|方案|案例|方向|板块)|"
+    r"那个(?:产品|服务|项目|方案|案例|方向|板块)|这些|那些|上述|前面|上面|刚才|"
+    r"其中|第[一二三四五六七八九十\d]+个)"
+)
+
+
+def _should_include_history_for_retrieval(
+    normalized: str,
+    *,
+    direct_question_scope: QuestionScope,
+    history: Sequence[ChatMessage],
+) -> bool:
+    if not history:
+        return False
+    if direct_question_scope is QuestionScope.AMBIGUOUS:
+        return True
+    return bool(_CONTEXTUAL_RETRIEVAL_PATTERN.search(normalized))
+
+
 def _compose_retrieval_text(
     normalized: str,
     history: Sequence[ChatMessage],
@@ -893,11 +1013,11 @@ def _compose_retrieval_text(
 ) -> str:
     if not include_history:
         return normalized
-    previous_user_turns = [
-        str(item.content).strip()[:300]
+    recent_turns = [
+        re.sub(r"\s+", " ", str(item.content)).strip()[:400]
         for item in history
-        if item.role == "user" and item.content.strip()
-    ][-2:]
-    if not previous_user_turns:
+        if item.role in {"user", "assistant"} and item.content.strip()
+    ][-4:]
+    if not recent_turns:
         return normalized
-    return "\n".join([*previous_user_turns, normalized])
+    return "\n".join([*recent_turns, normalized])

@@ -69,6 +69,10 @@ services:
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
       EMBEDDING_NATIVE_DIMENSION: ${EMBEDDING_NATIVE_DIMENSION:-1024}
       FASTEMBED_CACHE_PATH: /models
+      HOME: /models
+      HF_HOME: /models/huggingface
+      HF_XET_CACHE: /models/huggingface/xet
+      XDG_CACHE_HOME: /models/.cache
       HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       HF_HUB_ETAG_TIMEOUT: ${HF_HUB_ETAG_TIMEOUT:-30}
       HF_HUB_DOWNLOAD_TIMEOUT: ${HF_HUB_DOWNLOAD_TIMEOUT:-300}
@@ -108,8 +112,14 @@ services:
       OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-change-me-local-only}
       OBJECT_STORAGE_SECURE: "false"
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-replace-with-at-least-32-random-bytes}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-replace-with-kms-backed-key}
+      FIELD_ENCRYPTION_KEY_REF: ${FIELD_ENCRYPTION_KEY_REF:-local-v1}
+      ADMIN_BOOTSTRAP_TENANT_SLUG: ${ADMIN_BOOTSTRAP_TENANT_SLUG:-}
+      ADMIN_BOOTSTRAP_ACCOUNT: ${ADMIN_BOOTSTRAP_ACCOUNT:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
       CORS_ALLOWED_ORIGINS: '${CORS_ALLOWED_ORIGINS:-["http://127.0.0.1:4173","http://localhost:4173","http://127.0.0.1:4174","http://localhost:4174","http://127.0.0.1:8080","http://localhost:8080","http://127.0.0.1:8081","http://localhost:8081"]}'
       PUBLIC_CARD_BASE_URL: ${PUBLIC_CARD_BASE_URL:-http://127.0.0.1:8080}
+      ALLOW_INSECURE_PUBLIC_CARD_HTTP: ${ALLOW_INSECURE_PUBLIC_CARD_HTTP:-false}
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -249,13 +259,14 @@ services:
       retries: 20
 
   worker:
+    image: ${WORKER_IMAGE:-cf-ai-card-worker:local}
     build:
       context: ..
       dockerfile: services/worker/Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     restart: unless-stopped
-    environment:
+    environment: &worker-environment
       <<: *api-environment
       DATABASE_URL: postgresql+asyncpg://${WORKER_DB_USER:-cf_ai_card_worker}:${WORKER_DB_PASSWORD:-change-me-worker-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
       WORKER_DATABASE_URL: postgresql+asyncpg://${WORKER_DB_USER:-cf_ai_card_worker}:${WORKER_DB_PASSWORD:-change-me-worker-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
@@ -263,6 +274,7 @@ services:
       WORKER_ID: compose-worker
       WORKER_HEALTH_HOST: 0.0.0.0
       WORKER_HEALTH_PORT: 8020
+      KNOWLEDGE_IMPORT_PARSE_TIMEOUT_SECONDS: ${KNOWLEDGE_IMPORT_PARSE_TIMEOUT_SECONDS:-300}
       EVALUATION_DATASET_DIR: /eval-data
       EVALUATION_SUITE_VERSION: ${EVALUATION_SUITE_VERSION:-v2}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-replace-with-kms-backed-key}
@@ -289,6 +301,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
+
+  beat:
+    image: ${WORKER_IMAGE:-cf-ai-card-worker:local}
+    restart: unless-stopped
+    command:
+      [
+        "celery",
+        "-A",
+        "cf_worker.celery_app:celery_app",
+        "beat",
+        "--scheduler=celery.beat:Scheduler",
+        "--loglevel=INFO",
+      ]
+    environment:
+      <<: *worker-environment
+      WORKER_ID: compose-beat
+    depends_on:
+      embedding:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   postgres_data:

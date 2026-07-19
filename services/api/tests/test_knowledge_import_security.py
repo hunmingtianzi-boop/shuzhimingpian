@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 
 import pytest
@@ -10,11 +11,27 @@ from pptx import Presentation
 from pypdf import PdfWriter
 
 from app.services.knowledge_import import (
+    _OCR_RESULT_PREFIX,
+    MAX_OCR_RENDER_PIXELS,
     KnowledgeImportError,
+    _ocr_pdf_page_isolated,
+    _pdf_ocr_render_scale,
     parse_payload,
     safe_file_name,
     validate_upload,
 )
+
+
+class _CompletedOcrProcess:
+    returncode = 0
+
+    def communicate(self, *, timeout: int):
+        assert timeout > 0
+        return (
+            _OCR_RESULT_PREFIX
+            + json.dumps({"text": "析境科技"}, ensure_ascii=False).encode("utf-8"),
+            b"",
+        )
 
 
 def _docx_bytes(text: str) -> bytes:
@@ -100,6 +117,36 @@ def test_encrypted_pdf_and_mime_magic_mismatches_are_rejected() -> None:
         validate_upload("file.pdf", "text/plain", b"%PDF-1.7")
     with pytest.raises(KnowledgeImportError, match="IMPORT_MAGIC_MISMATCH"):
         validate_upload("file.pdf", "application/pdf", b"not-a-pdf")
+
+
+def test_pdf_ocr_rendering_caps_exported_slide_pixel_budget() -> None:
+    assert _pdf_ocr_render_scale(595, 842) == 2.0
+
+    width = 3_840
+    height = 2_160
+    scale = _pdf_ocr_render_scale(width, height)
+    assert width * scale * height * scale == pytest.approx(MAX_OCR_RENDER_PIXELS)
+
+    with pytest.raises(KnowledgeImportError, match="IMPORT_PDF_INVALID"):
+        _pdf_ocr_render_scale(0, height)
+
+
+def test_pdf_ocr_page_runs_in_disposable_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return _CompletedOcrProcess()
+
+    monkeypatch.setattr("app.services.knowledge_import.subprocess.Popen", fake_popen)
+    assert _ocr_pdf_page_isolated("source.pdf", page_number=2) == "析境科技"
+    assert captured["command"][-4:] == [
+        "--pdf-path",
+        "source.pdf",
+        "--page-number",
+        "2",
+    ]
 
 
 def test_office_and_html_formats_extract_text_without_network_access() -> None:

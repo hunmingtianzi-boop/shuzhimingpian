@@ -28,10 +28,10 @@ const knowledgeBase: KnowledgeItem[] = [
     answer:
       `**公开业务板块：** 目前由 **4 个协同板块** 组成。
 
-1. **拓途浙享：** 提供活动、内容与项目入口。
-2. **智能体学习与项目社群：** 承接训练、组队和实践。
-3. **浙客松：** 用于真实场景下的创新验证与成果展示。
-4. **AI 场景服务：** 围绕需求诊断、原型验证、定制开发和持续迭代推进产业共创。`,
+- **拓途浙享：** 提供活动、内容与项目入口。
+- **智能体学习与项目社群：** 承接训练、组队和实践。
+- **浙客松：** 用于真实场景下的创新验证与成果展示。
+- **AI 场景服务：** 围绕需求诊断、原型验证、定制开发和持续迭代推进产业共创。`,
     keywords: ["业务", "板块", "产品", "架构", "拓途浙享", "社群", "浙客松", "场景服务"],
     source: sourceModel,
   },
@@ -97,9 +97,16 @@ const knowledgeBase: KnowledgeItem[] = [
     answer:
       `**合作方式：** 企业可提交 AI 应用场景、联合发布真实赛题、共建项目实践，或开展青年人才交流。
 
-1. **前期沟通：** 需求沟通、场景评估与范围确认。
-2. **项目推进：** 团队匹配、阶段验证与成果复盘。
-3. **项目约定：** 费用、周期、数据使用、知识产权、保密与验收方式需按项目另行确认。`,
+\`\`\`mermaid
+flowchart TD
+  A[需求沟通] --> B[场景评估]
+  B --> C[范围确认]
+  C --> D[团队匹配]
+  D --> E[阶段验证]
+  E --> F[成果复盘]
+\`\`\`
+
+> **项目约定：** 费用、周期、数据使用、知识产权、保密与验收方式需按项目另行确认。`,
     keywords: ["企业", "合作", "商务", "共建", "赛题", "项目", "人才", "知识产权", "保密"],
     source: "《拓浙 AI 生态内部总纲》六、九；《业务梳理讨论智能纪要》P2-P3（2026-07）",
   },
@@ -108,12 +115,16 @@ const knowledgeBase: KnowledgeItem[] = [
     question: "目前有哪些可以展示的阶段数据？",
     shortQuestion: "目前规模如何？",
     answer:
-      `**阶段数据：** 以下为 **2026 年 7 月内部材料** 记录，不是实时接口数据。
+      `**阶段数据：** 以下为 **2026 年 7 月内部材料** 记录。
 
-- **拓途浙享：** 注册用户 **2300+**，累计收录校园活动 **700+**。
-- **首届浙客松：** 约 **300 人报名**、**100 人正式参赛**。
+| 指标 | 记录 |
+| --- | --- |
+| 平台注册用户 | **2300+** |
+| 累计收录校园活动 | **700+** |
+| 首届浙客松报名 | 约 **300 人** |
+| 正式参赛 | 约 **100 人** |
 
-正式发布前仍需复核统计截止日期和统计方式。`,
+> 以上不是实时接口数据，正式发布前仍需复核统计截止日期和统计方式。`,
     keywords: ["规模", "数据", "用户", "活动", "多少人", "报名", "参赛", "2300", "700"],
     source: "《拓浙 AI 生态内部总纲》十；《拓浙 AI 生态规划书》数据页（2026-07）",
   },
@@ -533,5 +544,113 @@ export const tuotuTenant = defineTenant({
     disclaimer:
       "当前为资料整合预览；集团主体、数据口径、合作关系、联系渠道与素材授权以正式发布终审为准。",
     backToTopAction: { kind: "anchor", label: "返回顶部", target: "#top" },
+  },
+  presentation: {
+    homepageContentMode: "curated",
+    heroVisual: {
+      src: asset("card-ui/enterprise-city-1600.webp"),
+      srcSet: `${asset("card-ui/enterprise-city-800.webp")} 800w, ${asset("card-ui/enterprise-city-1600.webp")} 1600w`,
+      sizes: "(max-width: 480px) 100vw, 480px",
+      alt: "蓝色夜幕下的现代城市与科技园区",
+      width: 1600,
+      height: 1200,
+    },
+    heroSummary:
+      "连接青年 AI 人才、高校创新资源与产业场景，让学习、项目、赛事与应用落地彼此接力。",
+    solutions: [
+      {
+        id: "talent-incubation",
+        title: "AI 人才与项目孵化",
+        description: "连接学习、组队与真实项目，让青年人才在实践中形成作品与能力。",
+      },
+      {
+        id: "innovation-event",
+        title: "AI 创新赛事",
+        description: "以浙客松承接真实场景命题，验证创意、能力与项目潜力。",
+      },
+      {
+        id: "scenario-service",
+        title: "AI 场景服务",
+        description: "从需求诊断到原型验证和持续迭代，推动应用进入真实业务。",
+      },
+    ],
+    caseStudy: {
+      title: "首届浙客松 AI 创新实践",
+      category: "创新赛事",
+      description:
+        "约 300 人报名、100 人正式参赛，通过跨学科组队、阶段评审和成果展示完成真实场景验证。",
+      detail:
+        "首届浙客松围绕真实问题组织青年人才跨学科协作，在短周期内完成赛题理解、方案构思、原型验证与成果展示。数据来自 2026 年 7 月整合材料，后续活动规则与口径以当期正式通知为准。",
+      visual: {
+        src: asset("hackathon-group.webp"),
+        alt: "首届浙客松参与者集体合影",
+        width: 1200,
+        height: 900,
+      },
+    },
+    owner: {
+      demoLabel: "演示资料，待替换",
+      name: "负责人姓名",
+      role: "创始人 / 总经理",
+      summary:
+        "围绕青年 AI 人才成长、项目孵化与产业场景共创，推动多方资源形成持续合作。",
+      valueProposition:
+        "以长期主义为底色，把真实问题转化为人才成长与项目落地的共同起点。",
+      capabilities: ["生态共建", "项目孵化", "产业协同"],
+      experiences: [
+        {
+          period: "20XX - 至今",
+          organization: "公司名称 A",
+          role: "创始人 / 总经理",
+          description: "负责组织战略、生态合作与重点项目推进。",
+        },
+        {
+          period: "20XX - 20XX",
+          organization: "公司名称 B",
+          role: "联合创始人 / 副总裁",
+          description: "负责业务板块建设、资源协同与市场拓展。",
+        },
+        {
+          period: "20XX - 20XX",
+          organization: "公司名称 C",
+          role: "高级经理",
+          description: "参与关键项目交付、流程优化与团队协作。",
+        },
+      ],
+      portrait: {
+        src: asset("card-ui/demo-owner-1024.webp"),
+        srcSet: `${asset("card-ui/demo-owner-512.webp")} 512w, ${asset("card-ui/demo-owner-1024.webp")} 1024w`,
+        sizes: "(max-width: 480px) 44vw, 210px",
+        alt: "虚构的演示商务人物形象",
+        width: 1024,
+        height: 1280,
+      },
+    },
+    assistantVisual: {
+      src: asset("card-ui/ai-assistant-1200.webp"),
+      srcSet: `${asset("card-ui/ai-assistant-600.webp")} 600w, ${asset("card-ui/ai-assistant-1200.webp")} 1200w`,
+      sizes: "(max-width: 480px) 52vw, 250px",
+      alt: "蓝白色企业 AI 助手形象",
+      width: 1200,
+      height: 1200,
+    },
+    assistantQuestionIds: ["overview", "businesses", "service", "cooperation", "metrics"],
+    assistantRecommendations: [
+      {
+        title: "AI 人才与项目孵化",
+        description: "了解青年人才如何进入学习、组队与真实项目。",
+        question: "学生可以如何加入并获得成长？",
+      },
+      {
+        title: "浙客松",
+        description: "查看真实场景创新赛事的参与方式与阶段数据。",
+        question: "浙客松是什么？",
+      },
+      {
+        title: "AI 场景服务",
+        description: "了解从需求诊断到原型验证的协作范围。",
+        question: "AI 场景服务包括哪些内容？",
+      },
+    ],
   },
 });

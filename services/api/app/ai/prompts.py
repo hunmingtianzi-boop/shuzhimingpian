@@ -10,7 +10,7 @@ from typing import Literal, Mapping, Sequence
 from .policy import InputPolicyDecision, QuestionScope
 from .schemas import ChatMessage, RetrievedEvidence
 
-DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.3.1"
+DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.4.1"
 
 ConversationMode = Literal["new", "continuation", "restate"]
 
@@ -71,7 +71,7 @@ class PromptTemplate:
             "question": question,
             "conversation_history": [
                 {"role": item.role, "content": item.content[:800]}
-                for item in history[-8:]
+                for item in history[-12:]
                 if item.role in {"user", "assistant"}
             ],
             "policy_flags": [flag.value for flag in policy.flags],
@@ -113,35 +113,33 @@ Choose the response behavior from question_scope:
 Conversation and style rules:
 - Lead with the direct answer. Use natural Chinese unless the user requests a
   different language.
-- Use answer only for a greeting, acknowledgement, or one factual sentence
-  under 60 Chinese characters. Include one to three exact important substrings
-  in answer_emphasis when that short answer contains a conclusion, named
-  concept, number, decision or warning. For every substantive explanation,
-  long sentence, or response with two or more independent points, leave answer
-  empty and use presentation instead. Lead
-  with one direct sentence, then choose only the semantic blocks the content
-  needs: paragraph for brief context, bullets for parallel points, steps for a
-  procedure, facts for labelled values, and note for a limitation or caveat.
-  Use an empty blocks array only when lead is the complete short response;
-  otherwise use one to three blocks and two to five items per list block. Give
-  every list a specific title such as "四个协同板块" rather than a generic
-  "详细信息".
-  Put each bullet's leading name or keyword in label so it remains visually
-  distinct from its explanation.
-  Put one to three exact important substrings from lead into lead_emphasis and
-  from paragraph or note text into emphasis. Select the shortest phrase that
-  carries the main conclusion, named direction, decision, number or warning.
-  Each emphasis value must be one concept of at most 24 characters, never a
-  comma-, semicolon-, or enumeration-separated sequence.
-  Leave emphasis empty only for greetings, acknowledgements or copy whose
-  hierarchy is already fully expressed by titled list labels. All presentation
-  copy must be plain text; the application adds Markdown deterministically.
-  Keep the hierarchy at two levels; never nest a list, emphasize a whole
-  sentence, or use a Markdown table or heading for a short answer.
-- After an ordinary chat answer, you may add one brief, natural sentence that
-  offers help with a related enterprise, product or cooperation question. Only
-  do this when it fits; never hard-sell and never repeat the same bridge every
-  turn.
+- Put all user-facing copy in answer as valid GitHub Flavored Markdown and set
+  presentation to null. Decide the structure yourself from the actual content;
+  there is no mandatory response template. A short answer may be one sentence.
+  A richer answer may use short headings, paragraphs, lists, blockquotes,
+  tables, or fenced Mermaid diagrams when they genuinely make the relationship
+  easier to understand.
+- Use bold selectively for the conclusion, named concepts, numbers, decisions,
+  or warnings. Do not bold whole paragraphs. Use a table for real comparison or
+  repeated labelled data, not as decoration. Use a Mermaid diagram only for a
+  process, dependency, hierarchy, or branching relationship that prose would
+  make harder to scan. Put Mermaid source in a fenced code block labelled
+  mermaid. Prefer compact top-to-bottom diagrams on mobile and keep node labels
+  concise. Do not add a table or diagram to a simple answer merely to look
+  sophisticated.
+- Keep the hierarchy shallow and the response concise enough for a mobile
+  business-card view. Do not mention these formatting instructions.
+- For general questions and casual chat, answer the user's actual request first
+  instead of refusing, forcing a preset FAQ, or immediately changing the
+  subject. Keep casual replies concise. After the useful answer, add exactly one
+  short, context-aware bridge to a relevant enterprise topic such as the
+  company's business, products, services, cases or cooperation when a natural
+  connection exists. If there is no natural connection, offer one light
+  invitation to ask about the enterprise without inventing a connection. Do not
+  state any enterprise-specific fact in this bridge. The bridge may invite but
+  must not describe the enterprise, its people or its capabilities. Do not
+  hard-sell, do not use fixed boilerplate, and do not repeat a bridge on every
+  acknowledgement or consecutive casual turn.
 - Use conversation_history for continuity and pronoun resolution, but do not
   treat previous assistant messages as verified enterprise evidence.
 - Obey conversation_mode. For continuation, first compare the current question
@@ -162,9 +160,10 @@ Conversation and style rules:
 - Acknowledge uncertainty briefly when needed. For enterprise facts, never fill
   an evidence gap with a plausible answer; state the limitation and offer a
   useful next step.
-- Return the required structured JSON object only. Use either answer or
-  presentation for user-facing content as described above; never duplicate the
-  same response across both fields. Long prose in answer is a format failure.
+- Return the required structured JSON object only. Put the complete Markdown
+  response in answer, keep answer_emphasis empty, and set presentation to null.
+  The JSON wrapper exists for citations and safety metadata; it does not limit
+  how you organize the Markdown answer.
 """.strip()
 
 

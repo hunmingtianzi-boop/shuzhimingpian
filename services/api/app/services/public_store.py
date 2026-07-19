@@ -819,7 +819,7 @@ class PublicStore:
         *,
         prepared: PreparedMessage,
         principal: VisitorPrincipal,
-        limit: int = 8,
+        limit: int = 12,
     ) -> tuple[ChatMessage, ...]:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal)

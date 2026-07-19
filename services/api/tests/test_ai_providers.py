@@ -202,8 +202,8 @@ async def test_chat_provider_accepts_structured_answer_presentation() -> None:
     system_copy = transport.calls[0]["payload"]["messages"][0]["content"]
     assert '"presentation": null' in system_copy
     assert '"answer_emphasis": []' in system_copy
-    assert '"lead_emphasis": ["exact important phrase"]' in system_copy
-    assert "Long prose is never a short answer" in system_copy
+    assert "complete user-facing answer as GitHub Flavored Markdown" in system_copy
+    assert "compatibility path for a new response" in system_copy
 
 
 @pytest.mark.asyncio

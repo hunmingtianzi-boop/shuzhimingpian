@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Sequence
 
 import pytest
@@ -66,6 +67,7 @@ class FakeEmbeddingProvider:
     def __init__(self, error: AIProviderError | None = None) -> None:
         self.error = error
         self.calls = 0
+        self.inputs: list[tuple[str, ...]] = []
 
     async def embed(
         self,
@@ -75,6 +77,7 @@ class FakeEmbeddingProvider:
         trace_id: str | None = None,
     ) -> EmbeddingBatch:
         self.calls += 1
+        self.inputs.append(tuple(texts))
         if self.error:
             raise self.error
         return EmbeddingBatch(
@@ -326,9 +329,13 @@ async def test_general_mode_answers_low_risk_question_without_evidence() -> None
     assert len(chat.calls) == 1
     assert '"general_answer_allowed":true' in chat.calls[0][0][1].content
     assert '"question_scope":"general"' in chat.calls[0][0][1].content
-    assert "For every substantive explanation" in chat.calls[0][0][0].content
-    assert "use presentation instead" in chat.calls[0][0][0].content
-    assert "emphasize a whole" in chat.calls[0][0][0].content
+    assert '"published_evidence":[]' in chat.calls[0][0][1].content
+    assert "valid GitHub Flavored Markdown" in chat.calls[0][0][0].content
+    assert "there is no mandatory response template" in chat.calls[0][0][0].content
+    assert "Do not bold whole paragraphs" in chat.calls[0][0][0].content
+    assert "answer the user's actual request first" in chat.calls[0][0][0].content
+    assert "add exactly one" in chat.calls[0][0][0].content
+    assert "do not use fixed boilerplate" in chat.calls[0][0][0].content
 
 
 @pytest.mark.asyncio
@@ -352,7 +359,11 @@ async def test_general_chat_continues_when_knowledge_retrieval_is_unavailable() 
     )
 
     assert result.refusal is None
-    assert result.answer == "可以，先从明确目标开始。"
+    assert result.answer == (
+        "可以，先从明确目标开始。\n\n"
+        "如果你愿意，也可以继续问我这家企业的业务、产品、案例或合作方式。"
+    )
+    assert result.trace.extra["enterprise_bridge"] == "appended"
     assert result.citations == ()
     assert result.trace.extra["retrieval_fallback_code"] == "retrieval_failed"
     assert len(chat.calls) == 1
@@ -525,12 +536,87 @@ async def test_greeting_is_answered_by_the_model_in_general_chat_mode() -> None:
 
     assert result.refusal is None
     assert result.citations == ()
-    assert result.answer == "你好！今天想聊点什么？"
+    assert result.answer == (
+        "你好！今天想聊点什么？\n\n"
+        "先轻松一下也好；想继续时，我也可以陪你了解这家企业的业务、产品或合作方式。"
+    )
+    assert result.trace.extra["enterprise_bridge"] == "appended"
     assert result.trace.retrieval_mode == "hybrid"
     assert embedding.calls == 1
     assert len(repository.calls) == 1
     assert len(chat.calls) == 1
     assert '"general_answer_allowed":true' in chat.calls[0][0][1].content
+
+
+@pytest.mark.asyncio
+async def test_general_chat_does_not_repeat_enterprise_bridge_on_consecutive_turns() -> None:
+    chat = FakeChatProvider(StructuredModelAnswer(answer="那就先休息一会儿。"))
+    orchestrator = RAGOrchestrator(
+        chat,
+        FakeRepository([]),
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="今天有点累，随便聊两句吧。",
+            history=(
+                ChatMessage(role="user", content="你好"),
+                ChatMessage(
+                    role="assistant",
+                    content=(
+                        "你好！如果你愿意，也可以继续问我这家企业的业务、产品、"
+                        "案例或合作方式。"
+                    ),
+                ),
+            ),
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert result.answer == "那就先休息一会儿。"
+    assert "enterprise_bridge" not in result.trace.extra
+
+
+@pytest.mark.asyncio
+async def test_general_chat_normalizes_model_authored_company_claim_in_bridge() -> None:
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer=(
+                "累了就先休息一会儿。\n\n"
+                "如果愿意，也可以聊聊某科技——一家领先的 AI 公司。"
+            )
+        )
+    )
+    orchestrator = RAGOrchestrator(
+        chat,
+        FakeRepository([_evidence("某科技提供企业 AI 服务。")]),
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="今天有点累，随便聊两句吧。",
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert "某科技" not in result.answer
+    assert "领先" not in result.answer
+    assert result.answer.endswith(
+        "想继续时，我也可以陪你了解这家企业的业务、产品或合作方式。"
+    )
+    assert result.trace.extra["enterprise_bridge"] == "normalized"
 
 
 @pytest.mark.asyncio
@@ -633,7 +719,7 @@ async def test_high_confidence_faq_prefers_curated_markdown_presentation() -> No
 
 
 @pytest.mark.asyncio
-async def test_dense_model_list_is_normalized_to_compact_markdown() -> None:
+async def test_model_markdown_is_not_rewritten_by_the_orchestrator() -> None:
     chat = FakeChatProvider(
         StructuredModelAnswer(
             answer=(
@@ -661,16 +747,14 @@ async def test_dense_model_list_is_normalized_to_compact_markdown() -> None:
 
     assert result.refusal is None
     assert result.answer == (
-        "**结论：** 拓浙 AI 集团有四个业务板块：\n\n"
-        "- 拓途浙享\n"
-        "- 智能体学习与项目社群\n"
-        "- 浙客松\n"
-        "- AI 场景服务"
+        "拓浙 AI 集团有四个业务板块：拓途浙享、智能体学习与项目社群、"
+        "浙客松、AI 场景服务。"
     )
+    assert result.trace.extra["answer_presentation"] == "model_markdown"
 
 
 @pytest.mark.asyncio
-async def test_dense_action_and_process_answer_is_grouped_without_new_claims() -> None:
+async def test_model_process_copy_is_not_forced_into_a_fixed_layout() -> None:
     chat = FakeChatProvider(
         StructuredModelAnswer(
             answer=(
@@ -700,14 +784,12 @@ async def test_dense_action_and_process_answer_is_grouped_without_new_claims() -
 
     assert result.refusal is None
     assert result.answer == (
-        "**合作方式：**\n\n"
-        "- 提交 AI 应用场景\n"
-        "- 联合发布真实赛题\n"
-        "- 共建项目实践\n"
-        "- 开展青年人才交流\n\n"
-        "**合作流程：** 需求沟通 → 场景评估 → 范围确认 → 团队匹配 → 阶段验证和成果复盘\n\n"
-        "> 具体费用、周期、数据使用、知识产权、保密与验收方式需按项目另行确认。"
+        "企业可通过提交 AI 应用场景、联合发布真实赛题、共建项目实践或开展"
+        "青年人才交流等方式合作。合作流程通常包括需求沟通、场景评估、范围确认、"
+        "团队匹配、阶段验证和成果复盘，具体费用、周期、数据使用、知识产权、保密与"
+        "验收方式需按项目另行确认。"
     )
+    assert result.trace.extra["answer_presentation"] == "model_markdown"
 
 
 @pytest.mark.asyncio
@@ -897,8 +979,10 @@ async def test_structured_steps_facts_and_note_use_distinct_markdown_blocks() ->
         "1. **提交资料：** 填写合作需求\n"
         "2. **确认范围：** 完成场景评估\n\n"
         "**关键信息**\n\n"
-        "- **阶段：** 两步\n"
-        "- **结果：** 确认合作范围\n\n"
+        "| 项目 | 信息 |\n"
+        "| --- | --- |\n"
+        "| **阶段** | 两步 |\n"
+        "| **结果** | 确认合作范围 |\n\n"
         "> **注意：** 具体周期需按项目另行确认。"
     )
 
@@ -934,35 +1018,88 @@ async def test_embedding_timeout_falls_back_to_lexical_retrieval() -> None:
 
 
 @pytest.mark.asyncio
-async def test_follow_up_retrieval_uses_recent_user_context() -> None:
-    repository = FakeRepository([_evidence("企业合作可提交项目需求。")])
+async def test_contextual_product_follow_up_uses_recent_turn_for_retrieval_and_embedding() -> None:
+    repository = FakeRepository([_evidence("创新营面向 AI 初学者与项目团队。")])
     chat = FakeChatProvider(
         StructuredModelAnswer(
-            answer="可以提交项目需求。",
+            answer="AI 创新营适合初学者与项目团队。",
             cited_evidence_ids=["chunk-1"],
         )
     )
-    orchestrator = RAGOrchestrator(chat, repository)
+    embedding = FakeEmbeddingProvider()
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        embedding_provider=embedding,
+    )
+
+    history = (
+        ChatMessage(role="user", content="请介绍一下你们的两个产品。"),
+        ChatMessage(
+            role="assistant",
+            content="我们提供 AI 创新营和企业场景共创服务。",
+        ),
+    )
 
     result = await orchestrator.answer(
         RAGRequest(
             tenant_id="tenant-1",
             company_id="company-1",
-            question="那怎么参与？",
-            history=(
-                ChatMessage(role="user", content="企业如何合作？"),
-                ChatMessage(role="assistant", content="企业可以提供真实项目。"),
-            ),
+            question="它的产品适合谁？",
+            history=history,
+        ),
+        chat_credentials=_credentials(),
+        embedding_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    retrieval_text = repository.calls[0].text
+    assert history[0].content in retrieval_text
+    assert history[1].content in retrieval_text
+    assert "它的产品适合谁?" in retrieval_text
+    assert embedding.inputs == [(retrieval_text,)]
+
+    prompt_payload = json.loads(chat.calls[0][0][1].content)
+    assert prompt_payload["conversation_history"] == [
+        {"role": item.role, "content": item.content} for item in history
+    ]
+    assert prompt_payload["conversation_mode"] == "continuation"
+    assert "do not repeat the previous lead" in chat.calls[0][0][0].content
+
+
+@pytest.mark.asyncio
+async def test_prompt_keeps_only_the_latest_twelve_history_messages() -> None:
+    repository = FakeRepository([_evidence("企业提供公开的 AI 场景服务。")])
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="企业提供公开的 AI 场景服务。",
+            cited_evidence_ids=["chunk-1"],
+        )
+    )
+    orchestrator = RAGOrchestrator(chat, repository)
+    history = tuple(
+        ChatMessage(
+            role="user" if index % 2 == 0 else "assistant",
+            content=f"历史消息 {index}",
+        )
+        for index in range(14)
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="请介绍企业的 AI 场景服务。",
+            history=history,
         ),
         chat_credentials=_credentials(),
     )
 
     assert result.refusal is None
-    assert "企业如何合作" in repository.calls[0].text
-    prompt_text = "\n".join(message.content for message in chat.calls[0][0])
-    assert "conversation_history" in prompt_text
-    assert '"conversation_mode":"continuation"' in prompt_text
-    assert "do not repeat the previous lead" in chat.calls[0][0][0].content
+    prompt_payload = json.loads(chat.calls[0][0][1].content)
+    assert prompt_payload["conversation_history"] == [
+        {"role": item.role, "content": item.content} for item in history[-12:]
+    ]
 
 
 @pytest.mark.asyncio

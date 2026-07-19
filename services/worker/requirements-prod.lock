@@ -59,6 +59,7 @@ charset-normalizer==3.4.9
 colorlog==6.10.1
 et-xmlfile==2.0.0
 numpy==2.5.1
+onnxruntime==1.27.0
 omegaconf==2.3.1
 opencv-python==5.0.0.93
 pyclipper==1.4.0

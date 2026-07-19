@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Literal, Mapping, cast
 
 from sqlalchemy import func, insert, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai import (
@@ -18,6 +21,7 @@ from app.ai import (
     ProviderCredentials,
     StructuredOutputMode,
 )
+from app.ai.prompts import DEFAULT_PROMPT_VERSION, PromptRegistry
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ConfirmPlatformOnboardingRequest,
@@ -38,9 +42,12 @@ from app.db.models import (
     LifecycleStatus,
     Membership,
     MembershipRole,
+    ModelConfig,
     OutboxEvent,
     OutboxStatus,
     PlatformOnboardingSession,
+    PromptStatus,
+    PromptVersion,
     StaffCredential,
     Tenant,
     TenantType,
@@ -196,9 +203,7 @@ class PlatformOnboardingService:
             if await session.scalar(select(Tenant.id).where(Tenant.slug == body.tenant_slug)):
                 raise ApiError(409, "TENANT_SLUG_CONFLICT", "企业租户标识已存在")
             if await session.scalar(
-                select(StaffCredential.id).where(
-                    StaffCredential.account_normalized == account
-                )
+                select(StaffCredential.id).where(StaffCredential.account_normalized == account)
             ):
                 raise ApiError(409, "ACCOUNT_CONFLICT", "管理员登录账号已存在")
 
@@ -221,9 +226,7 @@ class PlatformOnboardingService:
                     "summary": "",
                     "website": None,
                     "onboarding_status": "provisional",
-                    "policy_versions": {
-                        "profile_personalization": "profile-personalization-v1"
-                    },
+                    "policy_versions": {"profile_personalization": "profile-personalization-v1"},
                 },
             )
             user = User(
@@ -564,11 +567,15 @@ class PlatformOnboardingService:
             self._require_version(row, expected_version)
             await self._require_imports_settled(session, row)
             draft_rows = (
-                await session.execute(
-                    text("SELECT * FROM app.platform_onboarding_drafts(:session_id)"),
-                    {"session_id": row.id},
+                (
+                    await session.execute(
+                        text("SELECT * FROM app.platform_onboarding_drafts(:session_id)"),
+                        {"session_id": row.id},
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             suggestions: list[PlatformOnboardingSuggestion] = []
             business_profile: list[PlatformOnboardingSuggestion] = []
@@ -600,7 +607,7 @@ class PlatformOnboardingService:
                 event_data={
                     "suggestion_count": len(suggestions),
                     "business_profile_count": len(business_profile),
-                      "manual_required": not suggestions and not business_profile,
+                    "manual_required": not suggestions and not business_profile,
                     "failure_code": failure_code,
                 },
             )
@@ -702,9 +709,7 @@ class PlatformOnboardingService:
             membership = await session.get(
                 Membership, row.admin_membership_id, with_for_update=True
             )
-            credential = await session.get(
-                StaffCredential, row.credential_id, with_for_update=True
-            )
+            credential = await session.get(StaffCredential, row.credential_id, with_for_update=True)
             card = await session.get(Card, row.initial_card_id, with_for_update=True)
             if not all((tenant, company, user, membership, credential, card)):
                 raise ApiError(409, "ONBOARDING_RESOURCE_MISSING", "临时企业资源不完整")
@@ -748,6 +753,28 @@ class PlatformOnboardingService:
             # back atomically.
             await session.flush()
             now = datetime.now(UTC)
+            # Public answer persistence requires a company-scoped prompt and
+            # model audit record. Seeded demo tenants already have these, but
+            # enterprises created through onboarding do not pass through the
+            # seed command. Provision the records while the onboarding session
+            # is still open, then restore the platform scope before completing
+            # the protected onboarding row.
+            await set_rls_context(
+                session,
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=actor.user_id,
+                actor_session_id=actor.session_id,
+            )
+            await self._provision_chat_configuration(
+                session,
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                published_by=row.admin_user_id,
+                published_at=now,
+            )
+            await session.flush()
+            await self._set_platform_scope(session, actor)
             snapshot = {
                 "tenant_id": str(row.tenant_id),
                 "tenant_slug": row.tenant_slug,
@@ -809,6 +836,87 @@ class PlatformOnboardingService:
             await session.flush()
             await session.refresh(row)
             return self._record(row)
+
+    async def _provision_chat_configuration(
+        self,
+        session: AsyncSession,
+        *,
+        tenant_id: uuid.UUID,
+        company_id: uuid.UUID,
+        published_by: uuid.UUID,
+        published_at: datetime,
+    ) -> None:
+        prompt = PromptRegistry().get(DEFAULT_PROMPT_VERSION)
+        prompt_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{company_id}:rag-prompt:{prompt.version}",
+        )
+        await session.execute(
+            pg_insert(PromptVersion)
+            .values(
+                id=prompt_id,
+                tenant_id=tenant_id,
+                company_id=company_id,
+                name=prompt.version,
+                purpose="rag_answer",
+                version_number=1,
+                content=prompt.system_text,
+                content_hash=hashlib.sha256(prompt.system_text.encode("utf-8")).hexdigest(),
+                change_summary="Provisioned with enterprise onboarding",
+                evaluation_result={"status": "requires_pilot_evaluation"},
+                status=PromptStatus.PUBLISHED,
+                published_by=published_by,
+                published_at=published_at,
+            )
+            .on_conflict_do_nothing(constraint="uq_prompt_versions_name_version")
+        )
+
+        model_config_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{company_id}:chat:{self._settings.llm_provider}",
+        )
+        await session.execute(
+            pg_insert(ModelConfig)
+            .values(
+                id=model_config_id,
+                tenant_id=tenant_id,
+                company_id=company_id,
+                purpose="chat",
+                provider=self._settings.llm_provider,
+                model_name=self._settings.llm_model,
+                endpoint_region=None,
+                secret_ref="environment-variable:LLM_API_KEY",  # noqa: S106
+                timeout_ms=round(self._settings.llm_timeout_seconds * 1_000),
+                max_retries=self._settings.llm_max_retries,
+                max_concurrency=self._settings.llm_max_concurrency,
+                daily_budget_cny=Decimal(str(self._settings.model_daily_budget_cny)),
+                data_retention="no_training",
+                enabled=True,
+                parameters={
+                    "thinking": self._settings.llm_thinking,
+                    "reasoning_effort": self._settings.llm_reasoning_effort,
+                    "temperature": self._settings.llm_temperature,
+                    "max_tokens": self._settings.llm_max_output_tokens,
+                },
+            )
+            .on_conflict_do_update(
+                constraint="uq_model_configs_purpose_provider",
+                set_={
+                    "model_name": self._settings.llm_model,
+                    "timeout_ms": round(self._settings.llm_timeout_seconds * 1_000),
+                    "max_retries": self._settings.llm_max_retries,
+                    "max_concurrency": self._settings.llm_max_concurrency,
+                    "daily_budget_cny": Decimal(str(self._settings.model_daily_budget_cny)),
+                    "enabled": True,
+                    "parameters": {
+                        "thinking": self._settings.llm_thinking,
+                        "reasoning_effort": self._settings.llm_reasoning_effort,
+                        "temperature": self._settings.llm_temperature,
+                        "max_tokens": self._settings.llm_max_output_tokens,
+                    },
+                },
+            )
+        )
 
     @staticmethod
     async def _require_imports_settled(
@@ -887,9 +995,7 @@ class PlatformOnboardingService:
             user.id: user
             for user in (
                 await session.scalars(
-                    select(User).where(
-                        User.id.in_({row.admin_user_id for row in open_rows})
-                    )
+                    select(User).where(User.id.in_({row.admin_user_id for row in open_rows}))
                 )
             ).all()
         }
@@ -897,9 +1003,7 @@ class PlatformOnboardingService:
             card.id: card
             for card in (
                 await session.scalars(
-                    select(Card).where(
-                        Card.id.in_({row.initial_card_id for row in open_rows})
-                    )
+                    select(Card).where(Card.id.in_({row.initial_card_id for row in open_rows}))
                 )
             ).all()
         }
@@ -973,20 +1077,16 @@ class PlatformOnboardingService:
             tenant_name=row.tenant_name,
             admin_account=review.admin_account if review else None,
             admin_display_name=review.admin_display_name if review else None,
-            initial_card_display_name=(
-                review.initial_card_display_name if review else None
-            ),
+            initial_card_display_name=(review.initial_card_display_name if review else None),
             initial_card_title=review.initial_card_title if review else None,
             version=row.version,
             import_batch_ids=list(row.import_batch_ids),
-              suggestions=[
-                PlatformOnboardingSuggestion.model_validate(value)
-                  for value in row.suggestions
-              ],
-              business_profile=[
-                  PlatformOnboardingSuggestion.model_validate(value)
-                  for value in row.business_profile
-              ],
+            suggestions=[
+                PlatformOnboardingSuggestion.model_validate(value) for value in row.suggestions
+            ],
+            business_profile=[
+                PlatformOnboardingSuggestion.model_validate(value) for value in row.business_profile
+            ],
             expires_at=row.expires_at,
             confirmed_enterprise=confirmed,
             created_at=row.created_at,

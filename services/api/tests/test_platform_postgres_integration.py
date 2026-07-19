@@ -436,6 +436,20 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             "ON credential.id=onboarding.credential_id "
             "WHERE onboarding.id=:onboarding_id"
         )
+        ai_configuration_state = text(
+            "SELECT prompt.name AS prompt_name, prompt.status::text AS prompt_status, "
+            "model.provider, model.model_name, model.enabled "
+            "FROM platform_onboarding_sessions AS onboarding "
+            "JOIN prompt_versions AS prompt "
+            "ON prompt.tenant_id=onboarding.tenant_id "
+            "AND prompt.company_id=onboarding.company_id "
+            "AND prompt.purpose='rag_answer' "
+            "JOIN model_configs AS model "
+            "ON model.tenant_id=onboarding.tenant_id "
+            "AND model.company_id=onboarding.company_id "
+            "AND model.purpose='chat' "
+            "WHERE onboarding.id=:onboarding_id"
+        )
         async with owner.connect() as connection:
             provisional_row = (
                 await connection.execute(
@@ -446,6 +460,12 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_row = (
                 await connection.execute(
                     resource_state,
+                    {"onboarding_id": confirm_started.id},
+                )
+            ).one()
+            confirmed_ai = (
+                await connection.execute(
+                    ai_configuration_state,
                     {"onboarding_id": confirm_started.id},
                 )
             ).one()
@@ -482,6 +502,19 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_row.card_status,
             confirmed_row.is_enabled,
         ) == ("active", "active", "active", "active", "draft", True)
+        assert (
+            confirmed_ai.prompt_name,
+            confirmed_ai.prompt_status,
+            confirmed_ai.provider,
+            confirmed_ai.model_name,
+            confirmed_ai.enabled,
+        ) == (
+            "company-chat-hybrid-v1.4.1",
+            "published",
+            settings.llm_provider,
+            settings.llm_model,
+            True,
+        )
     finally:
         await runtime.dispose()
         await owner.dispose()

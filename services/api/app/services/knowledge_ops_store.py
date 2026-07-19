@@ -154,13 +154,14 @@ class KnowledgeOpsStore:
                         ).where(KnowledgeChunk.version_id == version.id)
                     )
                 ).one()
+                visibility = await self._version_visibility(session, version.id)
                 records.append(
                     KnowledgeVersionRecord(
                         id=version.id,
                         document_id=version.document_id,
                         version_number=version.version_number,
                         review_status=version.review_status.value,
-                        visibility=version.visibility.value,
+                        visibility=visibility,
                         chunk_count=int(total or 0),
                         indexed_chunk_count=int(indexed or 0),
                         content_hash=version.content_hash,
@@ -414,12 +415,15 @@ class KnowledgeOpsStore:
             .order_by(KnowledgeVersion.version_number.desc())
             .limit(1)
         )
+        visibility = (
+            await self._version_visibility(session, version.id) if version is not None else None
+        )
         return FaqRecord(
             id=document.id,
             source_id=document.source_id,
             question=document.title,
             answer=version.raw_text if version else None,
-            visibility=version.visibility.value if version else None,
+            visibility=visibility,
             status=document.status.value,
             version=document.version,
             current_version_id=document.current_version_id,
@@ -431,6 +435,18 @@ class KnowledgeOpsStore:
             created_at=document.created_at,
             updated_at=document.updated_at,
         )
+
+    @staticmethod
+    async def _version_visibility(session: AsyncSession, version_id: uuid.UUID) -> str:
+        visibility = await session.scalar(
+            select(KnowledgeChunk.visibility)
+            .where(KnowledgeChunk.version_id == version_id)
+            .order_by(KnowledgeChunk.ordinal)
+            .limit(1)
+        )
+        # A draft version normally has at least one chunk. Keeping the public
+        # default here matches the database column default for legacy/empty rows.
+        return visibility.value if visibility is not None else "public"
 
     @staticmethod
     def _job_record(
