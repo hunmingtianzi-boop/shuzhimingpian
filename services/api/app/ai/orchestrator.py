@@ -43,6 +43,24 @@ from .schemas import (
     TraceMetadata,
 )
 
+_COOPERATION_INTENT_PATTERN = re.compile(
+    r"^(?:请问)?(?:我(?:们)?|本人|本公司|我们公司|企业)?"
+    r"(?:想|希望|要|有意|考虑|寻求|准备|可以|能|能否|怎么|如何)?"
+    r"(?:和|跟|与)?(?:你们|贵司|贵公司|拓浙(?:AI集团)?|公司)?"
+    r"(?:进行|开展|谈|聊|对接|发起)?(?:一下)?(?:商务)?合作"
+    r"(?:咨询|方式|流程|入口|机会)?(?:吗|么|可以吗|怎么弄|怎么联系)?$",
+    re.IGNORECASE,
+)
+
+
+def _canonical_faq_lookup_text(value: str) -> tuple[str, str | None]:
+    """Map short action intents to one curated FAQ without changing the question."""
+
+    compact = re.sub(r"\s+", "", value).rstrip("?？!！。.")
+    if _COOPERATION_INTENT_PATTERN.fullmatch(compact):
+        return "我想合作", "cooperation"
+    return value, None
+
 
 @dataclass(frozen=True, slots=True)
 class RAGOrchestratorConfig:
@@ -455,12 +473,15 @@ class RAGOrchestrator:
         similarity_threshold = (
             self.config.faq_similarity_threshold if fuzzy_enabled else 1.0
         )
+        lookup_text, normalized_intent = _canonical_faq_lookup_text(normalized)
+        if normalized_intent is not None:
+            trace.extra["faq_normalized_intent"] = normalized_intent
 
         query = RetrievalQuery(
             tenant_id=request.tenant_id,
             company_id=request.company_id,
             card_id=request.card_id,
-            text=normalized,
+            text=lookup_text,
             top_k=1,
             candidate_limit=max(1, self.config.candidate_limit),
             trigram_threshold=self.config.trigram_threshold,

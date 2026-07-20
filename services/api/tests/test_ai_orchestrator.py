@@ -745,6 +745,60 @@ async def test_exact_faq_fast_path_remains_available_when_fuzzy_matching_is_disa
     assert len(chat.calls) == 1
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["合作", "我希望合作", "我希望和你们开展合作", "可以合作吗？"],
+)
+@pytest.mark.asyncio
+async def test_cooperation_intent_variants_use_the_grounded_faq(question: str) -> None:
+    faq = RetrievedEvidence(
+        evidence_id="faq-cooperation",
+        document_id="faq-doc-cooperation",
+        version_id="faq-version-cooperation",
+        ordinal=0,
+        title="企业可以怎样合作？",
+        text="企业可提交应用场景、联合发布赛题、共建项目实践或开展人才交流。",
+        score=1.0,
+        lexical_score=1.0,
+        metadata={"source_type": "faq", "faq_exact": True},
+    )
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="可以从场景、赛题、项目共建或人才交流四个方向开始对接。",
+            cited_evidence_ids=[faq.evidence_id],
+        )
+    )
+    embedding = FakeEmbeddingProvider()
+    repository = FakeFAQRepository([faq], faq)
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        embedding_provider=embedding,
+        faq_repository=repository,
+        config=RAGOrchestratorConfig(faq_fast_path_enabled=True),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            card_id="card-1",
+            question=question,
+        ),
+        chat_credentials=_credentials(),
+        embedding_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert result.citations[0].evidence_id == faq.evidence_id
+    assert result.trace.extra["faq_normalized_intent"] == "cooperation"
+    assert repository.faq_calls[0][0].text == "我想合作"
+    assert repository.calls == []
+    assert embedding.calls == 0
+    assert len(chat.calls) == 1
+    assert json.loads(chat.calls[0][0][1].content)["question"] == question.replace("？", "?")
+
+
 @pytest.mark.asyncio
 async def test_high_confidence_faq_lets_model_choose_markdown_presentation() -> None:
     answer_markdown = (

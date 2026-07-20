@@ -169,7 +169,7 @@ flowchart TD
 
 export const tuotuTenant = defineTenant({
   id: "tuotu",
-  version: "2026.07-v0.2.3",
+  version: "2026.07-v0.2.4",
   seo: {
     title: "拓浙 AI 集团 | 青年 AI 人才与产业场景共创",
     description:
