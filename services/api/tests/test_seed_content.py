@@ -11,6 +11,7 @@ from app.cli.seed_content import (
     _should_bootstrap_staff,
     deterministic_id,
     load_content_package,
+    seed_owned_version_requires_activation,
     should_activate_seed_version,
 )
 from app.core.config import Settings
@@ -108,4 +109,30 @@ def test_startup_seed_promotes_a_newer_seed_owned_version() -> None:
         uuid.uuid4(),
         uuid.uuid4(),
         current_is_seed=True,
+    )
+
+
+def test_startup_seed_preserves_an_index_derived_from_the_same_seed() -> None:
+    seed_version_id = uuid.uuid4()
+
+    assert not seed_owned_version_requires_activation(
+        {
+            "seed_package": "tuotu",
+            "embedding_index": {"source_version_id": str(seed_version_id)},
+        },
+        slug="tuotu",
+        seed_version_id=seed_version_id,
+    )
+    assert seed_owned_version_requires_activation(
+        {
+            "seed_package": "tuotu",
+            "embedding_index": {"source_version_id": str(uuid.uuid4())},
+        },
+        slug="tuotu",
+        seed_version_id=seed_version_id,
+    )
+    assert not seed_owned_version_requires_activation(
+        {"published_by": "administrator"},
+        slug="tuotu",
+        seed_version_id=seed_version_id,
     )

@@ -5,7 +5,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Mapping
 
 import httpx
 from sqlalchemy import func, select, text, update
@@ -30,7 +30,7 @@ from app.db.models import (
 from app.db.session import set_rls_context
 
 _INDEX_NAMESPACE = uuid.UUID("be0ba3d5-1388-48cd-a779-fb67e47bb97f")
-_RUNTIME_REVISION = "fastembed-0.8.0-mean"
+_RUNTIME_REVISION = "fastembed-0.8.0-mean-metadata-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +83,26 @@ def _has_target_embedding(chunk: KnowledgeChunk, *, model: str, dimensions: int)
         and chunk.embedding_model == model
         and len(chunk.embedding) == dimensions
     )
+
+
+def embedding_passage(
+    *,
+    title: str,
+    content: str,
+    metadata: Mapping[str, Any],
+) -> str:
+    """Include curated aliases and tags in semantic retrieval, not model evidence."""
+
+    hints: list[str] = []
+    for key in ("aliases", "tags"):
+        values = metadata.get(key)
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if isinstance(value, str) and value.strip() and value.strip() not in hints:
+                hints.append(value.strip())
+    hint_text = f"\n检索提示：{'；'.join(hints)}" if hints else ""
+    return f"passage: {title}{hint_text}\n{content.strip()}"
 
 
 async def _discover_scopes(settings: Settings) -> list[Scope]:
@@ -330,7 +350,14 @@ async def _embed_target(
     for offset in range(0, len(missing), 16):
         batch_chunks = missing[offset : offset + 16]
         batch = await provider.embed(
-            [f"passage: {chunk.title}\n{chunk.text}" for chunk in batch_chunks],
+            [
+                embedding_passage(
+                    title=chunk.title,
+                    content=chunk.text,
+                    metadata=chunk.metadata_json,
+                )
+                for chunk in batch_chunks
+            ],
             credentials=credentials,
             trace_id=str(uuid.uuid4()),
         )

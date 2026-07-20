@@ -182,6 +182,23 @@ def should_activate_seed_version(
     )
 
 
+def seed_owned_version_requires_activation(
+    metadata: Any,
+    *,
+    slug: str,
+    seed_version_id: uuid.UUID,
+) -> bool:
+    """Replace old seed content but preserve an index derived from this seed."""
+
+    if not isinstance(metadata, dict) or metadata.get("seed_package") != slug:
+        return False
+    embedding_index = metadata.get("embedding_index")
+    return not (
+        isinstance(embedding_index, dict)
+        and embedding_index.get("source_version_id") == str(seed_version_id)
+    )
+
+
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -574,9 +591,10 @@ async def seed_package(
                 )
                 .limit(1)
             )
-        current_is_seed = (
-            isinstance(current_chunk_metadata, dict)
-            and current_chunk_metadata.get("seed_package") == slug
+        current_is_seed = seed_owned_version_requires_activation(
+            current_chunk_metadata,
+            slug=slug,
+            seed_version_id=version_id,
         )
         if should_activate_seed_version(
             current_version_id,

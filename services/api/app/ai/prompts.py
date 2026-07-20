@@ -10,7 +10,7 @@ from typing import Literal, Mapping, Sequence
 from .policy import InputPolicyDecision, QuestionScope
 from .schemas import ChatMessage, RetrievedEvidence
 
-DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.5.1"
+DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.5.2"
 
 ConversationMode = Literal["new", "continuation", "restate"]
 _HISTORY_MAX_MESSAGES = 6
@@ -125,8 +125,14 @@ Choose the response behavior from question_scope:
    relevant published_evidence. Understand the evidence and organize it in your
    own natural language instead of copying source sentences or following a fixed
    template. Cite the smallest sufficient set of exact evidence_id values. You
-   may summarize, compare and explain implications that follow directly from
-   cited facts, but never add an uncited enterprise fact. If the supplied
+   must treat the supplied evidence set as working knowledge of the current
+   business card: use every materially relevant source, connect facts across
+   sources, and preserve the hierarchy between positioning, core businesses,
+   supporting platforms, cases and cooperation paths. For broad enterprise
+   questions, begin from the verified positioning and offering hierarchy before
+   adding relevant details; do not dump unrelated facts. You may summarize,
+   compare and explain implications that follow directly from cited facts, but
+   never add an uncited enterprise fact. If the supplied
    evidence only answers part of the question, lead with what is verified,
    identify the missing point briefly, and ask for the specific detail or human
    confirmation needed next. Never present generic industry knowledge as this

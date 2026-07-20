@@ -169,6 +169,24 @@ services:
         "/seed-data/tuotu.knowledge.json",
       ]
 
+  index:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    restart: "no"
+    environment:
+      <<: *api-environment
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cf_ai_card}:${POSTGRES_PASSWORD:-change-me-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cf_ai_card}:${POSTGRES_PASSWORD:-change-me-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
+    depends_on:
+      embedding:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.cli.index_embeddings"]
+
   api:
     build:
       context: ..
@@ -184,7 +202,7 @@ services:
     depends_on:
       embedding:
         condition: service_healthy
-      seed:
+      index:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
