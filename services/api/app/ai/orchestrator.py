@@ -51,6 +51,13 @@ _COOPERATION_INTENT_PATTERN = re.compile(
     r"(?:咨询|方式|流程|入口|机会)?(?:吗|么|可以吗|怎么弄|怎么联系)?$",
     re.IGNORECASE,
 )
+_CORE_BUSINESS_INTENT_PATTERN = re.compile(
+    r"^(?:请问|请|介绍|说说|问)?(?:一下)?"
+    r"(?:你们|贵司|贵公司|拓浙(?:AI集团)?|公司|企业)?(?:的)?"
+    r"(?:三大|三项|核心|主要)?(?:业务|业务板块)"
+    r"(?:是什么|有哪些|包括什么|分别是什么|介绍)?$",
+    re.IGNORECASE,
+)
 
 
 def _canonical_faq_lookup_text(value: str) -> tuple[str, str | None]:
@@ -58,7 +65,9 @@ def _canonical_faq_lookup_text(value: str) -> tuple[str, str | None]:
 
     compact = re.sub(r"\s+", "", value).rstrip("?？!！。.")
     if _COOPERATION_INTENT_PATTERN.fullmatch(compact):
-        return "我想合作", "cooperation"
+        return "企业可以怎样与拓浙 AI 集团合作？", "cooperation"
+    if _CORE_BUSINESS_INTENT_PATTERN.fullmatch(compact):
+        return "拓浙 AI 集团有哪些业务板块？", "core_businesses"
     return value, None
 
 

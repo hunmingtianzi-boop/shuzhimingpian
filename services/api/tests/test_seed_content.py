@@ -52,11 +52,14 @@ def test_tuotu_common_intents_have_exact_faq_aliases() -> None:
     )
     documents = {document.external_id: document for document in package.documents}
 
-    assert package.knowledge_sequence == 8
+    assert package.knowledge_sequence == 9
     cooperation_aliases = documents["faq-cooperation"].metadata["aliases"]
     assert "合作" in cooperation_aliases
     assert "我想合作" in cooperation_aliases
     assert "我希望合作" in cooperation_aliases
+    business_aliases = documents["faq-businesses"].metadata["aliases"]
+    assert "三大业务" in business_aliases
+    assert "核心业务" in business_aliases
     assert "我想加入" in documents["faq-beginner"].metadata["aliases"]
     assert "怎么联系？" in documents["faq-contact"].metadata["aliases"]
 

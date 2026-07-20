@@ -792,11 +792,70 @@ async def test_cooperation_intent_variants_use_the_grounded_faq(question: str) -
     assert result.refusal is None
     assert result.citations[0].evidence_id == faq.evidence_id
     assert result.trace.extra["faq_normalized_intent"] == "cooperation"
-    assert repository.faq_calls[0][0].text == "我想合作"
+    assert repository.faq_calls[0][0].text == "企业可以怎样与拓浙 AI 集团合作？"
     assert repository.calls == []
     assert embedding.calls == 0
     assert len(chat.calls) == 1
     assert json.loads(chat.calls[0][0][1].content)["question"] == question.replace("？", "?")
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["三大业务", "问三大业务", "你们的三大业务是什么？", "核心业务有哪些？"],
+)
+@pytest.mark.asyncio
+async def test_core_business_variants_use_the_enterprise_card_faq(question: str) -> None:
+    faq = RetrievedEvidence(
+        evidence_id="faq-core-businesses",
+        document_id="faq-doc-core-businesses",
+        version_id="faq-version-core-businesses",
+        ordinal=0,
+        title="拓浙 AI 集团有哪些业务板块？",
+        text=(
+            "拓浙 AI 集团有三大核心业务：AI 人才与项目孵化、AI 创新赛事、"
+            "AI 场景服务。"
+        ),
+        score=1.0,
+        lexical_score=1.0,
+        metadata={"source_type": "faq", "faq_exact": True},
+    )
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer=(
+                "三大业务分别是 **AI 人才与项目孵化**、**AI 创新赛事**和"
+                "**AI 场景服务**。"
+            ),
+            cited_evidence_ids=[faq.evidence_id],
+        )
+    )
+    embedding = FakeEmbeddingProvider()
+    repository = FakeFAQRepository([faq], faq)
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        embedding_provider=embedding,
+        faq_repository=repository,
+        config=RAGOrchestratorConfig(faq_fast_path_enabled=True),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            card_id="card-1",
+            question=question,
+        ),
+        chat_credentials=_credentials(),
+        embedding_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert result.citations[0].evidence_id == faq.evidence_id
+    assert result.trace.extra["faq_normalized_intent"] == "core_businesses"
+    assert repository.faq_calls[0][0].text == "拓浙 AI 集团有哪些业务板块？"
+    assert repository.calls == []
+    assert embedding.calls == 0
+    assert len(chat.calls) == 1
 
 
 @pytest.mark.asyncio
