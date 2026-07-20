@@ -1,4 +1,4 @@
-FROM python:3.13.14-slim-trixie AS runtime
+FROM python:3.14.6-slim-trixie AS runtime
 
 ARG PIP_VERSION=26.1.2
 ARG PIP_INDEX_URL=https://pypi.org/simple
