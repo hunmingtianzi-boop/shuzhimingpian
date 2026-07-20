@@ -5,6 +5,7 @@ import {
   getAssistantSessionStorageKey,
   ensurePublicVisitorSession,
   parseAssistantEventStream,
+  prewarmAssistantSession,
   streamAssistantMessage,
   type AssistantStreamEvent,
 } from "./assistantApi";
@@ -256,6 +257,56 @@ describe("assistant API", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(
       "https://api.example.test/api/v1/public/conversations/conversation-1/messages:stream",
     );
+  });
+
+  it("prewarms the complete assistant session from card context without refetching it", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            visit_id: "visit-warm",
+            visitor_session_token: "visitor-token-warm",
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: { recorded: true } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            id: "conversation-warm",
+            status: "active",
+            created_at: "2026-07-20T00:00:00Z",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await prewarmAssistantSession({
+      cardSlug: "tenant-warm",
+      companyId: "company-warm",
+      policyVersions: {
+        privacy: "privacy-v3",
+        chatNotice: "chat-v5",
+        leadConsent: "lead-v2",
+        profilePersonalization: "profile-v1",
+      },
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.example.test/api/v1/public/cards/tenant-warm/visits",
+      "https://api.example.test/api/v1/public/cards/tenant-warm/consents",
+      "https://api.example.test/api/v1/public/cards/tenant-warm/conversations",
+    ]);
+    expect(
+      JSON.parse(
+        sessionStorage.getItem(getAssistantSessionStorageKey("tenant-warm")) ?? "{}",
+      ),
+    ).toMatchObject({
+      token: "visitor-token-warm",
+      conversationId: "conversation-warm",
+    });
   });
 
   it("links a new visit only with the matching company token and persists rotation", async () => {

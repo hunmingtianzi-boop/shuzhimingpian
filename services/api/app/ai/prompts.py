@@ -13,6 +13,9 @@ from .schemas import ChatMessage, RetrievedEvidence
 DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.4.1"
 
 ConversationMode = Literal["new", "continuation", "restate"]
+_HISTORY_MAX_MESSAGES = 6
+_HISTORY_MAX_TOTAL_CHARS = 2_400
+_HISTORY_MAX_MESSAGE_CHARS = 600
 
 _EXPLICIT_RESTATEMENT_PATTERN = re.compile(
     r"(?:重新|从头|完整|详细|展开|重述|复述|再(?:说|讲|介绍|回答)|总结).{0,8}(?:一下|一遍|一次|说|讲|介绍|回答)?"
@@ -69,11 +72,7 @@ class PromptTemplate:
         ]
         user_payload = {
             "question": question,
-            "conversation_history": [
-                {"role": item.role, "content": item.content[:800]}
-                for item in history[-12:]
-                if item.role in {"user", "assistant"}
-            ],
+            "conversation_history": _compact_history(history),
             "policy_flags": [flag.value for flag in policy.flags],
             "question_scope": question_scope.value,
             "conversation_mode": conversation_mode(question, history),
@@ -87,6 +86,28 @@ class PromptTemplate:
                 content=json.dumps(user_payload, ensure_ascii=False, separators=(",", ":")),
             ),
         )
+
+
+def _compact_history(history: Sequence[ChatMessage]) -> list[dict[str, str]]:
+    """Keep the most recent useful turns inside a deterministic character budget."""
+
+    selected: list[dict[str, str]] = []
+    remaining = _HISTORY_MAX_TOTAL_CHARS
+    candidates = [
+        item
+        for item in history
+        if item.role in {"user", "assistant"} and item.content.strip()
+    ][-_HISTORY_MAX_MESSAGES:]
+    for item in reversed(candidates):
+        if remaining <= 0:
+            break
+        content = item.content.strip()[: min(_HISTORY_MAX_MESSAGE_CHARS, remaining)]
+        if not content:
+            continue
+        selected.append({"role": item.role, "content": content})
+        remaining -= len(content)
+    selected.reverse()
+    return selected
 
 
 _SYSTEM_PROMPT = """

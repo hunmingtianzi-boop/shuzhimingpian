@@ -598,6 +598,15 @@ export const BusinessCardExperience = forwardRef<
     ),
     [basePresentation, card, publishedCatalog, publishedRecommendations],
   );
+  const assistantPolicyVersions = useMemo(
+    () => card ? {
+      privacy: card.policy_versions.privacy,
+      chatNotice: card.policy_versions.chat_notice,
+      leadConsent: card.policy_versions.lead_consent,
+      profilePersonalization: card.policy_versions.profile_personalization,
+    } : undefined,
+    [card],
+  );
   const relatedSections = useMemo<AssistantRelatedSection[]>(() => {
     const companyName = card?.company.name || tenant.brand.name;
     const metrics = tenant.hero.metrics.slice(0, 3);
@@ -811,6 +820,8 @@ export const BusinessCardExperience = forwardRef<
             disclosure={card?.ai_assistant.disclosure}
             suggestedQuestions={card?.ai_assistant.suggested_questions}
             liveAvailable={assistantEnabled}
+            policyVersions={assistantPolicyVersions}
+            companyId={card?.company.id}
             pendingQuestion={pendingQuestion}
             isActive={view === "assistant"}
             onLead={onLead}

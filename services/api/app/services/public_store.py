@@ -819,7 +819,7 @@ class PublicStore:
         *,
         prepared: PreparedMessage,
         principal: VisitorPrincipal,
-        limit: int = 12,
+        limit: int = 8,
     ) -> tuple[ChatMessage, ...]:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal)
@@ -846,11 +846,11 @@ class PublicStore:
                         ).desc(),
                         Message.id.desc(),
                     )
-                    .limit(max(0, min(limit, 12)))
+                    .limit(max(0, min(limit, 8)))
                 )
             ).scalars().all()
         return tuple(
-            ChatMessage(role=item.role.value, content=item.content[:800])
+            ChatMessage(role=item.role.value, content=item.content[:600])
             for item in reversed(rows)
         )
 

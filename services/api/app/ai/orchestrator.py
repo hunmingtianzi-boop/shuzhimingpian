@@ -24,6 +24,7 @@ from .protocols import (
     FAQAnswerCache,
     FAQMatchRepository,
     RetrievalRepository,
+    TextDeltaCallback,
 )
 from .schemas import (
     AIAnswer,
@@ -164,6 +165,7 @@ class RAGOrchestrator:
         *,
         chat_credentials: ProviderCredentials,
         embedding_credentials: ProviderCredentials | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> AIAnswer:
         started_at = time.perf_counter()
         trace_id = str(uuid.uuid4())
@@ -225,8 +227,11 @@ class RAGOrchestrator:
         if question_scope is QuestionScope.AMBIGUOUS:
             return _scope_clarification(trace)
 
+        skip_retrieval = question_scope is QuestionScope.GENERAL
         fast_faq = None
-        if not include_history_for_retrieval:
+        if skip_retrieval:
+            trace.extra["fast_faq_skipped"] = "general_question"
+        elif not include_history_for_retrieval:
             fast_faq = await self._try_fast_faq(
                 request=request,
                 policy=policy,
@@ -240,7 +245,11 @@ class RAGOrchestrator:
             return fast_faq
 
         embedding: tuple[float, ...] | None = None
-        if self._embedding_provider is not None and embedding_credentials is not None:
+        if (
+            not skip_retrieval
+            and self._embedding_provider is not None
+            and embedding_credentials is not None
+        ):
             embedding_started = time.perf_counter()
             try:
                 batch = await self._embedding_provider.embed(
@@ -275,40 +284,39 @@ class RAGOrchestrator:
                 trace.extra["embedding_fallback_code"] = "invalid_embedding_batch"
             else:
                 trace.extra["embedding_ms"] = _elapsed_ms(embedding_started)
-        elif self._embedding_provider is not None:
+        elif not skip_retrieval and self._embedding_provider is not None:
             trace.extra["embedding_skipped"] = "credentials_not_supplied"
+        elif skip_retrieval:
+            trace.extra["embedding_skipped"] = "general_question"
 
-        trace.retrieval_mode = "hybrid" if embedding is not None else "lexical"
-        top_k = request.top_k if request.top_k is not None else self.config.top_k
-        retrieval_started = time.perf_counter()
-        try:
-            evidence = tuple(
-                await self._retrieval_repository.search(
-                    RetrievalQuery(
-                        tenant_id=request.tenant_id,
-                        company_id=request.company_id,
-                        text=retrieval_text,
-                        embedding=embedding,
-                        top_k=top_k,
-                        candidate_limit=max(top_k, self.config.candidate_limit),
-                        trigram_threshold=self.config.trigram_threshold,
-                        rrf_k=self.config.rrf_k,
-                        vector_weight=self.config.vector_weight,
-                        lexical_weight=self.config.lexical_weight,
-                        card_id=request.card_id,
+        if skip_retrieval:
+            evidence = ()
+            trace.retrieval_mode = "skipped"
+            trace.extra["retrieval_skipped"] = "general_question"
+        else:
+            trace.retrieval_mode = "hybrid" if embedding is not None else "lexical"
+            top_k = request.top_k if request.top_k is not None else self.config.top_k
+            retrieval_started = time.perf_counter()
+            try:
+                evidence = tuple(
+                    await self._retrieval_repository.search(
+                        RetrievalQuery(
+                            tenant_id=request.tenant_id,
+                            company_id=request.company_id,
+                            text=retrieval_text,
+                            embedding=embedding,
+                            top_k=top_k,
+                            candidate_limit=max(top_k, self.config.candidate_limit),
+                            trigram_threshold=self.config.trigram_threshold,
+                            rrf_k=self.config.rrf_k,
+                            vector_weight=self.config.vector_weight,
+                            lexical_weight=self.config.lexical_weight,
+                            card_id=request.card_id,
+                        )
                     )
                 )
-            )
-        except AIServiceError as exc:
-            trace.retrieval_ms = _elapsed_ms(retrieval_started)
-            if self._evidence_gate.allows_general_answer(
-                policy,
-                question_scope=question_scope,
-            ):
-                evidence = ()
-                trace.extra["retrieval_fallback_category"] = exc.category.value
-                trace.extra["retrieval_fallback_code"] = exc.code
-            else:
+            except AIServiceError as exc:
+                trace.retrieval_ms = _elapsed_ms(retrieval_started)
                 trace.error_category = exc.category.value
                 return _refused(
                     Refusal(
@@ -319,7 +327,7 @@ class RAGOrchestrator:
                     ),
                     trace,
                 )
-        trace.retrieval_ms = _elapsed_ms(retrieval_started)
+            trace.retrieval_ms = _elapsed_ms(retrieval_started)
         trace.retrieval_count = len(evidence)
         trace.extra["retrieved_evidence_ids"] = tuple(item.evidence_id for item in evidence)
         trace.extra["retrieved_version_ids"] = tuple(
@@ -359,6 +367,7 @@ class RAGOrchestrator:
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
                 trace_id=trace_id,
+                on_text_delta=on_text_delta,
             )
         except AIProviderError as exc:
             trace.model_ms = _elapsed_ms(model_started)
@@ -369,21 +378,33 @@ class RAGOrchestrator:
         _add_completion_trace(trace, completion)
 
         display_answer, answer_presentation = _model_answer_for_display(completion.output)
-        display_answer, removed_lines = _deduplicate_continuation_answer(
-            display_answer,
-            request.history,
-            mode=conversation_mode(normalized, request.history),
-        )
-        if removed_lines:
-            answer_presentation = "deduplicated_continuation"
-            trace.extra["answer_deduplicated"] = True
-            trace.extra["deduplicated_line_count"] = removed_lines
-        display_answer, bridge_action = _ensure_enterprise_bridge(
+        if on_text_delta is None:
+            display_answer, removed_lines = _deduplicate_continuation_answer(
+                display_answer,
+                request.history,
+                mode=conversation_mode(normalized, request.history),
+            )
+            if removed_lines:
+                answer_presentation = "deduplicated_continuation"
+                trace.extra["answer_deduplicated"] = True
+                trace.extra["deduplicated_line_count"] = removed_lines
+        else:
+            trace.extra["answer_streamed"] = True
+
+        bridged_answer, bridge_action = _ensure_enterprise_bridge(
             display_answer,
             question=normalized,
             history=request.history,
             question_scope=question_scope,
         )
+        if on_text_delta is None or bridge_action != "normalized":
+            if (
+                on_text_delta is not None
+                and bridge_action == "appended"
+                and bridged_answer.startswith(display_answer)
+            ):
+                await on_text_delta(bridged_answer[len(display_answer) :])
+            display_answer = bridged_answer
         if bridge_action is not None:
             trace.extra["enterprise_bridge"] = bridge_action
         policy_output = completion.output.model_copy(update={"answer": display_answer})
@@ -424,11 +445,15 @@ class RAGOrchestrator:
         question_scope: QuestionScope,
     ) -> AIAnswer | None:
         if (
-            not self.config.faq_fast_path_enabled
-            or self._faq_repository is None
+            self._faq_repository is None
             or len(normalized) > self.config.faq_max_question_chars
         ):
             return None
+
+        fuzzy_enabled = self.config.faq_fast_path_enabled
+        similarity_threshold = (
+            self.config.faq_similarity_threshold if fuzzy_enabled else 1.0
+        )
 
         query = RetrievalQuery(
             tenant_id=request.tenant_id,
@@ -445,14 +470,14 @@ class RAGOrchestrator:
         lookup_started = time.perf_counter()
         evidence: RetrievedEvidence | None = None
         cache_hit = False
-        if self._faq_cache is not None:
+        if fuzzy_enabled and self._faq_cache is not None:
             evidence = await self._faq_cache.get(query)
             cache_hit = evidence is not None
         if evidence is None:
             try:
                 evidence = await self._faq_repository.find_faq_match(
                     query,
-                    similarity_threshold=self.config.faq_similarity_threshold,
+                    similarity_threshold=similarity_threshold,
                 )
             except AIServiceError as exc:
                 # The fast path is an optimization. Fall through to the normal
@@ -460,10 +485,11 @@ class RAGOrchestrator:
                 trace.extra["faq_fast_path_error"] = exc.category.value
                 trace.extra["faq_lookup_ms"] = _elapsed_ms(lookup_started)
                 return None
-            if evidence is not None and self._faq_cache is not None:
+            if evidence is not None and fuzzy_enabled and self._faq_cache is not None:
                 await self._faq_cache.put(query, evidence)
 
         trace.extra["faq_cache_hit"] = cache_hit
+        trace.extra["faq_match_mode"] = "fuzzy" if fuzzy_enabled else "exact_only"
         trace.extra["faq_lookup_ms"] = _elapsed_ms(lookup_started)
         if evidence is None:
             return None

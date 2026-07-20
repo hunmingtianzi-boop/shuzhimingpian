@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 from .schemas import (
     ChatCompletion,
@@ -33,6 +34,21 @@ class AsyncJsonTransport(Protocol):
     ) -> JsonHttpResponse: ...
 
 
+@runtime_checkable
+class AsyncJsonStreamTransport(Protocol):
+    def stream_json(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        timeout_seconds: float,
+    ) -> AsyncIterator[JsonHttpResponse]: ...
+
+
+TextDeltaCallback = Callable[[str], Awaitable[None]]
+
+
 class ChatProvider(Protocol):
     @property
     def provider_name(self) -> str: ...
@@ -48,6 +64,7 @@ class ChatProvider(Protocol):
         temperature: float = 0.1,
         max_tokens: int = 1200,
         trace_id: str | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> ChatCompletion: ...
 
 

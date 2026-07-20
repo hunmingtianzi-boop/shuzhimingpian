@@ -210,13 +210,16 @@ async def stream_message(
     )
     stored = await store.load_stored_answer(prepared=prepared, principal=principal)
     task: asyncio.Task[StoredAnswer] | None = None
+    delta_queue: asyncio.Queue[str | None] | None = None
     if stored is None:
+        delta_queue = asyncio.Queue()
         task = asyncio.create_task(
             _generate_and_persist(
                 request=request,
                 store=store,
                 principal=principal,
                 prepared=prepared,
+                delta_queue=delta_queue,
             ),
             name=f"ai-answer:{prepared.assistant_message_id}",
         )
@@ -228,6 +231,7 @@ async def stream_message(
         request_id=request_id_ctx.get(),
         stored=stored,
         task=task,
+        delta_queue=delta_queue,
         metrics=getattr(request.app.state, "metrics", None),
     )
     return StreamingResponse(
@@ -282,6 +286,7 @@ async def _generate_and_persist(
     store: PublicStore,
     principal: VisitorPrincipal,
     prepared: PreparedMessage,
+    delta_queue: asyncio.Queue[str | None] | None = None,
 ) -> StoredAnswer:
     # This function is deliberately independent from the response stream so it
     # can finish and persist after a client disconnect.
@@ -306,6 +311,8 @@ async def _generate_and_persist(
             principal=principal,
             error_code=f"LLM_{exc.code.upper()}",
         )
+        if delta_queue is not None:
+            delta_queue.put_nowait(None)
         raise ApiError(503, "MODEL_UNAVAILABLE", "AI 服务尚未配置") from exc
 
     settings = runtime.settings
@@ -336,6 +343,10 @@ async def _generate_and_persist(
         orchestrator = getattr(request.app.state, "rag_orchestrator", None)
         if orchestrator is None:
             orchestrator = runtime.orchestrator
+        async def emit_text_delta(text: str) -> None:
+            if delta_queue is not None and text:
+                delta_queue.put_nowait(text)
+
         result = await orchestrator.answer(
             RAGRequest(
                 tenant_id=str(principal.tenant_id),
@@ -347,6 +358,7 @@ async def _generate_and_persist(
             ),
             chat_credentials=ProviderCredentials(api_key.get_secret_value()),
             embedding_credentials=embedding_credentials,
+            on_text_delta=emit_text_delta if delta_queue is not None else None,
         )
         stored_answer = await store.persist_ai_answer(
             prepared=prepared,
@@ -416,6 +428,8 @@ async def _generate_and_persist(
     finally:
         if acquired:
             semaphore.release()
+        if delta_queue is not None:
+            delta_queue.put_nowait(None)
 
 
 async def _answer_events(
@@ -424,6 +438,7 @@ async def _answer_events(
     request_id: str,
     stored: StoredAnswer | None,
     task: asyncio.Task[StoredAnswer] | None,
+    delta_queue: asyncio.Queue[str | None] | None = None,
     metrics: MetricsRegistry | None = None,
 ) -> AsyncIterator[bytes]:
     stream_started = time.perf_counter()
@@ -433,12 +448,33 @@ async def _answer_events(
         MessageStarted(message_id=message_id, request_id=request_id).model_dump(mode="json"),
     )
     answer = stored
+    streamed_parts: list[str] = []
     if answer is None and task is not None:
         try:
-            while not task.done():
-                done, _ = await asyncio.wait({task}, timeout=10)
-                if not done:
-                    yield b": keep-alive\n\n"
+            if delta_queue is not None:
+                while True:
+                    try:
+                        delta = await asyncio.wait_for(delta_queue.get(), timeout=10)
+                    except TimeoutError:
+                        yield b": keep-alive\n\n"
+                        continue
+                    if delta is None:
+                        break
+                    streamed_parts.append(delta)
+                    if len(streamed_parts) == 1 and metrics is not None:
+                        metrics.observe_first_token(
+                            source=answer_source,
+                            duration_seconds=time.perf_counter() - stream_started,
+                        )
+                    yield encode_sse(
+                        "message.delta",
+                        MessageDelta(text=delta).model_dump(mode="json"),
+                    )
+            else:
+                while not task.done():
+                    done, _ = await asyncio.wait({task}, timeout=10)
+                    if not done:
+                        yield b": keep-alive\n\n"
             answer = await asyncio.shield(task)
         except ApiError as exc:
             yield encode_sse(
@@ -471,8 +507,22 @@ async def _answer_events(
         )
         return
 
-    first_content = True
-    for chunk in _text_chunks(answer.text):
+    streamed_text = "".join(streamed_parts)
+    if not streamed_text:
+        remaining_text = answer.text
+    elif answer.text.startswith(streamed_text):
+        remaining_text = answer.text[len(streamed_text) :]
+    else:
+        remaining_text = ""
+        logger.warning(
+            "streamed_ai_answer_mismatch",
+            message_id=str(answer.message_id),
+            streamed_chars=len(streamed_text),
+            stored_chars=len(answer.text),
+        )
+
+    first_content = not streamed_parts
+    for chunk in _text_chunks(remaining_text) if remaining_text else ():
         if first_content and metrics is not None:
             metrics.observe_first_token(
                 source=answer_source,

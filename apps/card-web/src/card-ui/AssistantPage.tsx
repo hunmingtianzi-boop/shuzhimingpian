@@ -34,8 +34,10 @@ import {
   getActiveAssistantConversationId,
   getAssistantSessionStorageKey,
   isAssistantApiConfigured,
+  prewarmAssistantSession,
   streamAssistantMessage,
   type AssistantCitation,
+  type PublicPolicyVersions,
 } from "../lib/assistantApi";
 import { findKnowledge } from "../lib/knowledge";
 
@@ -246,6 +248,8 @@ export function AssistantPage({
   disclosure,
   suggestedQuestions,
   liveAvailable,
+  policyVersions,
+  companyId,
   pendingQuestion,
   isActive,
   onLead,
@@ -262,6 +266,8 @@ export function AssistantPage({
   disclosure?: string;
   suggestedQuestions?: string[];
   liveAvailable: boolean;
+  policyVersions?: PublicPolicyVersions;
+  companyId?: string;
   pendingQuestion?: PendingAssistantQuestion;
   isActive: boolean;
   onLead: () => void;
@@ -314,6 +320,20 @@ export function AssistantPage({
     messagesRef.current = messages;
     writeMessageHistory(cardSlug, messages, apiEnabled);
   }, [apiEnabled, cardSlug, messages]);
+
+  useEffect(() => {
+    if (!apiEnabled || !isActive) return;
+    void prewarmAssistantSession({ cardSlug, policyVersions, companyId }).catch(() => undefined);
+  }, [
+    apiEnabled,
+    cardSlug,
+    companyId,
+    isActive,
+    policyVersions?.chatNotice,
+    policyVersions?.leadConsent,
+    policyVersions?.privacy,
+    policyVersions?.profilePersonalization,
+  ]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -415,6 +435,8 @@ export function AssistantPage({
       void streamAssistantMessage({
         cardSlug,
         content: question,
+        policyVersions,
+        companyId,
         signal: controller.signal,
         idempotencyKey,
         onEvent: (event) => {
@@ -500,10 +522,12 @@ export function AssistantPage({
     [
       apiEnabled,
       cardSlug,
+      companyId,
       config.fallback,
       config.knowledgeBase,
       initialMessage,
       onLead,
+      policyVersions,
       reducedMotion,
       relatedSections,
     ],

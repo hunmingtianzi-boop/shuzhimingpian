@@ -23,6 +23,7 @@ from app.ai import (
     TokenUsage,
 )
 from app.ai.policy import EvidenceGate, EvidenceGateConfig
+from app.ai.protocols import TextDeltaCallback
 from app.ai.schemas import RetrievalQuery
 
 
@@ -47,10 +48,13 @@ class FakeChatProvider:
         temperature: float = 0.1,
         max_tokens: int = 1200,
         trace_id: str | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> ChatCompletion:
         self.calls.append((messages, credentials))
         if self.error:
             raise self.error
+        if on_text_delta is not None:
+            await on_text_delta(self.output.answer)
         return ChatCompletion(
             output=self.output,
             provider=self.provider_name,
@@ -339,7 +343,7 @@ async def test_general_mode_answers_low_risk_question_without_evidence() -> None
 
 
 @pytest.mark.asyncio
-async def test_general_chat_continues_when_knowledge_retrieval_is_unavailable() -> None:
+async def test_general_chat_skips_knowledge_retrieval() -> None:
     chat = FakeChatProvider(StructuredModelAnswer(answer="可以，先从明确目标开始。"))
     orchestrator = RAGOrchestrator(
         chat,
@@ -365,7 +369,8 @@ async def test_general_chat_continues_when_knowledge_retrieval_is_unavailable() 
     )
     assert result.trace.extra["enterprise_bridge"] == "appended"
     assert result.citations == ()
-    assert result.trace.extra["retrieval_fallback_code"] == "retrieval_failed"
+    assert result.trace.retrieval_mode == "skipped"
+    assert result.trace.extra["retrieval_skipped"] == "general_question"
     assert len(chat.calls) == 1
 
 
@@ -541,9 +546,9 @@ async def test_greeting_is_answered_by_the_model_in_general_chat_mode() -> None:
         "先轻松一下也好；想继续时，我也可以陪你了解这家企业的业务、产品或合作方式。"
     )
     assert result.trace.extra["enterprise_bridge"] == "appended"
-    assert result.trace.retrieval_mode == "hybrid"
-    assert embedding.calls == 1
-    assert len(repository.calls) == 1
+    assert result.trace.retrieval_mode == "skipped"
+    assert embedding.calls == 0
+    assert repository.calls == []
     assert len(chat.calls) == 1
     assert '"general_answer_allowed":true' in chat.calls[0][0][1].content
 
@@ -665,6 +670,54 @@ async def test_high_confidence_faq_returns_before_embedding_and_model_and_popula
     assert repository.calls == []
     assert repository.faq_calls[0][1] == pytest.approx(0.92)
     assert cache.put_calls[0][1] == faq
+    assert embedding.calls == 0
+    assert chat.calls == []
+
+
+@pytest.mark.asyncio
+async def test_exact_faq_fast_path_remains_available_when_fuzzy_matching_is_disabled() -> None:
+    faq = RetrievedEvidence(
+        evidence_id="faq-exact-1",
+        document_id="faq-doc-exact",
+        version_id="faq-version-exact",
+        ordinal=0,
+        title="企业有哪些业务？",
+        text="企业公开业务包括人才孵化、创新赛事和 AI 场景服务。",
+        score=1.0,
+        lexical_score=1.0,
+        content_hash="sha256:faq-exact",
+        metadata={"source_type": "faq", "faq_exact": True},
+    )
+    chat = FakeChatProvider(StructuredModelAnswer(answer="unused"))
+    embedding = FakeEmbeddingProvider()
+    repository = FakeFAQRepository([faq], faq)
+    cache = FakeFAQCache()
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        embedding_provider=embedding,
+        faq_repository=repository,
+        faq_cache=cache,
+        config=RAGOrchestratorConfig(faq_fast_path_enabled=False),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            card_id="card-1",
+            question="企业有哪些业务？",
+        ),
+        chat_credentials=_credentials(),
+        embedding_credentials=_credentials(),
+    )
+
+    assert result.answer == faq.text
+    assert result.trace.extra["faq_match_mode"] == "exact_only"
+    assert repository.faq_calls[0][1] == pytest.approx(1.0)
+    assert cache.get_calls == []
+    assert cache.put_calls == []
+    assert repository.calls == []
     assert embedding.calls == 0
     assert chat.calls == []
 
@@ -1068,7 +1121,7 @@ async def test_contextual_product_follow_up_uses_recent_turn_for_retrieval_and_e
 
 
 @pytest.mark.asyncio
-async def test_prompt_keeps_only_the_latest_twelve_history_messages() -> None:
+async def test_prompt_compacts_history_to_the_latest_six_messages() -> None:
     repository = FakeRepository([_evidence("企业提供公开的 AI 场景服务。")])
     chat = FakeChatProvider(
         StructuredModelAnswer(
@@ -1098,7 +1151,7 @@ async def test_prompt_keeps_only_the_latest_twelve_history_messages() -> None:
     assert result.refusal is None
     prompt_payload = json.loads(chat.calls[0][0][1].content)
     assert prompt_payload["conversation_history"] == [
-        {"role": item.role, "content": item.content} for item in history[-12:]
+        {"role": item.role, "content": item.content} for item in history[-6:]
     ]
 
 

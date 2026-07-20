@@ -43,6 +43,8 @@ type JsonRecord = Record<string, unknown>;
 type StreamAssistantMessageOptions = {
   cardSlug: string;
   content: string;
+  policyVersions?: PublicPolicyVersions;
+  companyId?: string;
   signal?: AbortSignal;
   idempotencyKey?: string;
   onEvent: (event: AssistantStreamEvent) => void;
@@ -50,6 +52,7 @@ type StreamAssistantMessageOptions = {
 
 const SESSION_PREFIX = "cf-card-assistant-session:";
 const EXPIRY_SAFETY_WINDOW_MS = 30_000;
+const assistantSessionPromises = new Map<string, Promise<VisitorSession>>();
 
 export class AssistantApiError extends Error {
   readonly code: string;
@@ -199,6 +202,7 @@ function writeSession(cardSlug: string, session: VisitorSession) {
 }
 
 export function clearAssistantSession(cardSlug: string) {
+  assistantSessionPromises.delete(cardSlug.trim());
   try {
     getSessionStorage()?.removeItem(getAssistantSessionStorageKey(cardSlug));
   } catch {
@@ -414,46 +418,86 @@ async function ensureAssistantSession(
   baseUrl: string,
   cardSlug: string,
   signal?: AbortSignal,
+  knownContext?: {
+    policyVersions: PublicPolicyVersions;
+    companyId?: string;
+  },
 ) {
   const saved = readSession(cardSlug);
   if (saved?.conversationId) return saved;
 
-  let session = saved;
-  if (!session) {
-    const context = await getPublicCardContext(baseUrl, cardSlug, signal);
-    const versions = context.policyVersions;
-    const visit = await createVisit(
+  const pending = assistantSessionPromises.get(cardSlug);
+  if (pending) return pending;
+
+  const creation = (async () => {
+    const resumed = readSession(cardSlug);
+    if (resumed?.conversationId) return resumed;
+
+    let session = resumed;
+    if (!session) {
+      const context = knownContext ?? await getPublicCardContext(baseUrl, cardSlug, signal);
+      const versions = context.policyVersions;
+      const visit = await createVisit(
+        baseUrl,
+        cardSlug,
+        versions.privacy,
+        context.companyId,
+        signal,
+      );
+      session = {
+        ...visit,
+        privacyVersion: versions.privacy,
+        chatNoticeVersion: versions.chatNotice,
+      };
+      writeSession(cardSlug, session);
+    }
+
+    await recordChatConsent(
       baseUrl,
       cardSlug,
-      versions.privacy,
-      context.companyId,
+      session.token,
+      session.chatNoticeVersion,
       signal,
     );
-    session = {
-      ...visit,
-      privacyVersion: versions.privacy,
-      chatNoticeVersion: versions.chatNotice,
-    };
-    writeSession(cardSlug, session);
+    const conversationId = await createConversation(
+      baseUrl,
+      cardSlug,
+      session.token,
+      session.chatNoticeVersion,
+      signal,
+    );
+    const completedSession = { ...session, conversationId };
+    writeSession(cardSlug, completedSession);
+    return completedSession;
+  })();
+  assistantSessionPromises.set(cardSlug, creation);
+  try {
+    return await creation;
+  } finally {
+    if (assistantSessionPromises.get(cardSlug) === creation) {
+      assistantSessionPromises.delete(cardSlug);
+    }
   }
+}
 
-  await recordChatConsent(
+export async function prewarmAssistantSession({
+  cardSlug,
+  policyVersions,
+  companyId,
+}: {
+  cardSlug: string;
+  policyVersions?: PublicPolicyVersions;
+  companyId?: string;
+}) {
+  const baseUrl = getPublicApiBaseUrl();
+  const normalizedSlug = cardSlug.trim();
+  if (!baseUrl || !normalizedSlug) return;
+  await ensureAssistantSession(
     baseUrl,
-    cardSlug,
-    session.token,
-    session.chatNoticeVersion,
-    signal,
+    normalizedSlug,
+    undefined,
+    policyVersions ? { policyVersions, companyId } : undefined,
   );
-  const conversationId = await createConversation(
-    baseUrl,
-    cardSlug,
-    session.token,
-    session.chatNoticeVersion,
-    signal,
-  );
-  const completedSession = { ...session, conversationId };
-  writeSession(cardSlug, completedSession);
-  return completedSession;
 }
 
 export async function ensurePublicVisitorSession({
@@ -664,6 +708,8 @@ export async function parseAssistantEventStream(
 export async function streamAssistantMessage({
   cardSlug,
   content,
+  policyVersions,
+  companyId,
   signal,
   idempotencyKey,
   onEvent,
@@ -687,7 +733,12 @@ export async function streamAssistantMessage({
   }
 
   try {
-    const session = await ensureAssistantSession(baseUrl, normalizedSlug, signal);
+    const session = await ensureAssistantSession(
+      baseUrl,
+      normalizedSlug,
+      signal,
+      policyVersions ? { policyVersions, companyId } : undefined,
+    );
     const response = await request(
       `${baseUrl}/public/conversations/${encodeURIComponent(
         session.conversationId!,

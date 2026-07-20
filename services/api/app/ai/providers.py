@@ -10,6 +10,8 @@ import asyncio
 import json
 import math
 import random
+import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
 from urllib.parse import urlparse
@@ -18,7 +20,12 @@ import httpx
 from pydantic import ValidationError
 
 from .errors import AIErrorCategory, AIProviderError
-from .protocols import AsyncJsonTransport, JsonHttpResponse
+from .protocols import (
+    AsyncJsonStreamTransport,
+    AsyncJsonTransport,
+    JsonHttpResponse,
+    TextDeltaCallback,
+)
 from .schemas import (
     ChatCompletion,
     ChatMessage,
@@ -197,6 +204,103 @@ class HttpxJsonTransport:
             headers=dict(response.headers),
         )
 
+    async def stream_json(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        timeout_seconds: float,
+    ) -> AsyncIterator[JsonHttpResponse]:
+        """Yield decoded data-only SSE objects without buffering the response body."""
+
+        timeout = httpx.Timeout(
+            timeout_seconds,
+            connect=min(5.0, timeout_seconds),
+            pool=min(5.0, timeout_seconds),
+        )
+        if self._client is not None:
+            async for item in self._stream_with_client(
+                self._client,
+                url=url,
+                headers=headers,
+                payload=payload,
+                request_timeout=timeout,
+            ):
+                yield item
+            return
+
+        async with httpx.AsyncClient() as client:
+            async for item in self._stream_with_client(
+                client,
+                url=url,
+                headers=headers,
+                payload=payload,
+                request_timeout=timeout,
+            ):
+                yield item
+
+    @staticmethod
+    async def _stream_with_client(
+        client: httpx.AsyncClient,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        request_timeout: httpx.Timeout,
+    ) -> AsyncIterator[JsonHttpResponse]:
+        async with client.stream(
+            "POST",
+            url,
+            headers=dict(headers),
+            json=dict(payload),
+            timeout=request_timeout,
+        ) as response:
+            response_headers = dict(response.headers)
+            if not 200 <= response.status_code < 300:
+                raw = await response.aread()
+                try:
+                    decoded = json.loads(raw)
+                except (TypeError, ValueError):
+                    decoded = {"_invalid_json": True}
+                if not isinstance(decoded, Mapping):
+                    decoded = {"_non_object_json": True}
+                yield JsonHttpResponse(response.status_code, decoded, response_headers)
+                return
+
+            data_lines: list[str] = []
+
+            def decode_event() -> JsonHttpResponse | None:
+                if not data_lines:
+                    return None
+                raw_data = "\n".join(data_lines).strip()
+                data_lines.clear()
+                if not raw_data or raw_data == "[DONE]":
+                    return None
+                try:
+                    decoded = json.loads(raw_data)
+                except ValueError:
+                    decoded = {"_invalid_stream_json": True}
+                if not isinstance(decoded, Mapping):
+                    decoded = {"_non_object_stream_json": True}
+                return JsonHttpResponse(response.status_code, decoded, response_headers)
+
+            async for line in response.aiter_lines():
+                if not line:
+                    event = decode_event()
+                    if event is not None:
+                        yield event
+                    continue
+                if line.startswith(":"):
+                    continue
+                if line.startswith("data:"):
+                    value = line[5:]
+                    data_lines.append(value[1:] if value.startswith(" ") else value)
+
+            event = decode_event()
+            if event is not None:
+                yield event
+
 
 class OpenAICompatibleChatProvider:
     """Strict structured chat client for DeepSeek or any OpenAI-compatible API."""
@@ -226,6 +330,7 @@ class OpenAICompatibleChatProvider:
         temperature: float = 0.1,
         max_tokens: int = 1200,
         trace_id: str | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> ChatCompletion:
         if not messages:
             raise ValueError("messages must not be empty")
@@ -242,8 +347,10 @@ class OpenAICompatibleChatProvider:
             "model": self.config.model,
             "messages": messages_to_payload(wire_messages),
             "max_tokens": max_tokens,
-            "stream": False,
+            "stream": on_text_delta is not None,
         }
+        if on_text_delta is not None:
+            payload["stream_options"] = {"include_usage": True}
         if self.config.thinking_mode != "enabled":
             payload["temperature"] = temperature
         if self.config.thinking_mode is not None:
@@ -261,6 +368,14 @@ class OpenAICompatibleChatProvider:
                     "schema": StructuredModelAnswer.model_json_schema(),
                 },
             }
+
+        if on_text_delta is not None:
+            return await self._complete_streaming(
+                payload=payload,
+                credentials=credentials,
+                trace_id=trace_id,
+                on_text_delta=on_text_delta,
+            )
 
         response: JsonHttpResponse | None = None
         provider_attempt = 0
@@ -339,6 +454,166 @@ class OpenAICompatibleChatProvider:
             request_id=_request_id(response),
             usage=usage,
         )
+
+    async def _complete_streaming(
+        self,
+        *,
+        payload: Mapping[str, Any],
+        credentials: ProviderCredentials,
+        trace_id: str | None,
+        on_text_delta: TextDeltaCallback,
+    ) -> ChatCompletion:
+        if not isinstance(self._transport, AsyncJsonStreamTransport):
+            raise AIProviderError(
+                "AI provider transport does not support streaming.",
+                category=AIErrorCategory.INVALID_REQUEST,
+                code="provider_streaming_unsupported",
+                retryable=False,
+            )
+
+        attempt = 0
+        while True:
+            decoder = _StreamingAnswerDecoder()
+            raw_parts: list[str] = []
+            usage = TokenUsage()
+            response_model = self.config.model
+            request_id: str | None = None
+            finish_reason: str | None = None
+            last_status = 200
+            try:
+                async for response in self._stream_request(
+                    url=self.config.endpoint,
+                    credentials=credentials,
+                    payload=payload,
+                    timeout_seconds=self.config.timeout_seconds,
+                    trace_id=trace_id,
+                ):
+                    last_status = response.status_code
+                    self._raise_for_status(response)
+                    request_id = request_id or _request_id(response)
+                    response_model = str(response.data.get("model") or response_model)
+                    current_usage = _parse_usage(response.data.get("usage"))
+                    if current_usage.total_tokens:
+                        usage = current_usage
+
+                    choices = response.data.get("choices")
+                    if not isinstance(choices, Sequence) or isinstance(
+                        choices, (str, bytes)
+                    ):
+                        continue
+                    if not choices:
+                        continue
+                    first = choices[0]
+                    if not isinstance(first, Mapping):
+                        continue
+                    current_finish_reason = first.get("finish_reason")
+                    if current_finish_reason is not None:
+                        finish_reason = str(current_finish_reason)
+                        _raise_for_finish_reason(response)
+                    delta = first.get("delta")
+                    if not isinstance(delta, Mapping):
+                        continue
+                    content = delta.get("content")
+                    if content is None:
+                        continue
+                    if not isinstance(content, str):
+                        raise TypeError("stream content must be text")
+                    raw_parts.append(content)
+                    answer_delta = decoder.feed(content)
+                    if answer_delta:
+                        await on_text_delta(answer_delta)
+            except AIProviderError as exc:
+                if (
+                    exc.retryable
+                    and decoder.emitted_chars == 0
+                    and attempt < self.config.max_retries
+                ):
+                    delay = self.config.retry_base_delay_seconds * (2**attempt)
+                    delay *= 0.75 + random.random() * 0.5  # noqa: S311 - jitter only
+                    attempt += 1
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+            except (KeyError, TypeError, ValueError, ValidationError) as exc:
+                raise AIProviderError(
+                    "Provider returned an invalid streaming chat response.",
+                    category=AIErrorCategory.INVALID_RESPONSE,
+                    code="invalid_streaming_chat_response",
+                    retryable=False,
+                    status_code=last_status,
+                    request_id=request_id,
+                ) from exc
+
+            if finish_reason != "stop":
+                raise AIProviderError(
+                    "AI provider ended the stream before completion.",
+                    category=AIErrorCategory.UPSTREAM_UNAVAILABLE,
+                    code="provider_stream_incomplete",
+                    retryable=decoder.emitted_chars == 0,
+                    status_code=last_status,
+                    request_id=request_id,
+                )
+
+            try:
+                raw_output = _decode_structured_chat_text("".join(raw_parts))
+                output = _validate_structured_answer(raw_output)
+            except (KeyError, TypeError, ValueError, ValidationError) as exc:
+                raise AIProviderError(
+                    "Provider returned an invalid structured streaming response.",
+                    category=AIErrorCategory.INVALID_RESPONSE,
+                    code="invalid_streaming_chat_response",
+                    retryable=False,
+                    status_code=last_status,
+                    request_id=request_id,
+                ) from exc
+
+            return ChatCompletion(
+                output=output,
+                provider=self.config.provider_name,
+                model=response_model,
+                request_id=request_id,
+                usage=usage,
+            )
+
+    async def _stream_request(
+        self,
+        *,
+        url: str,
+        credentials: ProviderCredentials,
+        payload: Mapping[str, Any],
+        timeout_seconds: float,
+        trace_id: str | None,
+    ) -> AsyncIterator[JsonHttpResponse]:
+        assert isinstance(self._transport, AsyncJsonStreamTransport)
+        headers = {
+            "Authorization": credentials.authorization_value(),
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if trace_id:
+            headers["X-Client-Trace-Id"] = trace_id
+        try:
+            async for response in self._transport.stream_json(
+                url=url,
+                headers=headers,
+                payload=payload,
+                timeout_seconds=timeout_seconds,
+            ):
+                yield response
+        except (httpx.TimeoutException, TimeoutError) as exc:
+            raise AIProviderError(
+                "AI provider request timed out.",
+                category=AIErrorCategory.TIMEOUT,
+                code="provider_timeout",
+                retryable=True,
+            ) from exc
+        except (httpx.NetworkError, httpx.HTTPError, OSError) as exc:
+            raise AIProviderError(
+                "AI provider is temporarily unavailable.",
+                category=AIErrorCategory.UPSTREAM_UNAVAILABLE,
+                code="provider_network_error",
+                retryable=True,
+            ) from exc
 
     async def _request(
         self,
@@ -504,6 +779,10 @@ def _extract_structured_chat_content(data: Mapping[str, Any]) -> Mapping[str, An
         return content
     if not isinstance(content, str):
         raise TypeError("message content must be text or an object")
+    return _decode_structured_chat_text(content)
+
+
+def _decode_structured_chat_text(content: str) -> Mapping[str, Any]:
     cleaned = content.strip()
     if cleaned.startswith("```") and cleaned.endswith("```"):
         lines = cleaned.splitlines()
@@ -513,6 +792,88 @@ def _extract_structured_chat_content(data: Mapping[str, Any]) -> Mapping[str, An
     if not isinstance(decoded, Mapping):
         raise TypeError("structured response must be an object")
     return decoded
+
+
+_JSON_STRING_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
+_ANSWER_FIELD_PATTERN = re.compile(r'"answer"\s*:\s*"')
+
+
+class _StreamingAnswerDecoder:
+    """Decode the JSON answer string while its escaped value is still arriving."""
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._emitted_chars = 0
+
+    @property
+    def emitted_chars(self) -> int:
+        return self._emitted_chars
+
+    def feed(self, fragment: str) -> str:
+        self._buffer += fragment
+        decoded, _complete = _partial_answer_string(self._buffer)
+        if len(decoded) <= self._emitted_chars:
+            return ""
+        delta = decoded[self._emitted_chars :]
+        self._emitted_chars = len(decoded)
+        return delta
+
+
+def _partial_answer_string(value: str) -> tuple[str, bool]:
+    match = _ANSWER_FIELD_PATTERN.search(value)
+    if match is None:
+        return "", False
+
+    decoded: list[str] = []
+    index = match.end()
+    while index < len(value):
+        character = value[index]
+        if character == '"':
+            return "".join(decoded), True
+        if character != "\\":
+            decoded.append(character)
+            index += 1
+            continue
+
+        if index + 1 >= len(value):
+            break
+        escape = value[index + 1]
+        if escape in _JSON_STRING_ESCAPES:
+            decoded.append(_JSON_STRING_ESCAPES[escape])
+            index += 2
+            continue
+        if escape != "u" or index + 6 > len(value):
+            break
+        hex_value = value[index + 2 : index + 6]
+        if not re.fullmatch(r"[0-9a-fA-F]{4}", hex_value):
+            break
+        codepoint = int(hex_value, 16)
+        if 0xD800 <= codepoint <= 0xDBFF:
+            if index + 12 > len(value) or value[index + 6 : index + 8] != "\\u":
+                break
+            low_hex = value[index + 8 : index + 12]
+            if not re.fullmatch(r"[0-9a-fA-F]{4}", low_hex):
+                break
+            low = int(low_hex, 16)
+            if not 0xDC00 <= low <= 0xDFFF:
+                break
+            decoded.append(chr(0x10000 + ((codepoint - 0xD800) << 10) + low - 0xDC00))
+            index += 12
+            continue
+        if 0xDC00 <= codepoint <= 0xDFFF:
+            break
+        decoded.append(chr(codepoint))
+        index += 6
+    return "".join(decoded), False
 
 
 def _has_empty_message_content(data: Mapping[str, Any]) -> bool:

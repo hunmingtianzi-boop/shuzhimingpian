@@ -129,9 +129,10 @@ def build_rag_orchestrator(
         chat_provider,
         retrieval_repository,
         embedding_provider=embedding_provider,
-        faq_repository=(
-            retrieval_repository if settings.rag_faq_fast_path_enabled else None
-        ),
+        # Exact published-FAQ matches are always safe to serve without a model
+        # round trip. The behavior flag only enables fuzzy matching and Redis
+        # caching on top of that deterministic path.
+        faq_repository=retrieval_repository,
         faq_cache=(
             RedisFAQAnswerCache(
                 redis,

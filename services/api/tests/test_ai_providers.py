@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any, Mapping
 
 import httpx
@@ -77,6 +78,31 @@ class SequentialTransport(FakeTransport):
         return self.responses.pop(0)
 
 
+class FakeStreamingTransport(FakeTransport):
+    def __init__(self, responses: list[JsonHttpResponse]) -> None:
+        super().__init__()
+        self.responses = responses
+
+    async def stream_json(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, Any],
+        timeout_seconds: float,
+    ) -> AsyncIterator[JsonHttpResponse]:
+        self.calls.append(
+            {
+                "url": url,
+                "headers": dict(headers),
+                "payload": dict(payload),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        for response in self.responses:
+            yield response
+
+
 def _credentials() -> ProviderCredentials:
     return ProviderCredentials(api_key="-".join(["unit", "test", "credential"]))
 
@@ -105,6 +131,115 @@ async def test_http_transport_keeps_short_connect_and_pool_timeouts() -> None:
         "write": 17.0,
         "pool": 5.0,
     }
+
+
+@pytest.mark.asyncio
+async def test_http_transport_decodes_data_only_sse_events() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream", "x-request-id": "stream-1"},
+            content=(
+                b'data: {"choices":[{"delta":{"content":"one"}}]}\n\n'
+                b': keep-alive\n\n'
+                b'data: {"choices":[{"delta":{"content":"two"}}]}\n\n'
+                b'data: [DONE]\n\n'
+            ),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        transport = HttpxJsonTransport(client)
+        events = [
+            event
+            async for event in transport.stream_json(
+                url="https://provider.example.test/v1/chat/completions",
+                headers={},
+                payload={"stream": True},
+                timeout_seconds=17.0,
+            )
+        ]
+
+    assert [event.data["choices"][0]["delta"]["content"] for event in events] == [
+        "one",
+        "two",
+    ]
+    assert events[0].headers["x-request-id"] == "stream-1"
+
+
+@pytest.mark.asyncio
+async def test_chat_provider_streams_decoded_answer_before_validating_full_json() -> None:
+    answer = "第一行\n**重点** 😀"
+    content = json.dumps(
+        {
+            "answer": answer,
+            "answer_emphasis": [],
+            "presentation": None,
+            "cited_evidence_ids": ["chunk-1"],
+            "refusal_reason": None,
+            "needs_human_review": False,
+        },
+        ensure_ascii=True,
+    )
+    fragments = [content[index : index + 3] for index in range(0, len(content), 3)]
+    responses = [
+        JsonHttpResponse(
+            200,
+            {
+                "id": "completion-stream-1",
+                "model": "deepseek-v4-flash",
+                "choices": [
+                    {"delta": {"content": fragment}, "finish_reason": None}
+                ],
+            },
+            {"x-request-id": "request-stream-1"},
+        )
+        for fragment in fragments
+    ]
+    responses.extend(
+        [
+            JsonHttpResponse(
+                200,
+                {
+                    "choices": [{"delta": {}, "finish_reason": "stop"}],
+                },
+            ),
+            JsonHttpResponse(
+                200,
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 8,
+                        "total_tokens": 18,
+                    },
+                },
+            ),
+        ]
+    )
+    transport = FakeStreamingTransport(responses)
+    provider = OpenAICompatibleChatProvider(ChatProviderConfig(), transport=transport)
+    deltas: list[str] = []
+
+    async def record_delta(delta: str) -> None:
+        deltas.append(delta)
+
+    result = await provider.complete(
+        [ChatMessage(role="user", content="请回答")],
+        credentials=_credentials(),
+        trace_id="trace-stream-1",
+        on_text_delta=record_delta,
+    )
+
+    assert "".join(deltas) == answer
+    assert len(deltas) > 1
+    assert result.output.answer == answer
+    assert result.output.cited_evidence_ids == ["chunk-1"]
+    assert result.request_id == "request-stream-1"
+    assert result.usage.total_tokens == 18
+    call = transport.calls[0]
+    assert call["payload"]["stream"] is True
+    assert call["payload"]["stream_options"] == {"include_usage": True}
+    assert call["headers"]["Accept"] == "text/event-stream"
 
 
 @pytest.mark.asyncio
