@@ -12,7 +12,6 @@ from typing import Any, Literal, Sequence
 from .errors import AIErrorCategory, AIProviderError, AIServiceError
 from .policy import (
     EvidenceGate,
-    InputPolicyDecision,
     InputSecurityPolicy,
     QuestionScope,
     classify_question_scope,
@@ -228,25 +227,22 @@ class RAGOrchestrator:
             return _scope_clarification(trace)
 
         skip_retrieval = question_scope is QuestionScope.GENERAL
-        fast_faq = None
+        faq_evidence = None
         if skip_retrieval:
             trace.extra["fast_faq_skipped"] = "general_question"
         elif not include_history_for_retrieval:
-            fast_faq = await self._try_fast_faq(
+            faq_evidence = await self._find_fast_faq_evidence(
                 request=request,
-                policy=policy,
                 normalized=normalized,
                 trace=trace,
-                question_scope=question_scope,
             )
         else:
             trace.extra["fast_faq_skipped"] = "contextual_follow_up"
-        if fast_faq is not None:
-            return fast_faq
 
         embedding: tuple[float, ...] | None = None
         if (
             not skip_retrieval
+            and faq_evidence is None
             and self._embedding_provider is not None
             and embedding_credentials is not None
         ):
@@ -284,6 +280,8 @@ class RAGOrchestrator:
                 trace.extra["embedding_fallback_code"] = "invalid_embedding_batch"
             else:
                 trace.extra["embedding_ms"] = _elapsed_ms(embedding_started)
+        elif faq_evidence is not None:
+            trace.extra["embedding_skipped"] = "faq_evidence_match"
         elif not skip_retrieval and self._embedding_provider is not None:
             trace.extra["embedding_skipped"] = "credentials_not_supplied"
         elif skip_retrieval:
@@ -293,6 +291,11 @@ class RAGOrchestrator:
             evidence = ()
             trace.retrieval_mode = "skipped"
             trace.extra["retrieval_skipped"] = "general_question"
+        elif faq_evidence is not None:
+            evidence = (faq_evidence,)
+            trace.retrieval_mode = "lexical"
+            trace.retrieval_ms = int(trace.extra.get("faq_lookup_ms", 0))
+            trace.extra["interaction_kind"] = "faq_evidence_path"
         else:
             trace.retrieval_mode = "hybrid" if embedding is not None else "lexical"
             top_k = request.top_k if request.top_k is not None else self.config.top_k
@@ -435,15 +438,13 @@ class RAGOrchestrator:
             trace=trace.finish(citations),
         )
 
-    async def _try_fast_faq(
+    async def _find_fast_faq_evidence(
         self,
         *,
         request: RAGRequest,
-        policy: InputPolicyDecision,
         normalized: str,
         trace: _TraceState,
-        question_scope: QuestionScope,
-    ) -> AIAnswer | None:
+    ) -> RetrievedEvidence | None:
         if (
             self._faq_repository is None
             or len(normalized) > self.config.faq_max_question_chars
@@ -493,59 +494,7 @@ class RAGOrchestrator:
         trace.extra["faq_lookup_ms"] = _elapsed_ms(lookup_started)
         if evidence is None:
             return None
-
-        pre_gate = self._evidence_gate.before_generation(
-            policy,
-            (evidence,),
-            question_scope=question_scope,
-        )
-        if not pre_gate.allowed:
-            trace.extra["faq_fast_path_rejected"] = (
-                pre_gate.refusal.code.value if pre_gate.refusal else "policy"
-            )
-            return None
-        display_answer, answer_presentation = _faq_answer_for_display(evidence)
-        post_gate = self._evidence_gate.after_generation(
-            policy,
-            StructuredModelAnswer(
-                answer=display_answer,
-                cited_evidence_ids=[evidence.evidence_id],
-                needs_human_review=pre_gate.needs_human_review,
-            ),
-            pre_gate.evidence,
-            question_scope=question_scope,
-        )
-        if not post_gate.allowed:
-            trace.extra["faq_fast_path_rejected"] = (
-                post_gate.refusal.code.value if post_gate.refusal else "output_policy"
-            )
-            return None
-
-        citations = tuple(
-            _citation_from_evidence(item, self.config.citation_excerpt_chars)
-            for item in post_gate.evidence
-        )
-        trace.retrieval_mode = "lexical"
-        trace.retrieval_ms = _elapsed_ms(lookup_started)
-        trace.retrieval_count = 1
-        trace.extra.update(
-            {
-                "interaction_kind": "faq_fast_path",
-                "answer_presentation": answer_presentation,
-                "needs_human_review": post_gate.needs_human_review,
-                "retrieved_evidence_ids": (evidence.evidence_id,),
-                "retrieved_version_ids": (evidence.version_id,),
-                "cited_content_hashes": tuple(
-                    citation.content_hash for citation in citations if citation.content_hash
-                ),
-            }
-        )
-        return AIAnswer(
-            answer=display_answer,
-            citations=citations,
-            refusal=None,
-            trace=trace.finish(citations),
-        )
+        return evidence
 
 
 _MARKDOWN_BLOCK_PATTERN = re.compile(

@@ -46,6 +46,18 @@ def test_tuotu_package_bootstraps_the_public_business_catalog() -> None:
     }
 
 
+def test_tuotu_common_intents_have_exact_faq_aliases() -> None:
+    package = load_content_package(
+        ROOT / "packages" / "tenant-content" / "tuotu.knowledge.json"
+    )
+    documents = {document.external_id: document for document in package.documents}
+
+    assert package.knowledge_sequence == 7
+    assert "我想合作" in documents["faq-cooperation"].metadata["aliases"]
+    assert "我想加入" in documents["faq-beginner"].metadata["aliases"]
+    assert "怎么联系？" in documents["faq-contact"].metadata["aliases"]
+
+
 def test_content_package_rejects_utf8_text_decoded_as_latin1(tmp_path: Path) -> None:
     source_path = ROOT / "packages" / "tenant-content" / "tuotu.knowledge.json"
     payload = json.loads(source_path.read_text(encoding="utf-8"))
@@ -83,3 +95,11 @@ def test_startup_seed_never_replaces_an_admin_published_version() -> None:
     assert should_activate_seed_version(None, seed_version_id)
     assert should_activate_seed_version(seed_version_id, seed_version_id)
     assert not should_activate_seed_version(uuid.uuid4(), seed_version_id)
+
+
+def test_startup_seed_promotes_a_newer_seed_owned_version() -> None:
+    assert should_activate_seed_version(
+        uuid.uuid4(),
+        uuid.uuid4(),
+        current_is_seed=True,
+    )

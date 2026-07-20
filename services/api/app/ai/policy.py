@@ -320,7 +320,10 @@ class EvidenceGate:
         )[: self.config.max_evidence]
         flags = set(decision.flags)
         if not accepted:
-            if self.allows_general_answer(decision, question_scope=question_scope):
+            if self.allows_evidence_free_answer(
+                decision,
+                question_scope=question_scope,
+            ):
                 return EvidenceGateDecision(
                     evidence=(),
                     refusal=None,
@@ -401,6 +404,31 @@ class EvidenceGate:
             and PolicyFlag.HIGH_RISK not in flags
         )
 
+    def allows_evidence_free_answer(
+        self,
+        decision: InputPolicyDecision,
+        *,
+        question_scope: QuestionScope = QuestionScope.ENTERPRISE,
+    ) -> bool:
+        """Allow open-domain answers without weakening enterprise grounding.
+
+        General questions may be answered from the model's own knowledge. A
+        mixed request may still answer its clearly separated general portion.
+        Pure enterprise requests must have accepted published evidence before
+        the model is called, so a helpful tone can never turn into invented
+        company facts.
+        """
+
+        return (
+            self.config.allow_general_answers_without_evidence
+            and question_scope
+            in {
+                QuestionScope.GENERAL,
+                QuestionScope.MIXED,
+            }
+            and PolicyFlag.HIGH_RISK not in set(decision.flags)
+        )
+
     def _score_allowed(self, item: RetrievedEvidence) -> bool:
         if item.score < self.config.min_score:
             return False
@@ -439,6 +467,36 @@ class EvidenceGate:
         by_id = {item.evidence_id: item for item in evidence}
         requested = tuple(output.cited_evidence_ids)
         if not requested:
+            if (
+                not evidence
+                and PolicyFlag.PRICING in flags
+                and _unsupported_money_claims(output.answer, ())
+            ):
+                return OutputGateDecision(
+                    evidence=(),
+                    refusal=Refusal(
+                        code=RefusalCode.UNVERIFIED_PRICING,
+                        reason="回答包含未核验的金额，已阻止输出。",
+                        safe_alternative="请联系企业工作人员获取正式报价。",
+                    ),
+                    needs_human_review=True,
+                )
+            if not evidence and self.allows_evidence_free_answer(
+                decision,
+                question_scope=question_scope,
+            ):
+                unsupported = _unsupported_money_claims(output.answer, ())
+                if PolicyFlag.PRICING not in flags or not unsupported:
+                    return OutputGateDecision(evidence=(), refusal=None)
+                return OutputGateDecision(
+                    evidence=(),
+                    refusal=Refusal(
+                        code=RefusalCode.UNVERIFIED_PRICING,
+                        reason="回答包含未核验的金额，已阻止输出。",
+                        safe_alternative="可以说明需求范围，我会先帮你整理询价要点。",
+                    ),
+                    needs_human_review=True,
+                )
             if self.allows_general_answer(decision, question_scope=question_scope):
                 return OutputGateDecision(evidence=(), refusal=None)
             return OutputGateDecision(
@@ -451,9 +509,30 @@ class EvidenceGate:
                 needs_human_review=True,
             )
         if any(evidence_id not in by_id for evidence_id in requested):
+            if not evidence and self.allows_evidence_free_answer(
+                decision,
+                question_scope=question_scope,
+            ):
+                unsupported = _unsupported_money_claims(output.answer, ())
+                if PolicyFlag.PRICING in flags and unsupported:
+                    return OutputGateDecision(
+                        evidence=(),
+                        refusal=Refusal(
+                            code=RefusalCode.UNVERIFIED_PRICING,
+                            reason="回答包含未核验的金额，已阻止输出。",
+                            safe_alternative="可以说明需求范围，我会先帮你整理询价要点。",
+                        ),
+                        needs_human_review=True,
+                    )
+                # An invented optional citation must not hide an otherwise
+                # useful evidence-free answer. No unverified id is retained.
+                return OutputGateDecision(
+                    evidence=(),
+                    refusal=None,
+                )
             if self.allows_general_answer(decision, question_scope=question_scope):
-                # For ordinary chat, an invalid optional citation must not hide
-                # an otherwise useful model answer. Keep only verified ids.
+                # Ordinary chat may carry an optional model citation. Keep
+                # only ids that the server actually supplied.
                 return OutputGateDecision(
                     evidence=tuple(
                         by_id[evidence_id]

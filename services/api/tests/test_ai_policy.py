@@ -194,7 +194,7 @@ def test_general_mode_drops_unknown_optional_citation_instead_of_hiding_answer()
     assert decision.evidence == ()
 
 
-def test_general_switch_cannot_bypass_enterprise_evidence_requirement() -> None:
+def test_open_answer_switch_keeps_enterprise_questions_inside_evidence_boundary() -> None:
     policy = InputSecurityPolicy().evaluate("拓浙有什么有意思的架构设计吗？")
     gate = EvidenceGate(EvidenceGateConfig(allow_general_answers_without_evidence=True))
 
@@ -207,17 +207,40 @@ def test_general_switch_cannot_bypass_enterprise_evidence_requirement() -> None:
     assert before.allowed is False
     assert before.refusal is not None
     assert before.refusal.code is RefusalCode.INSUFFICIENT_EVIDENCE
+    assert before.evidence == ()
+    assert before.general_answer_allowed is False
 
 
-def test_general_mode_keeps_pricing_without_evidence_blocked() -> None:
+def test_open_answer_switch_does_not_invent_enterprise_pricing_guidance() -> None:
     policy = InputSecurityPolicy().evaluate("报价是多少？")
     gate = EvidenceGate(EvidenceGateConfig(allow_general_answers_without_evidence=True))
 
-    decision = gate.before_generation(policy, [])
+    before = gate.before_generation(policy, [])
+    after = gate.after_generation(
+        policy,
+        StructuredModelAnswer(answer="请先说明需求范围，我可以帮你整理询价要点。"),
+        [],
+    )
+
+    assert before.allowed is False
+    assert before.refusal is not None
+    assert before.refusal.code is RefusalCode.INSUFFICIENT_EVIDENCE
+    assert after.allowed is False
+
+
+def test_open_answer_switch_still_blocks_an_unverified_price_number() -> None:
+    policy = InputSecurityPolicy().evaluate("报价是多少？")
+    gate = EvidenceGate(EvidenceGateConfig(allow_general_answers_without_evidence=True))
+
+    decision = gate.after_generation(
+        policy,
+        StructuredModelAnswer(answer="价格是 120 元/年。"),
+        [],
+    )
 
     assert decision.allowed is False
     assert decision.refusal is not None
-    assert decision.refusal.code is RefusalCode.INSUFFICIENT_EVIDENCE
+    assert decision.refusal.code is RefusalCode.UNVERIFIED_PRICING
 
 
 def test_output_gate_rejects_unknown_citation() -> None:

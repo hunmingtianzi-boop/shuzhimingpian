@@ -111,7 +111,7 @@ class Settings(BaseSettings):
     retrieval_vector_weight: float = Field(default=0.65, ge=0, le=1)
     retrieval_min_vector_score: float = Field(default=0.55, ge=-1, le=1)
     retrieval_min_lexical_score: float = Field(default=0.08, ge=0, le=1)
-    llm_allow_general_answers: bool = False
+    llm_allow_general_answers: bool = True
     rag_faq_fast_path_enabled: bool = False
     rag_faq_similarity_threshold: float = Field(default=0.92, ge=0, le=1)
     rag_faq_cache_ttl_seconds: int = Field(default=60, ge=5, le=3_600)

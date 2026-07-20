@@ -567,6 +567,7 @@ export const BusinessCardExperience = forwardRef<
   {
     tenant: EnterpriseCardConfig;
     card?: PublicCardData;
+    assistantCard?: PublicCardData;
     assistantEnabled: boolean;
     onLead: () => void;
     onPrivacy: () => void;
@@ -574,7 +575,16 @@ export const BusinessCardExperience = forwardRef<
     onShare: () => void;
   }
 >(function BusinessCardExperience(
-  { tenant, card, assistantEnabled, onLead, onPrivacy, onProfile, onShare },
+  {
+    tenant,
+    card,
+    assistantCard,
+    assistantEnabled,
+    onLead,
+    onPrivacy,
+    onProfile,
+    onShare,
+  },
   ref,
 ) {
   const [view, setView] = useState<CardView>(() => readView(window.location.search));
@@ -598,14 +608,15 @@ export const BusinessCardExperience = forwardRef<
     ),
     [basePresentation, card, publishedCatalog, publishedRecommendations],
   );
+  const assistantContext = assistantCard ?? card;
   const assistantPolicyVersions = useMemo(
-    () => card ? {
-      privacy: card.policy_versions.privacy,
-      chatNotice: card.policy_versions.chat_notice,
-      leadConsent: card.policy_versions.lead_consent,
-      profilePersonalization: card.policy_versions.profile_personalization,
+    () => assistantContext ? {
+      privacy: assistantContext.policy_versions.privacy,
+      chatNotice: assistantContext.policy_versions.chat_notice,
+      leadConsent: assistantContext.policy_versions.lead_consent,
+      profilePersonalization: assistantContext.policy_versions.profile_personalization,
     } : undefined,
-    [card],
+    [assistantContext],
   );
   const relatedSections = useMemo<AssistantRelatedSection[]>(() => {
     const companyName = card?.company.name || tenant.brand.name;
@@ -811,17 +822,17 @@ export const BusinessCardExperience = forwardRef<
         <div className={`tz-view-layer ${view === "assistant" ? "is-active" : ""}`} hidden={view !== "assistant"}>
           <AssistantPage
             config={tenant.assistant}
-            cardSlug={card?.slug ?? tenant.id}
+            cardSlug={assistantContext?.slug ?? card?.slug ?? tenant.id}
             assistantVisual={presentation.assistantVisual}
             recommendations={presentation.assistantRecommendations}
             questionIds={presentation.assistantQuestionIds}
-            welcomeMessage={card?.ai_assistant.welcome_message}
-            displayName={card?.ai_assistant.display_name}
-            disclosure={card?.ai_assistant.disclosure}
-            suggestedQuestions={card?.ai_assistant.suggested_questions}
+            welcomeMessage={assistantContext?.ai_assistant.welcome_message}
+            displayName={assistantContext?.ai_assistant.display_name}
+            disclosure={assistantContext?.ai_assistant.disclosure}
+            suggestedQuestions={assistantContext?.ai_assistant.suggested_questions}
             liveAvailable={assistantEnabled}
             policyVersions={assistantPolicyVersions}
-            companyId={card?.company.id}
+            companyId={assistantContext?.company.id}
             pendingQuestion={pendingQuestion}
             isActive={view === "assistant"}
             onLead={onLead}

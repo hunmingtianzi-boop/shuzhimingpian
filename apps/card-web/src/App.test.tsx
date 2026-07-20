@@ -636,6 +636,35 @@ describe("BusinessCardPrototypeApp", () => {
     expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
   });
 
+  it("uses the published live assistant while previewing mock card visuals", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test/api/v1");
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline in test"));
+    window.history.replaceState(
+      {},
+      "",
+      "/c/tuotu?mock-card=enterprise&view=assistant",
+    );
+
+    render(
+      <App
+        tenant={templateTenant}
+        publishedCard={{
+          ...publishedCard,
+          slug: "tuotu",
+          ai_assistant: {
+            ...publishedCard.ai_assistant,
+            available: true,
+            display_name: "正式企业 AI 助手",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("实时在线")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "正式企业 AI 助手" })).toBeInTheDocument();
+    expect(screen.queryByText("资料模式")).not.toBeInTheDocument();
+  });
+
   it("renders a usable blank enterprise without pretending content is published", () => {
     window.history.replaceState({}, "", "/c/blank-enterprise");
     const onAssistant = vi.fn();

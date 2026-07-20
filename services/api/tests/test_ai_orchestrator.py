@@ -375,8 +375,15 @@ async def test_general_chat_skips_knowledge_retrieval() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enterprise_question_cannot_use_general_mode_without_evidence() -> None:
-    chat = FakeChatProvider(StructuredModelAnswer(answer="企业采用微服务架构。"))
+async def test_enterprise_intent_without_evidence_does_not_call_the_model() -> None:
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer=(
+                "可以。请先说明合作主体、希望合作的方向、现有场景和预期时间，"
+                "我可以帮你整理成一份对接清单。"
+            )
+        )
+    )
     repository = FakeRepository([])
     orchestrator = RAGOrchestrator(
         chat,
@@ -390,13 +397,14 @@ async def test_enterprise_question_cannot_use_general_mode_without_evidence() ->
         RAGRequest(
             tenant_id="tenant-1",
             company_id="company-1",
-            question="拓浙有什么有意思的架构设计吗？",
+            question="我想合作",
         ),
         chat_credentials=_credentials(),
     )
 
     assert result.refusal is not None
     assert result.refusal.code is RefusalCode.INSUFFICIENT_EVIDENCE
+    assert result.citations == ()
     assert result.trace.extra["question_scope"] == "enterprise"
     assert chat.calls == []
 
@@ -432,8 +440,12 @@ async def test_ambiguous_question_returns_clarification_without_model_or_retriev
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_follow_up_inherits_enterprise_context_and_requires_evidence() -> None:
-    chat = FakeChatProvider(StructuredModelAnswer(answer="unused"))
+async def test_ambiguous_follow_up_inherits_enterprise_evidence_boundary() -> None:
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="可以继续从目标用户、交付方式和合作流程三个角度了解。"
+        )
+    )
     orchestrator = RAGOrchestrator(
         chat,
         FakeRepository([]),
@@ -625,7 +637,7 @@ async def test_general_chat_normalizes_model_authored_company_claim_in_bridge() 
 
 
 @pytest.mark.asyncio
-async def test_high_confidence_faq_returns_before_embedding_and_model_and_populates_cache() -> None:
+async def test_high_confidence_faq_skips_embedding_but_is_rewritten_by_model() -> None:
     faq = RetrievedEvidence(
         evidence_id="faq-chunk-1",
         document_id="faq-doc-1",
@@ -638,7 +650,12 @@ async def test_high_confidence_faq_returns_before_embedding_and_model_and_popula
         content_hash="sha256:faq",
         metadata={"source_type": "faq", "faq_exact": True},
     )
-    chat = FakeChatProvider(StructuredModelAnswer(answer="unused", cited_evidence_ids=["x"]))
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="标准版把智能名片与企业知识问答整合在一起。",
+            cited_evidence_ids=[faq.evidence_id],
+        )
+    )
     embedding = FakeEmbeddingProvider()
     repository = FakeFAQRepository([faq], faq)
     cache = FakeFAQCache()
@@ -663,15 +680,16 @@ async def test_high_confidence_faq_returns_before_embedding_and_model_and_popula
     )
 
     assert result.refusal is None
-    assert result.answer == faq.text
+    assert result.answer == "标准版把智能名片与企业知识问答整合在一起。"
     assert result.citations[0].evidence_id == faq.evidence_id
-    assert result.trace.extra["interaction_kind"] == "faq_fast_path"
+    assert result.trace.extra["interaction_kind"] == "faq_evidence_path"
     assert result.trace.retrieval_mode == "lexical"
     assert repository.calls == []
     assert repository.faq_calls[0][1] == pytest.approx(0.92)
     assert cache.put_calls[0][1] == faq
     assert embedding.calls == 0
-    assert chat.calls == []
+    assert len(chat.calls) == 1
+    assert faq.text in chat.calls[0][0][1].content
 
 
 @pytest.mark.asyncio
@@ -688,7 +706,12 @@ async def test_exact_faq_fast_path_remains_available_when_fuzzy_matching_is_disa
         content_hash="sha256:faq-exact",
         metadata={"source_type": "faq", "faq_exact": True},
     )
-    chat = FakeChatProvider(StructuredModelAnswer(answer="unused"))
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="企业公开业务覆盖人才孵化、创新赛事与 AI 场景服务。",
+            cited_evidence_ids=[faq.evidence_id],
+        )
+    )
     embedding = FakeEmbeddingProvider()
     repository = FakeFAQRepository([faq], faq)
     cache = FakeFAQCache()
@@ -712,18 +735,18 @@ async def test_exact_faq_fast_path_remains_available_when_fuzzy_matching_is_disa
         embedding_credentials=_credentials(),
     )
 
-    assert result.answer == faq.text
+    assert result.answer == "企业公开业务覆盖人才孵化、创新赛事与 AI 场景服务。"
     assert result.trace.extra["faq_match_mode"] == "exact_only"
     assert repository.faq_calls[0][1] == pytest.approx(1.0)
     assert cache.get_calls == []
     assert cache.put_calls == []
     assert repository.calls == []
     assert embedding.calls == 0
-    assert chat.calls == []
+    assert len(chat.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_high_confidence_faq_prefers_curated_markdown_presentation() -> None:
+async def test_high_confidence_faq_lets_model_choose_markdown_presentation() -> None:
     answer_markdown = (
         "**结论：** 企业合作主要有三种方式：\n\n"
         "- **提交场景：** 共同评估需求\n"
@@ -746,7 +769,18 @@ async def test_high_confidence_faq_prefers_curated_markdown_presentation() -> No
             "answer_markdown": answer_markdown,
         },
     )
-    chat = FakeChatProvider(StructuredModelAnswer(answer="unused", cited_evidence_ids=["x"]))
+    model_markdown = (
+        "**可以从三类合作切入：**\n\n"
+        "- 提交真实场景\n"
+        "- 联合发布赛题\n"
+        "- 共建验证项目"
+    )
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer=model_markdown,
+            cited_evidence_ids=[faq.evidence_id],
+        )
+    )
     repository = FakeFAQRepository([faq], faq)
     orchestrator = RAGOrchestrator(
         chat,
@@ -766,9 +800,10 @@ async def test_high_confidence_faq_prefers_curated_markdown_presentation() -> No
     )
 
     assert result.refusal is None
-    assert result.answer == answer_markdown
-    assert result.trace.extra["answer_presentation"] == "metadata_markdown"
-    assert chat.calls == []
+    assert result.answer == model_markdown
+    assert result.trace.extra["answer_presentation"] == "model_markdown"
+    assert len(chat.calls) == 1
+    assert faq.text in chat.calls[0][0][1].content
 
 
 @pytest.mark.asyncio

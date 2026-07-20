@@ -35,7 +35,7 @@ export default function App({
   const renderedCard = mockCard ?? publishedCard;
   const isUnconfiguredTemplate = tenant.isBlankTemplate && !renderedCard;
   const assistantEnabled =
-    !mockCard && !isUnconfiguredTemplate && (publishedCard?.ai_assistant.available ?? true);
+    !isUnconfiguredTemplate && (publishedCard?.ai_assistant.available ?? false);
 
   const openAssistant = (question?: string) => {
     cardExperienceRef.current?.openAssistant(question?.trim());
@@ -79,6 +79,7 @@ export default function App({
         ref={cardExperienceRef}
         tenant={tenant}
         card={renderedCard}
+        assistantCard={publishedCard}
         assistantEnabled={assistantEnabled}
         onLead={openLead}
         onPrivacy={() => {

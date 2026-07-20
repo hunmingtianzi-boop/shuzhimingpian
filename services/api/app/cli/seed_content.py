@@ -170,10 +170,16 @@ def deterministic_id(slug: str, kind: str, value: str = "root") -> uuid.UUID:
 def should_activate_seed_version(
     current_version_id: uuid.UUID | None,
     seed_version_id: uuid.UUID,
+    *,
+    current_is_seed: bool = False,
 ) -> bool:
     """Keep startup seeding from rolling back an administrator publication."""
 
-    return current_version_id is None or current_version_id == seed_version_id
+    return (
+        current_version_id is None
+        or current_version_id == seed_version_id
+        or current_is_seed
+    )
 
 
 def _sha256(value: str) -> str:
@@ -428,7 +434,7 @@ async def seed_package(
             version_number=1,
             content=prompt.system_text,
             content_hash=_sha256(prompt.system_text),
-            change_summary="Initial production grounded-answer prompt",
+            change_summary="Grounded enterprise answers with open general chat",
             evaluation_result={"status": "requires_pilot_evaluation"},
             status=PromptStatus.PUBLISHED,
             published_by=owner_id,
@@ -557,7 +563,26 @@ async def seed_package(
             .where(KnowledgeDocument.id == document_id)
             .with_for_update()
         )
-        if should_activate_seed_version(current_version_id, version_id):
+        current_chunk_metadata = None
+        if current_version_id is not None:
+            current_chunk_metadata = await session.scalar(
+                select(KnowledgeChunk.metadata_json)
+                .where(
+                    KnowledgeChunk.document_id == document_id,
+                    KnowledgeChunk.version_id == current_version_id,
+                    KnowledgeChunk.is_active.is_(True),
+                )
+                .limit(1)
+            )
+        current_is_seed = (
+            isinstance(current_chunk_metadata, dict)
+            and current_chunk_metadata.get("seed_package") == slug
+        )
+        if should_activate_seed_version(
+            current_version_id,
+            version_id,
+            current_is_seed=current_is_seed,
+        ):
             await session.execute(
                 update(KnowledgeChunk)
                 .where(

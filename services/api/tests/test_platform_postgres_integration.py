@@ -509,7 +509,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_ai.model_name,
             confirmed_ai.enabled,
         ) == (
-            "company-chat-hybrid-v1.4.1",
+            "company-chat-hybrid-v1.5.0",
             "published",
             settings.llm_provider,
             settings.llm_model,
