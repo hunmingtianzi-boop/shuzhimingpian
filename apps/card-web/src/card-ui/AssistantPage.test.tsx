@@ -4,7 +4,7 @@ import type { AssistantCitation } from "../lib/assistantApi";
 import {
   matchAssistantRelatedSections,
   type AssistantRelatedSection,
-} from "./AssistantPage";
+} from "../lib/assistantRelatedSections";
 
 const sections: AssistantRelatedSection[] = [
   {

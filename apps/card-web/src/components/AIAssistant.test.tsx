@@ -95,6 +95,57 @@ describe("AIAssistant lead handoff", () => {
     );
   });
 
+  it("renders a whitelisted related business action after the answer and opens its target", async () => {
+    streamMock.mockImplementation(async ({ onEvent }: {
+      onEvent: (event: AssistantStreamEvent) => void;
+    }) => {
+      onEvent({ type: "delta", text: "AI 场景服务从需求诊断和原型验证开始。" });
+      onEvent({
+        type: "completed",
+        messageId: "message-1",
+        finishReason: "stop",
+        leadPrompt: false,
+      });
+    });
+    const onOpenRelatedSection = vi.fn();
+    render(
+      <AIAssistant
+        config={templateTenant.assistant}
+        cardSlug="tenant-a"
+        relatedSections={[
+          {
+            id: "product:ai-scenario-service",
+            targetId: "detail:product:ai-scenario-service",
+            title: "AI 场景服务",
+            description: "从需求诊断到原型验证。",
+            keywords: ["AI 场景服务", "需求诊断", "原型验证"],
+          },
+        ]}
+        onOpenRelatedSection={onOpenRelatedSection}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: templateTenant.assistant.launcherAriaLabel }),
+    );
+    fireEvent.change(screen.getByLabelText(templateTenant.assistant.labels.input), {
+      target: { value: "你们有哪些 AI 服务？" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: templateTenant.assistant.labels.send }),
+    );
+
+    const relatedAction = await screen.findByRole("button", {
+      name: "查看相关内容：AI 场景服务",
+    });
+    fireEvent.click(relatedAction);
+
+    await waitFor(() => expect(onOpenRelatedSection).toHaveBeenCalledWith(
+      "detail:product:ai-scenario-service",
+    ));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("blocks two submissions dispatched before React can render the loading state", async () => {
     let finishStream: (() => void) | undefined;
     streamMock.mockImplementation(

@@ -1,13 +1,17 @@
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { AssistantApiError } from "./lib/assistantApi";
 import type { PublicCardData } from "./lib/publicCardApi";
 import * as publicExperienceApi from "./lib/publicExperienceApi";
-import { BusinessCardPrototypeApp } from "./prototype/BusinessCardPrototypeApp";
+import {
+  BusinessCardPrototypeApp,
+  type BusinessCardPrototypeAppHandle,
+} from "./prototype/BusinessCardPrototypeApp";
 import { blankEnterpriseTenant } from "./tenants/blank/tenant";
 import { templateTenant } from "./tenants/template/tenant";
 
@@ -110,6 +114,10 @@ describe("BusinessCardPrototypeApp", () => {
     );
 
     expect(screen.queryByRole("navigation", { name: "名片导航" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "切换到企业名片" })).toHaveAttribute(
+      "href",
+      "/c/tuotu?mock-card=enterprise&from_employee=xusongbo",
+    );
     expect(screen.getByRole("link", { name: /示例企业/ })).toHaveAttribute(
       "href",
       "/c/tuotu?mock-card=enterprise&from_employee=xusongbo",
@@ -145,7 +153,15 @@ describe("BusinessCardPrototypeApp", () => {
     expect(screen.getByText("企业官方名片")).toBeInTheDocument();
     expect(screen.queryByText("可以为你对接的人")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "名片导航" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "切换到员工名片" })).toHaveAttribute(
+      "href",
+      "/c/xusongbo?mock-card=employee",
+    );
+    expect(screen.getByRole("navigation", { name: "企业名片内容导航" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "概览" })).toHaveAttribute("aria-current", "location");
+    fireEvent.click(screen.getByRole("button", { name: "介绍" }));
+    expect(screen.getByRole("button", { name: "介绍" })).toHaveAttribute("aria-current", "location");
     expect(screen.getByRole("button", { name: "提交合作需求" })).toBeInTheDocument();
 
     enterpriseRender.unmount();
@@ -162,6 +178,7 @@ describe("BusinessCardPrototypeApp", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "切换到员工名片" })).not.toBeInTheDocument();
   });
 
   it("renders reusable product, case and FAQ showcase layouts from variable content", async () => {
@@ -530,6 +547,54 @@ describe("BusinessCardPrototypeApp", () => {
     );
   });
 
+  it("registers published catalog entries for AI answers and opens their detail target", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test/api/v1");
+    const product: publicExperienceApi.PublicProduct = {
+      slug: "ai-scenario-service",
+      name: "AI 场景服务",
+      category: "企业服务",
+      summary: "从需求诊断到原型验证。",
+      detail: "围绕真实业务问题推进方案设计与定制开发。",
+      sortOrder: 1,
+      publishedAt: "2026-07-21T00:00:00Z",
+    };
+    vi.spyOn(publicExperienceApi, "fetchPublicCatalog").mockResolvedValue({
+      products: [product],
+      cases: [],
+    });
+    vi.spyOn(publicExperienceApi, "fetchPublicRecommendations").mockResolvedValue([]);
+    const relatedSections = vi.fn();
+    const ref = createRef<BusinessCardPrototypeAppHandle>();
+
+    render(
+      <BusinessCardPrototypeApp
+        ref={ref}
+        tenant={templateTenant}
+        card={publishedCard}
+        onAssistant={vi.fn()}
+        onAssistantRelatedSectionsChange={relatedSections}
+        onLead={vi.fn()}
+        onPrivacy={vi.fn()}
+        onProfile={vi.fn()}
+        onShare={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(relatedSections).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        id: `product:${product.slug}`,
+        targetId: `detail:product:${product.slug}`,
+        title: product.name,
+      }),
+    ]));
+    act(() => ref.current?.openAssistantTarget(`detail:product:${product.slug}`));
+
+    expect(await screen.findByText(product.detail)).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get("detail")).toBe(
+      `product:${product.slug}`,
+    );
+  });
+
   it("copies non-link contact details when the secure Clipboard API is unavailable", async () => {
     window.history.replaceState({}, "", "/c/example?view=me");
     const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -636,14 +701,10 @@ describe("BusinessCardPrototypeApp", () => {
     expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
   });
 
-  it("uses the published live assistant while previewing mock card visuals", async () => {
+  it("opens the published live assistant from the replacement mobile shell", async () => {
     vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test/api/v1");
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline in test"));
-    window.history.replaceState(
-      {},
-      "",
-      "/c/tuotu?mock-card=enterprise&view=assistant",
-    );
+    window.history.replaceState({}, "", "/c/tuotu");
 
     render(
       <App
@@ -660,10 +721,23 @@ describe("BusinessCardPrototypeApp", () => {
       />,
     );
 
-    expect(screen.getByText("实时在线")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "正式企业 AI 助手" })).toBeInTheDocument();
+    await screen.findByRole("button", { name: templateTenant.assistant.launcherAriaLabel });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: new RegExp(templateTenant.assistant.knowledgeBase[0].shortQuestion),
+      }),
+    );
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: templateTenant.assistant.title },
+        { timeout: 15_000 },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("在线")).toBeInTheDocument();
     expect(screen.queryByText("资料模式")).not.toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("renders a usable blank enterprise without pretending content is published", () => {
     window.history.replaceState({}, "", "/c/blank-enterprise");
