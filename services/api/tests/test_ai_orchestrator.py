@@ -784,6 +784,7 @@ async def test_cooperation_intent_variants_use_the_grounded_faq(question: str) -
             company_id="company-1",
             card_id="card-1",
             question=question,
+            company_name="析境科技",
         ),
         chat_credentials=_credentials(),
         embedding_credentials=_credentials(),
@@ -792,11 +793,67 @@ async def test_cooperation_intent_variants_use_the_grounded_faq(question: str) -
     assert result.refusal is None
     assert result.citations[0].evidence_id == faq.evidence_id
     assert result.trace.extra["faq_normalized_intent"] == "cooperation"
-    assert repository.faq_calls[0][0].text == "企业可以怎样与拓浙 AI 集团合作？"
+    assert repository.faq_calls[0][0].text == "企业可以怎样与析境科技合作？"
     assert repository.calls == []
     assert embedding.calls == 0
     assert len(chat.calls) == 1
     assert json.loads(chat.calls[0][0][1].content)["question"] == question.replace("？", "?")
+
+
+@pytest.mark.parametrize(
+    ("question", "company_name"),
+    [
+        ("怎么跟析境科技合作？", "析境科技"),
+        ("析境科技怎么合作？", "析境科技"),
+        ("怎么合作", "析境科技"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_cooperation_retrieval_is_scoped_to_the_current_company(
+    question: str,
+    company_name: str,
+) -> None:
+    evidence = RetrievedEvidence(
+        evidence_id="knowledge-cooperation",
+        document_id="knowledge-doc-cooperation",
+        version_id="knowledge-version-cooperation",
+        ordinal=0,
+        title="析境科技合作方式",
+        text="析境科技欢迎企业提交合作需求，由工作人员进一步对接。",
+        score=0.9,
+        lexical_score=0.9,
+    )
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="可以提交合作需求，由析境科技工作人员进一步对接。",
+            cited_evidence_ids=[evidence.evidence_id],
+        )
+    )
+    repository = FakeFAQRepository([evidence], None)
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        faq_repository=repository,
+        config=RAGOrchestratorConfig(faq_fast_path_enabled=True),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            card_id="card-1",
+            question=question,
+            company_name=company_name,
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    expected_query = "企业可以怎样与析境科技合作？"
+    assert result.refusal is None
+    assert repository.faq_calls[0][0].text == expected_query
+    assert repository.calls[0].text == expected_query
+    assert result.trace.extra["faq_normalized_intent"] == "cooperation"
+    assert result.trace.extra["retrieval_query_normalized"] is True
 
 
 @pytest.mark.parametrize(
@@ -844,6 +901,7 @@ async def test_core_business_variants_use_the_enterprise_card_faq(question: str)
             company_id="company-1",
             card_id="card-1",
             question=question,
+            company_name="拓浙 AI 集团",
         ),
         chat_credentials=_credentials(),
         embedding_credentials=_credentials(),

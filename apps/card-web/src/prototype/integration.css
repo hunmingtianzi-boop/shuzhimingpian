@@ -58,8 +58,7 @@ textarea {
 
 .bp-live-app .bp-phone-frame {
   position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .bp-topbar-spacer {

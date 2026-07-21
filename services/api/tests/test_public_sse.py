@@ -4,7 +4,17 @@ import asyncio
 import uuid
 
 from app.api.routes.public_conversations import _answer_events
-from app.services.public_store import StoredAnswer, StoredCitation
+from app.services.public_store import (
+    StoredAnswer,
+    StoredCitation,
+    _looks_like_opportunity,
+)
+
+
+def test_commercial_intent_is_actionable_even_without_a_grounded_answer() -> None:
+    assert _looks_like_opportunity("怎么跟析境科技合作？") is True
+    assert _looks_like_opportunity("我想了解采购方案") is True
+    assert _looks_like_opportunity("你们有哪些业务？") is False
 
 
 async def test_answer_events_replays_persisted_answer_with_citations() -> None:

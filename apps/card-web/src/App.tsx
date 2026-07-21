@@ -1,20 +1,25 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import "./styles.css";
 
 import {
+  DeferredAIAssistant,
+  type AIAssistantHandle,
+} from "./components/DeferredAIAssistant";
+import {
   DeferredPublicExperience,
   type PublicExperienceHandle,
 } from "./components/DeferredPublicExperience";
-import {
-  BusinessCardExperience,
-  type BusinessCardExperienceHandle,
-} from "./card-ui/BusinessCardExperience";
 import type { EnterpriseCardConfig } from "./domain/card";
+import type { AssistantRelatedSection } from "./lib/assistantRelatedSections";
 import { copyText } from "./lib/clipboard";
 import { createMockPublicCard, resolveMockCardKind } from "./lib/mockPublicCard";
 import type { PublicCardData } from "./lib/publicCardApi";
 import { canonicalShareUrl } from "./lib/publicExperienceApi";
+import {
+  BusinessCardPrototypeApp,
+  type BusinessCardPrototypeAppHandle,
+} from "./prototype/BusinessCardPrototypeApp";
 
 export default function App({
   tenant,
@@ -23,22 +28,36 @@ export default function App({
   tenant: EnterpriseCardConfig;
   publishedCard?: PublicCardData;
 }) {
-  const cardExperienceRef = useRef<BusinessCardExperienceHandle>(null);
+  const assistantRef = useRef<AIAssistantHandle>(null);
+  const prototypeRef = useRef<BusinessCardPrototypeAppHandle>(null);
   const publicExperienceRef = useRef<PublicExperienceHandle>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [assistantRelatedSections, setAssistantRelatedSections] = useState<
+    AssistantRelatedSection[]
+  >([]);
   const mockEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_CARD_MOCK === "true";
   const mockCardKind = mockEnabled
     ? resolveMockCardKind(window.location.search)
     : undefined;
-  const mockCard = mockCardKind ? createMockPublicCard(tenant, mockCardKind) : undefined;
+  const mockCard = useMemo(
+    () => mockCardKind ? createMockPublicCard(tenant, mockCardKind) : undefined,
+    [mockCardKind, tenant],
+  );
   const renderedCard = mockCard ?? publishedCard;
   const isUnconfiguredTemplate = tenant.isBlankTemplate && !renderedCard;
   const assistantEnabled =
-    !isUnconfiguredTemplate && (publishedCard?.ai_assistant.available ?? false);
+    !mockCard &&
+    !isUnconfiguredTemplate &&
+    (publishedCard?.ai_assistant.available ?? true);
 
   const openAssistant = (question?: string) => {
-    cardExperienceRef.current?.openAssistant(question?.trim());
+    if (mockCard) {
+      setShareNotice(`模拟 AI 接待${question?.trim() ? `：${question.trim()}` : "已打开"}`);
+      return;
+    }
+    if (question?.trim()) assistantRef.current?.openWithQuestion(question.trim());
+    else assistantRef.current?.open();
   };
 
   const openLead = () => {
@@ -75,12 +94,12 @@ export default function App({
 
   return (
     <>
-      <BusinessCardExperience
-        ref={cardExperienceRef}
+      <BusinessCardPrototypeApp
+        ref={prototypeRef}
         tenant={tenant}
         card={renderedCard}
-        assistantCard={publishedCard}
-        assistantEnabled={assistantEnabled}
+        onAssistant={openAssistant}
+        onAssistantRelatedSectionsChange={setAssistantRelatedSections}
         onLead={openLead}
         onPrivacy={() => {
           if (mockCard) setShareNotice("模拟隐私与个人信息入口");
@@ -106,6 +125,20 @@ export default function App({
           card={renderedCard}
           controllerOnly
           onAssistant={openAssistant}
+        />
+      )}
+
+      {assistantEnabled && (
+        <DeferredAIAssistant
+          key={tenant.id}
+          ref={assistantRef}
+          config={tenant.assistant}
+          cardSlug={publishedCard?.slug ?? tenant.id}
+          onLeadPrompt={publishedCard ? openLead : undefined}
+          relatedSections={assistantRelatedSections}
+          onOpenRelatedSection={(targetId) => {
+            prototypeRef.current?.openAssistantTarget(targetId);
+          }}
         />
       )}
     </>
