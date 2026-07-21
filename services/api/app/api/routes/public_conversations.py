@@ -330,15 +330,16 @@ async def _generate_and_persist(
             embedding_credentials = ProviderCredentials(
                 settings.embedding_api_key.get_secret_value()
             )
-        # These reads use independent short-lived sessions and neither depends
-        # on the other.  Fetch them together so database round trips do not add
-        # up before retrieval and the upstream model request start.
-        history, forbidden_topics = await asyncio.gather(
+        # These reads use independent short-lived sessions. Fetch them together
+        # so database round trips do not add up before retrieval and the upstream
+        # model request start.
+        history, forbidden_topics, company_name = await asyncio.gather(
             store.load_conversation_history(
                 prepared=prepared,
                 principal=principal,
             ),
             store.load_forbidden_topic_rules(principal=principal),
+            store.load_company_name(principal=principal),
         )
         orchestrator = getattr(request.app.state, "rag_orchestrator", None)
         if orchestrator is None:
@@ -353,6 +354,7 @@ async def _generate_and_persist(
                 company_id=str(principal.company_id),
                 card_id=str(principal.card_id),
                 question=prepared.question,
+                company_name=company_name,
                 history=history,
                 forbidden_topics=forbidden_topics,
             ),
