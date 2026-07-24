@@ -110,8 +110,8 @@ describe("OverviewPage employee analytics", () => {
     expect(screen.getByText(/员工独立访客合计 15/)).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "员工表现" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "运营就绪状态" })).toBeInTheDocument();
-    expect(screen.getByText("名片 AI")).toBeInTheDocument();
-    expect(screen.getByText("未发布名片")).toBeInTheDocument();
+    expect(await screen.findByText("名片 AI")).toBeInTheDocument();
+    expect(await screen.findByText("未发布名片")).toBeInTheDocument();
   });
 
   it("keeps the employee query period in sync and resets pagination", async () => {

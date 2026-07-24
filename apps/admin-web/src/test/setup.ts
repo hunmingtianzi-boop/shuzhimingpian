@@ -1,7 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { disposeTabster, getTabster } from "tabster";
 import { afterEach } from "vitest";
+
+// GitHub's shared runners can take over one second to commit jsdom updates
+// while other CI jobs are active. Keep async assertions bounded, but allow
+// enough time for real resource and Fluent portal state to settle.
+configure({ asyncUtilTimeout: 5_000 });
 
 afterEach(() => {
   cleanup();
