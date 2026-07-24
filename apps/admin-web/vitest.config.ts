@@ -8,9 +8,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     clearMocks: true,
-    // Fluent UI's portal/focus management uses animation frames. Capping file
-    // workers keeps those accessibility transitions inside Testing Library's
-    // normal async window on high-core development machines.
-    maxWorkers: 4,
+    // Fluent UI's modalizer and portal focus state is window-scoped. Running
+    // multiple jsdom files concurrently on a constrained CI runner causes
+    // nondeterministic aria-hidden transitions and starves unrelated async
+    // resource assertions. Keep admin unit tests deterministic and isolated.
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });
