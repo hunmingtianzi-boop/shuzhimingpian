@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -40,6 +41,57 @@ jobs:
           fi
           [[ "${deploy_sha}" =~ ^[0-9a-f]{40}$ ]]
           printf 'DEPLOY_SHA=%s\n' "${deploy_sha}" >>"${GITHUB_ENV}"
+
+      - name: Require successful security validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for attempt in $(seq 1 120); do
+            security_run="$(
+              gh api \
+                --method GET \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/security.yml/runs" \
+                -f event=push \
+                -f head_sha="${DEPLOY_SHA}" \
+                -F per_page=20 \
+                --jq '
+                  if (.workflow_runs | length) == 0 then
+                    "missing\t\t"
+                  else
+                    (
+                      .workflow_runs
+                      | sort_by(.run_number)
+                      | last
+                      | [.id, .status, (.conclusion // "")]
+                      | @tsv
+                    )
+                  end
+                '
+            )"
+            IFS=$'\t' read -r security_run_id security_status security_conclusion \
+              <<<"${security_run}"
+
+            if [[ "${security_status}" == "completed" &&
+                  "${security_conclusion}" == "success" ]]; then
+              echo "Security run ${security_run_id} passed for ${DEPLOY_SHA}."
+              exit 0
+            fi
+
+            if [[ "${security_status}" == "completed" ]]; then
+              echo "::error::Security run ${security_run_id} concluded ${security_conclusion}."
+              exit 1
+            fi
+
+            if [[ "${attempt}" -eq 120 ]]; then
+              echo "::error::Timed out waiting for Security validation of ${DEPLOY_SHA}."
+              exit 1
+            fi
+
+            echo "Waiting for Security validation of ${DEPLOY_SHA} (${security_status:-missing})."
+            sleep 15
+          done
 
       - name: Check out the exact commit that passed CI
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
