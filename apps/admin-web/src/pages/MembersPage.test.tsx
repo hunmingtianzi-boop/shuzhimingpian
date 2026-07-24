@@ -1,5 +1,5 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -80,10 +80,18 @@ describe("MembersPage", () => {
     renderPage();
     await screen.findByText("admin@example.test");
     await user.click(screen.getAllByRole("button", { name: "编辑" })[0]);
-    await user.selectOptions(screen.getByRole("combobox", { name: "角色" }), "card_owner");
-    await user.click(screen.getByRole("button", { name: "保存用户" }));
+    const editor = await screen.findByRole("dialog", { name: "编辑企业用户" });
+    const role = within(editor).getByRole("combobox", { name: "角色" });
+    await user.selectOptions(role, "card_owner");
+    await waitFor(() => expect(role).toHaveValue("card_owner"));
+    await user.click(within(editor).getByRole("button", { name: "保存用户" }));
     expect(update).not.toHaveBeenCalled();
-    await user.click(await screen.findByRole("button", { name: "确认调整角色" }));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "移除企业管理员角色",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", { name: "确认调整角色" }),
+    );
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update).toHaveBeenCalledWith("membership-admin", expect.objectContaining({ role: "card_owner" }));
   });

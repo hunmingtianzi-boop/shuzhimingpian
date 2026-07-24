@@ -1,5 +1,5 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -89,9 +89,14 @@ describe("ForbiddenTopicsPage", () => {
 
     await screen.findByText("价格承诺");
     await user.click(screen.getByRole("button", { name: "编辑" }));
-    const topicName = screen.getByRole("textbox", { name: /主题名称/ });
+    const editor = await screen.findByRole("dialog", { name: "编辑禁答主题" });
+    const topicName = await within(editor).findByRole("textbox", {
+      name: /主题名称/,
+    });
     fireEvent.change(topicName, { target: { value: "报价边界" } });
-    await user.click(screen.getByRole("button", { name: "保存禁答主题" }));
+    await user.click(
+      within(editor).getByRole("button", { name: "保存禁答主题" }),
+    );
 
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][0]).toBe("topic-1");

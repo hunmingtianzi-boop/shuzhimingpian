@@ -150,6 +150,7 @@ jobs:
           PGPASSWORD: ci-owner-password
           PGHOST: 127.0.0.1
           PGDATABASE: cf_ai_card
+          PGUSER: cf_ai_card
           POSTGRES_USER: cf_ai_card
           APP_DB_PASSWORD: change-me-app-local-only
           WORKER_DB_PASSWORD: change-me-worker-local-only
