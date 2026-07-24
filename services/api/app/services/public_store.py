@@ -96,6 +96,7 @@ class PreparedMessage:
     assistant_message_id: uuid.UUID
     question: str
     idempotency_key: str
+    card_slug: str
     replay: bool = False
 
 
@@ -641,6 +642,7 @@ class PublicStore:
                     assistant_message_id=assistant.id,
                     question=user_message.content,
                     idempotency_key=idempotency_key,
+                    card_slug=card.slug,
                     replay=claim.record.status == IdempotencyStatus.COMPLETED,
                 )
 
@@ -664,6 +666,7 @@ class PublicStore:
                         assistant_message_id=assistant.id,
                         question=user_message.content,
                         idempotency_key=idempotency_key,
+                        card_slug=card.slug,
                     )
 
             message_count = (
@@ -718,6 +721,7 @@ class PublicStore:
                 assistant_message_id=assistant.id,
                 question=normalized_content,
                 idempotency_key=idempotency_key,
+                card_slug=card.slug,
             )
 
     async def load_stored_answer(
@@ -759,6 +763,10 @@ class PublicStore:
                 text=message.content,
                 finish_reason=finish_reason,
                 citations=citations,
+                lead_prompt=(
+                    prepared.card_slug != "tuotu"
+                    and _looks_like_opportunity(prepared.question)
+                ),
             )
 
     async def assert_model_budget(self, *, principal: VisitorPrincipal) -> None:
@@ -1023,8 +1031,26 @@ class PublicStore:
                 text=visible_text,
                 finish_reason=finish_reason,
                 citations=tuple(stored_citations),
-                lead_prompt=result.refusal is None and _looks_like_opportunity(prepared.question),
+                # A visitor's commercial intent remains actionable even when the
+                # knowledge base cannot ground an AI answer.  The lead form is the
+                # safe human handoff for exactly that case.
+                lead_prompt=(
+                    prepared.card_slug != "tuotu"
+                    and _looks_like_opportunity(prepared.question)
+                ),
             )
+
+    async def load_company_name(self, *, principal: VisitorPrincipal) -> str:
+        async with self._sessions() as session, session.begin():
+            await self._set_principal_scope(session, principal)
+            company = await session.get(Company, principal.company_id)
+            if (
+                company is None
+                or company.tenant_id != principal.tenant_id
+                or company.deleted_at is not None
+            ):
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+            return company.name
 
     async def persist_ai_failure(
         self,

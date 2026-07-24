@@ -1,5 +1,7 @@
 import {
   ArrowUp,
+  Buildings,
+  CaretRight,
   ChatCircleDots,
   LinkSimple,
   PaperPlaneTilt,
@@ -26,6 +28,10 @@ import {
   streamAssistantMessage,
   type AssistantCitation,
 } from "../lib/assistantApi";
+import {
+  matchAssistantRelatedSections,
+  type AssistantRelatedSection,
+} from "../lib/assistantRelatedSections";
 import { lockBodyScroll } from "../lib/bodyScrollLock";
 import { findKnowledge } from "../lib/knowledge";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -36,6 +42,7 @@ type Message = {
   text: string;
   source?: string;
   citations?: AssistantCitation[];
+  relatedSectionIds?: string[];
 };
 
 type RequestFailure = {
@@ -49,6 +56,14 @@ type RequestFailure = {
 export type AIAssistantHandle = {
   open: () => void;
   openWithQuestion: (question: string) => void;
+};
+
+type AIAssistantProps = {
+  config: AssistantConfig;
+  cardSlug: string;
+  onLeadPrompt?: () => void;
+  relatedSections?: AssistantRelatedSection[];
+  onOpenRelatedSection?: (targetId: string) => void;
 };
 
 function requestErrorMessage(error: unknown) {
@@ -69,17 +84,15 @@ function requestErrorMessage(error: unknown) {
 
 export const AIAssistant = forwardRef<
   AIAssistantHandle,
-  { config: AssistantConfig; cardSlug: string; onLeadPrompt?: () => void }
+  AIAssistantProps
 >(function AIAssistant(
   {
     config,
     cardSlug,
     onLeadPrompt,
-  }: {
-    config: AssistantConfig;
-    cardSlug: string;
-    onLeadPrompt?: () => void;
-  },
+    relatedSections = [],
+    onOpenRelatedSection,
+  }: AIAssistantProps,
   ref,
 ) {
   const apiEnabled = isAssistantApiConfigured();
@@ -252,6 +265,11 @@ export const AIAssistant = forwardRef<
             role: "assistant",
             text: result.answer,
             source: result.source,
+            relatedSectionIds: matchAssistantRelatedSections(
+              result.answer,
+              undefined,
+              relatedSections,
+            ).filter((section) => section.id !== "cooperation").map((section) => section.id),
           };
           setMessages((current) => [...current, assistantMessage]);
           finishRequest();
@@ -300,6 +318,8 @@ export const AIAssistant = forwardRef<
       const controller = new AbortController();
       abortRef.current = controller;
       let shouldOpenLead = false;
+      let answerText = "";
+      const answerCitations: AssistantCitation[] = [];
       void streamAssistantMessage({
         cardSlug,
         content: question,
@@ -308,6 +328,7 @@ export const AIAssistant = forwardRef<
         onEvent: (event) => {
           if (!mountedRef.current) return;
           if (event.type === "delta") {
+            answerText += event.text;
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessageId
@@ -316,6 +337,9 @@ export const AIAssistant = forwardRef<
               ),
             );
           } else if (event.type === "citation") {
+            if (!answerCitations.some((citation) => citation.id === event.citation.id)) {
+              answerCitations.push(event.citation);
+            }
             setMessages((current) =>
               current.map((message) => {
                 if (message.id !== assistantMessageId) return message;
@@ -325,15 +349,23 @@ export const AIAssistant = forwardRef<
                   : { ...message, citations: [...citations, event.citation] };
               }),
             );
-          } else if (event.type === "completed" && event.leadPrompt) {
-            shouldOpenLead = true;
+          } else if (event.type === "completed") {
+            shouldOpenLead = event.leadPrompt;
+            const relatedSectionIds = matchAssistantRelatedSections(
+              answerText,
+              answerCitations,
+              relatedSections,
+            ).filter((section) => section.id !== "cooperation").map((section) => section.id);
+            setMessages((current) => current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, relatedSectionIds }
+                : message,
+            ));
           }
         },
       })
         .then(() => {
-          if (!mountedRef.current || !shouldOpenLead || !onLeadPrompt) return;
-          setIsOpen(false);
-          window.setTimeout(onLeadPrompt, 0);
+          // Auto-open cooperation handoff is paused; explicit actions remain available.
         })
         .catch((error: unknown) => {
           if (!mountedRef.current) return;
@@ -377,6 +409,7 @@ export const AIAssistant = forwardRef<
       cardSlug,
       config.fallback,
       config.knowledgeBase,
+      relatedSections,
       shouldReduceMotion,
       onLeadPrompt,
     ],
@@ -477,25 +510,55 @@ export const AIAssistant = forwardRef<
               </header>
 
               <div className="assistant-messages" ref={scrollRef} aria-live="polite">
-                {messages.map((message) => (
-                  <div className={`message message-${message.role}`} key={message.id}>
-                    {message.text && <MarkdownMessage content={message.text} />}
-                    {message.source && (
-                      <small>
-                        <LinkSimple size={13} aria-hidden="true" />
-                        {config.labels.sourcePrefix}
-                        {message.source}
-                      </small>
-                    )}
-                    {message.citations?.map((citation) => (
-                      <small key={citation.id}>
-                        <LinkSimple size={13} aria-hidden="true" />
-                        {config.labels.sourcePrefix}
-                        {citation.label}
-                      </small>
-                    ))}
-                  </div>
-                ))}
+                {messages.map((message) => {
+                  const matchedSections = message.role === "assistant" && onOpenRelatedSection
+                    ? relatedSections.filter((section) => message.relatedSectionIds?.includes(section.id))
+                    : [];
+                  return (
+                    <div className={`message message-${message.role}`} key={message.id}>
+                      {message.text && <MarkdownMessage content={message.text} />}
+                      {message.source && (
+                        <small>
+                          <LinkSimple size={13} aria-hidden="true" />
+                          {config.labels.sourcePrefix}
+                          {message.source}
+                        </small>
+                      )}
+                      {message.citations?.map((citation) => (
+                        <small key={citation.id}>
+                          <LinkSimple size={13} aria-hidden="true" />
+                          {config.labels.sourcePrefix}
+                          {citation.label}
+                        </small>
+                      ))}
+                      {matchedSections.length > 0 && (
+                        <div className="assistant-related-sections" aria-label="回答相关内容">
+                          <span>
+                            <Buildings size={14} weight="duotone" aria-hidden="true" />
+                            回答中提到的内容
+                          </span>
+                          {matchedSections.map((section) => (
+                            <button
+                              key={section.id}
+                              type="button"
+                              onClick={() => {
+                                closeAssistant();
+                                window.setTimeout(() => onOpenRelatedSection?.(section.targetId), 0);
+                              }}
+                              aria-label={`查看相关内容：${section.title}`}
+                            >
+                              <span>
+                                <strong>{section.title}</strong>
+                                <small>{section.description}</small>
+                              </span>
+                              <CaretRight size={16} aria-hidden="true" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {messages.length === 1 && quickQuestions.length > 0 && (
                   <div className="quick-questions" aria-label={config.labels.quickQuestions}>

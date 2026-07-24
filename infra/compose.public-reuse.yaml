@@ -18,8 +18,14 @@ services:
     build: *api-reuse-build
   api:
     build: *api-reuse-build
+    environment:
+      # The public host has 1.6 GiB RAM. The 2.2 GiB multilingual-e5-large
+      # weights swap on every inference, so use the cached Chinese model here.
+      EMBEDDING_MODEL: ${PRODUCTION_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
   worker:
     build: *worker-reuse-build
+    environment:
+      EMBEDDING_MODEL: ${PRODUCTION_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
     command:
       - celery
       - -A
@@ -32,8 +38,16 @@ services:
     image: ${EMBEDDING_IMAGE:-cf-ai-card-prod-embedding:20260719}
     build: !reset null
     environment:
+      EMBEDDING_MODEL: ${PRODUCTION_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      # The database contract remains vector(1024); the service pads the
+      # model's native 512 dimensions with zeros before returning vectors.
+      EMBEDDING_NATIVE_DIMENSION: ${PRODUCTION_EMBEDDING_NATIVE_DIMENSION:-512}
       HF_HUB_OFFLINE: "1"
       HF_HUB_DISABLE_TELEMETRY: "1"
+  index:
+    build: *api-reuse-build
+    environment:
+      EMBEDDING_MODEL: ${PRODUCTION_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
   card-web:
     build:
       context: ../apps/card-web

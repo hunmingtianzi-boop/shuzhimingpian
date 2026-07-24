@@ -46,28 +46,62 @@ from .schemas import (
 _COOPERATION_INTENT_PATTERN = re.compile(
     r"^(?:请问)?(?:我(?:们)?|本人|本公司|我们公司|企业)?"
     r"(?:想|希望|要|有意|考虑|寻求|准备|可以|能|能否|怎么|如何)?"
-    r"(?:和|跟|与)?(?:你们|贵司|贵公司|拓浙(?:AI集团)?|公司)?"
+    r"(?:和|跟|与)?(?:你们|贵司|贵公司|公司)?"
+    r"(?:进行|开展|谈|聊|对接|发起)?(?:一下)?(?:商务)?合作"
+    r"(?:咨询|方式|流程|入口|机会)?(?:吗|么|可以吗|怎么弄|怎么联系)?$",
+    re.IGNORECASE,
+)
+_SUBJECT_FIRST_COOPERATION_INTENT_PATTERN = re.compile(
+    r"^(?:请问)?(?:你们|贵司|贵公司|公司|企业)"
+    r"(?:想|希望|要|有意|考虑|寻求|准备|可以|能|能否|怎么|如何)?"
     r"(?:进行|开展|谈|聊|对接|发起)?(?:一下)?(?:商务)?合作"
     r"(?:咨询|方式|流程|入口|机会)?(?:吗|么|可以吗|怎么弄|怎么联系)?$",
     re.IGNORECASE,
 )
 _CORE_BUSINESS_INTENT_PATTERN = re.compile(
     r"^(?:请问|请|介绍|说说|问)?(?:一下)?"
-    r"(?:你们|贵司|贵公司|拓浙(?:AI集团)?|公司|企业)?(?:的)?"
+    r"(?:你们|贵司|贵公司|公司|企业)?(?:的)?"
     r"(?:三大|三项|核心|主要)?(?:业务|业务板块)"
     r"(?:是什么|有哪些|包括什么|分别是什么|介绍)?$",
     re.IGNORECASE,
 )
 
 
-def _canonical_faq_lookup_text(value: str) -> tuple[str, str | None]:
-    """Map short action intents to one curated FAQ without changing the question."""
+def _canonical_faq_lookup_text(
+    value: str,
+    *,
+    company_name: str | None = None,
+) -> tuple[str, str | None]:
+    """Map short action intents to a FAQ query scoped to the current company."""
 
     compact = re.sub(r"\s+", "", value).rstrip("?？!！。.")
-    if _COOPERATION_INTENT_PATTERN.fullmatch(compact):
-        return "企业可以怎样与拓浙 AI 集团合作？", "cooperation"
-    if _CORE_BUSINESS_INTENT_PATTERN.fullmatch(compact):
-        return "拓浙 AI 集团有哪些业务板块？", "core_businesses"
+    compact_company_name = re.sub(r"\s+", "", company_name or "")
+    intent_text = compact
+    if compact_company_name:
+        intent_text = re.sub(
+            re.escape(compact_company_name),
+            "你们",
+            compact,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    normalized_company_name = (company_name or "").strip()
+    if _COOPERATION_INTENT_PATTERN.fullmatch(
+        intent_text
+    ) or _SUBJECT_FIRST_COOPERATION_INTENT_PATTERN.fullmatch(intent_text):
+        lookup_text = (
+            f"企业可以怎样与{normalized_company_name}合作？"
+            if normalized_company_name
+            else "企业可以怎样合作？"
+        )
+        return lookup_text, "cooperation"
+    if _CORE_BUSINESS_INTENT_PATTERN.fullmatch(intent_text):
+        lookup_text = (
+            f"{normalized_company_name}有哪些业务板块？"
+            if normalized_company_name
+            else "企业有哪些业务板块？"
+        )
+        return lookup_text, "core_businesses"
     return value, None
 
 
@@ -246,6 +280,14 @@ class RAGOrchestrator:
             request.history,
             include_history=include_history_for_retrieval,
         )
+        canonical_lookup_text, normalized_intent = _canonical_faq_lookup_text(
+            normalized,
+            company_name=request.company_name,
+        )
+        if normalized_intent is not None and not include_history_for_retrieval:
+            retrieval_text = canonical_lookup_text
+            trace.extra["faq_normalized_intent"] = normalized_intent
+            trace.extra["retrieval_query_normalized"] = True
         trace.extra["question_scope"] = question_scope.value
         trace.extra["question_scope_source"] = (
             "conversation" if direct_question_scope is QuestionScope.AMBIGUOUS else "direct"
@@ -482,7 +524,10 @@ class RAGOrchestrator:
         similarity_threshold = (
             self.config.faq_similarity_threshold if fuzzy_enabled else 1.0
         )
-        lookup_text, normalized_intent = _canonical_faq_lookup_text(normalized)
+        lookup_text, normalized_intent = _canonical_faq_lookup_text(
+            normalized,
+            company_name=request.company_name,
+        )
         if normalized_intent is not None:
             trace.extra["faq_normalized_intent"] = normalized_intent
 

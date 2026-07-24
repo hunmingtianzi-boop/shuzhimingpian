@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { AssistantConfig } from "../domain/card";
+import type { AssistantRelatedSection } from "../lib/assistantRelatedSections";
 import type { AIAssistantHandle } from "./AIAssistant";
 
 type AssistantComponent = typeof import("./AIAssistant").AIAssistant;
@@ -34,8 +35,13 @@ export const DeferredAIAssistant = forwardRef<
     config: AssistantConfig;
     cardSlug: string;
     onLeadPrompt?: () => void;
+    relatedSections?: AssistantRelatedSection[];
+    onOpenRelatedSection?: (targetId: string) => void;
   }
->(function DeferredAIAssistant({ config, cardSlug, onLeadPrompt }, ref) {
+>(function DeferredAIAssistant(
+  { config, cardSlug, onLeadPrompt, relatedSections, onOpenRelatedSection },
+  ref,
+) {
   const [Component, setComponent] = useState<AssistantComponent | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -107,6 +113,8 @@ export const DeferredAIAssistant = forwardRef<
         config={config}
         cardSlug={cardSlug}
         onLeadPrompt={onLeadPrompt}
+        relatedSections={relatedSections}
+        onOpenRelatedSection={onOpenRelatedSection}
       />
     );
   }

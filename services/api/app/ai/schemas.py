@@ -269,6 +269,7 @@ class RAGRequest:
     tenant_id: str
     company_id: str
     question: str
+    company_name: str | None = None
     top_k: int | None = None
     history: tuple[ChatMessage, ...] = ()
     forbidden_topics: tuple[ForbiddenTopicPolicy, ...] = ()

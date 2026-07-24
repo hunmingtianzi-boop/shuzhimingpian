@@ -1998,6 +1998,89 @@ img {
   border-bottom-left-radius: var(--radius-small);
 }
 
+.assistant-related-sections {
+  display: grid;
+  margin-top: 12px;
+  padding-top: 10px;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.assistant-related-sections > span {
+  display: flex;
+  margin-bottom: 2px;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.04em;
+}
+
+.assistant-related-sections button {
+  display: grid;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms ease, transform 160ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.assistant-related-sections button:first-of-type {
+  border-top-color: transparent;
+}
+
+.assistant-related-sections button:hover {
+  color: var(--accent-strong);
+}
+
+.assistant-related-sections button:active {
+  transform: translateX(2px);
+}
+
+.assistant-related-sections button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.assistant-related-sections button > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.assistant-related-sections button strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message .assistant-related-sections button small {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.assistant-related-sections button > svg {
+  color: var(--accent);
+}
+
 .message-user {
   align-self: flex-end;
   color: var(--on-action);
@@ -2119,6 +2202,8 @@ img {
   color: var(--text);
   background: transparent;
   border: 0;
+  border-radius: inherit;
+  outline: none;
   flex: 1;
   font-size: 12px;
 }
@@ -2971,11 +3056,13 @@ img {
   }
 
   .assistant-panel {
-    right: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    width: calc(100vw - 16px);
-    height: min(720px, calc(100dvh - 16px));
-    border-radius: var(--radius-card);
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
   }
 }
 
