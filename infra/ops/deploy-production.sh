@@ -283,7 +283,7 @@ sudo env \
   ENV_FILE="${ENV_FILE}" \
   BACKUP_ROOT="${BACKUP_ROOT}" \
   COMPOSE_PROJECT="${COMPOSE_PROJECT}" \
-  "${RELEASE_DIR}/infra/ops/backup.sh"
+  "${RELEASE_DIR}/infra/ops/backup.sh" </dev/null
 LATEST_BACKUP="$(
   sudo find "${BACKUP_ROOT}/daily" -mindepth 1 -maxdepth 1 -type d ! -name '*.partial' -print |
     sort |

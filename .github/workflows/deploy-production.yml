@@ -156,6 +156,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           remote_archive="/tmp/cf-ai-card-release-${DEPLOY_SHA}-${GITHUB_RUN_ID}.tar.gz"
+          remote_script="/tmp/cf-ai-card-deploy-${DEPLOY_SHA}-${GITHUB_RUN_ID}.sh"
           ssh_options=(
             -i "${HOME}/.ssh/production_deploy"
             -o BatchMode=yes
@@ -171,12 +172,23 @@ jobs:
             -P "${DEPLOY_PORT}" \
             "${RELEASE_ARCHIVE}" \
             "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_archive}"
+          scp \
+            "${ssh_options[@]}" \
+            -P "${DEPLOY_PORT}" \
+            infra/ops/deploy-production.sh \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_script}"
           ssh \
             "${ssh_options[@]}" \
             -p "${DEPLOY_PORT}" \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "APP_ROOT='${DEPLOY_PATH}' ENV_FILE='${DEPLOY_PATH}/.env.production' bash -s -- '${DEPLOY_SHA}' '${remote_archive}' '${RELEASE_ARCHIVE_SHA}'" \
-            <infra/ops/deploy-production.sh
+            "set -Eeuo pipefail
+             trap 'rm -f -- \"${remote_script}\"' EXIT
+             APP_ROOT='${DEPLOY_PATH}' ENV_FILE='${DEPLOY_PATH}/.env.production' \
+               bash '${remote_script}' '${DEPLOY_SHA}' '${remote_archive}' '${RELEASE_ARCHIVE_SHA}'
+             test \"\$(cat '${DEPLOY_PATH}/deploy/deployed-sha')\" = '${DEPLOY_SHA}'
+             current_release=\"\$(readlink -f '${DEPLOY_PATH}/current')\"
+             test -n \"\${current_release}\"
+             test \"\$(cat \"\${current_release}/DEPLOYED_COMMIT\")\" = '${DEPLOY_SHA}'"
 
       - name: Verify the public production route
         env:
