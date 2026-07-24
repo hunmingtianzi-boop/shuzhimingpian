@@ -139,6 +139,15 @@ services:
       embedding:
         condition: service_healthy
 
+  index:
+    environment:
+      <<: *production-environment
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?required}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
+    depends_on:
+      embedding:
+        condition: service_healthy
+
   api:
     ports: !reset []
     environment:
