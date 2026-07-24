@@ -440,6 +440,7 @@ async def seed_package(
         )
 
     prompt = PromptRegistry().get(DEFAULT_PROMPT_VERSION)
+    prompt_hash = _sha256(prompt.system_text)
     await session.execute(
         pg_insert(PromptVersion)
         .values(
@@ -450,15 +451,33 @@ async def seed_package(
             purpose="rag_answer",
             version_number=1,
             content=prompt.system_text,
-            content_hash=_sha256(prompt.system_text),
+            content_hash=prompt_hash,
             change_summary="Grounded enterprise answers with open general chat",
             evaluation_result={"status": "requires_pilot_evaluation"},
             status=PromptStatus.PUBLISHED,
             published_by=owner_id,
             published_at=now,
         )
-        .on_conflict_do_nothing(index_elements=[PromptVersion.id])
+        .on_conflict_do_nothing(constraint="uq_prompt_versions_name_version")
     )
+    persisted_prompt = (
+        await session.execute(
+            select(PromptVersion.purpose, PromptVersion.content_hash).where(
+                PromptVersion.tenant_id == tenant_id,
+                PromptVersion.company_id == company_id,
+                PromptVersion.name == DEFAULT_PROMPT_VERSION,
+                PromptVersion.version_number == 1,
+            )
+        )
+    ).one()
+    if (
+        persisted_prompt.purpose != "rag_answer"
+        or persisted_prompt.content_hash != prompt_hash
+    ):
+        raise ValueError(
+            f"immutable prompt version changed for {DEFAULT_PROMPT_VERSION}; "
+            "publish a new prompt version"
+        )
     await session.execute(
         pg_insert(ModelConfig)
         .values(
@@ -483,7 +502,7 @@ async def seed_package(
             },
         )
         .on_conflict_do_update(
-            index_elements=[ModelConfig.id],
+            constraint="uq_model_configs_purpose_provider",
             set_={
                 "model_name": settings.llm_model,
                 "timeout_ms": round(settings.llm_timeout_seconds * 1_000),
