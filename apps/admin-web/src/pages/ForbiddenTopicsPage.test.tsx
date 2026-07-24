@@ -44,10 +44,20 @@ describe("ForbiddenTopicsPage", () => {
     await screen.findByText("价格承诺");
     await user.click(screen.getByRole("button", { name: "停用" }));
     expect(toggle).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "确认停用" }));
+    const deactivateDialog = await screen.findByRole("dialog", {
+      name: "确认停用禁答主题",
+    });
+    await user.click(
+      within(deactivateDialog).getByRole("button", { name: "确认停用" }),
+    );
 
     await waitFor(() =>
       expect(toggle).toHaveBeenCalledWith("topic-1", 4, false),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "确认停用禁答主题" }),
+      ).not.toBeInTheDocument(),
     );
   });
 
@@ -62,9 +72,19 @@ describe("ForbiddenTopicsPage", () => {
     await screen.findByText("价格承诺");
     await user.click(screen.getByRole("button", { name: "删除" }));
     expect(remove).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "确认删除禁答主题",
+    });
+    await user.click(
+      within(deleteDialog).getByRole("button", { name: "确认删除" }),
+    );
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith("topic-1", 4));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "确认删除禁答主题" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("shows the shared permission state and hides creation actions", async () => {

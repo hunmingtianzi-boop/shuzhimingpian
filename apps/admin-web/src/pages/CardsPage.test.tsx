@@ -79,6 +79,11 @@ describe("CardsPage", () => {
     await user.click(within(publishDialog).getByRole("button", { name: "确认发布" }));
 
     await waitFor(() => expect(publish).toHaveBeenCalledWith("card-1", 6));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "确认发布名片" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("copies the server share value", async () => {
@@ -100,12 +105,13 @@ describe("CardsPage", () => {
     await user.click(screen.getByRole("button", { name: "分享" }));
     const shareDialog = await screen.findByRole("dialog", { name: "分享名片" });
     await user.click(within(shareDialog).getByRole("button", { name: "复制分享链接" }));
-    expect(writeText).toHaveBeenCalledWith(publishedCard.shareUrl);
-    const updatedShareDialog = await screen.findByRole("dialog", { name: "分享名片" });
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(publishedCard.shareUrl),
+    );
     expect(
-      await within(updatedShareDialog).findByText("分享链接已复制。"),
+      await within(shareDialog).findByText("分享链接已复制。"),
     ).toBeInTheDocument();
-    await user.click(within(updatedShareDialog).getByRole("button", { name: "关闭" }));
+    await user.click(within(shareDialog).getByRole("button", { name: "关闭" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "分享名片" })).not.toBeInTheDocument(),
     );

@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.ai.prompts import DEFAULT_PROMPT_VERSION
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ConfirmPlatformOnboardingRequest,
@@ -509,7 +510,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_ai.model_name,
             confirmed_ai.enabled,
         ) == (
-            "company-chat-hybrid-v1.5.0",
+            DEFAULT_PROMPT_VERSION,
             "published",
             settings.llm_provider,
             settings.llm_model,

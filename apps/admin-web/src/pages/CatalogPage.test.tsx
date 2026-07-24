@@ -1,5 +1,5 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -142,13 +142,33 @@ describe("CatalogPage", () => {
 
     await screen.findByText("企业 AI 助手");
     await user.click(screen.getByRole("button", { name: "归档" }));
-    await user.click(screen.getByRole("button", { name: "确认归档" }));
+    const archiveDialog = await screen.findByRole("dialog", {
+      name: "确认归档产品",
+    });
+    await user.click(
+      within(archiveDialog).getByRole("button", { name: "确认归档" }),
+    );
     await waitFor(() => expect(archive).toHaveBeenCalledWith("product-1", 3));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "确认归档产品" }),
+      ).not.toBeInTheDocument(),
+    );
 
-    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(await screen.findByRole("button", { name: "删除" }));
     expect(remove).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: "确认删除产品",
+    });
+    await user.click(
+      within(deleteDialog).getByRole("button", { name: "确认删除" }),
+    );
     await waitFor(() => expect(remove).toHaveBeenCalledWith("product-1", 3));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "确认删除产品" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("creates a case from the accessible empty state", async () => {
