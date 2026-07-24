@@ -174,19 +174,15 @@ test("visitor browses published content, receives a cited AI answer and submits 
   await page.goto("http://127.0.0.1:4173/c/tuotu");
 
   await expect(page.getByText("拓浙 AI 集团", { exact: true }).first()).toBeVisible();
-  await expect(page.locator("#catalog")).toBeAttached();
-  await page.getByRole("link", { name: "业务", exact: true }).click();
-  await expect(page).toHaveURL(/#ecosystem$/);
-  await page.locator("#catalog").scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "业务", exact: true }).click();
+  await expect(page).toHaveURL(/[?&]view=square(?:&|$)/);
   const product = page.getByRole("button", { name: /数智名片平台/ });
   await expect(product).toBeVisible();
   await product.click();
-  await expect(page.getByRole("dialog", { name: "数智名片平台" })).toContainText(
-    "基于审核知识回答",
-  );
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "数智名片平台" })).toBeVisible();
+  await expect(page.getByText("基于审核知识回答，并沉淀访问、对话与线索。")).toBeVisible();
 
-  await page.getByRole("button", { name: "打开拓浙 AI 集团资料助手" }).click();
+  await page.getByRole("button", { name: "向 AI 继续提问", exact: true }).click();
   const question = page.getByPlaceholder("问业务、人才、赛事或合作");
   await question.fill("数智名片平台能做什么？");
   await page.getByRole("button", { name: "发送问题" }).click();
@@ -194,7 +190,7 @@ test("visitor browses published content, receives a cited AI answer and submits 
   await expect(page.getByText("产品说明")).toBeVisible();
   await page.getByRole("button", { name: "关闭助手" }).click();
 
-  await page.getByRole("button", { name: "留下需求" }).click();
+  await page.getByRole("button", { name: "留下合作需求", exact: true }).click();
   const leadDialog = page.getByRole("dialog", { name: "留下合作需求" });
   await leadDialog.getByLabel("姓名 *").fill("张三");
   await leadDialog.getByRole("textbox", { name: "手机", exact: true }).fill("13800138000");
@@ -311,7 +307,7 @@ test("platform administrator signs in and creates an isolated enterprise", async
       .getByRole("cell", { name: "现有企业", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "开通企业" }).click();
+  await page.getByRole("button", { name: "直接开通空白企业" }).click();
   await page.getByLabel("租户标识").fill("new-enterprise");
   await page.getByLabel("租户名称").fill("新企业租户");
   await page.getByLabel("企业名称").fill("新企业有限公司");
