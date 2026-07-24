@@ -1,4 +1,4 @@
-FROM node:24.18.0-alpine3.24 AS build
+FROM node:26.5.0-alpine3.24 AS build
 
 ARG PNPM_VERSION=11.7.0
 ARG VITE_API_BASE_URL=/api/v1
