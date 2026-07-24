@@ -2,7 +2,10 @@ FROM nginx:1.31.2-alpine3.23
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY dist /usr/share/nginx/html
-RUN grep -Eq '(src|href)="/c/admin/' /usr/share/nginx/html/index.html
+RUN chmod 0644 /etc/nginx/nginx.conf \
+  && find /usr/share/nginx/html -type d -exec chmod 0755 {} + \
+  && find /usr/share/nginx/html -type f -exec chmod 0644 {} + \
+  && grep -Eq '(src|href)="/c/admin/' /usr/share/nginx/html/index.html
 
 USER nginx
 EXPOSE 8080

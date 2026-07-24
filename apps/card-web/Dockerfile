@@ -22,6 +22,9 @@ RUN pnpm --filter @cf/card-web exec vite build --base "${VITE_PUBLIC_BASE}"
 FROM nginx:1.31.2-alpine3.23 AS runtime
 COPY apps/card-web/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /workspace/apps/card-web/dist /usr/share/nginx/html
+RUN chmod 0644 /etc/nginx/nginx.conf \
+  && find /usr/share/nginx/html -type d -exec chmod 0755 {} + \
+  && find /usr/share/nginx/html -type f -exec chmod 0644 {} +
 USER nginx
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 \
