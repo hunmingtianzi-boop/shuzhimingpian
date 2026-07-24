@@ -42,56 +42,66 @@ jobs:
           [[ "${deploy_sha}" =~ ^[0-9a-f]{40}$ ]]
           printf 'DEPLOY_SHA=%s\n' "${deploy_sha}" >>"${GITHUB_ENV}"
 
-      - name: Require successful security validation
+      - name: Require successful automated validation
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          for attempt in $(seq 1 120); do
-            security_run="$(
-              gh api \
-                --method GET \
-                "repos/${GITHUB_REPOSITORY}/actions/workflows/security.yml/runs" \
-                -f event=push \
-                -f head_sha="${DEPLOY_SHA}" \
-                -F per_page=20 \
-                --jq '
-                  if (.workflow_runs | length) == 0 then
-                    "missing\t\t"
-                  else
-                    (
-                      .workflow_runs
-                      | sort_by(.run_number)
-                      | last
-                      | [.id, .status, (.conclusion // "")]
-                      | @tsv
-                    )
-                  end
-                '
-            )"
-            IFS=$'\t' read -r security_run_id security_status security_conclusion \
-              <<<"${security_run}"
+          require_workflow() {
+            local workflow_file="$1"
+            local workflow_label="$2"
+            local validation_run run_id run_status run_conclusion attempt
 
-            if [[ "${security_status}" == "completed" &&
-                  "${security_conclusion}" == "success" ]]; then
-              echo "Security run ${security_run_id} passed for ${DEPLOY_SHA}."
-              exit 0
-            fi
+            for attempt in $(seq 1 120); do
+              validation_run="$(
+                gh api \
+                  --method GET \
+                  "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs" \
+                  -f event=push \
+                  -f head_sha="${DEPLOY_SHA}" \
+                  -F per_page=20 \
+                  --jq '
+                    if (.workflow_runs | length) == 0 then
+                      "missing\t\t"
+                    else
+                      (
+                        .workflow_runs
+                        | sort_by(.run_number)
+                        | last
+                        | [.id, .status, (.conclusion // "")]
+                        | @tsv
+                      )
+                    end
+                  '
+              )"
+              IFS=$'\t' read -r run_id run_status run_conclusion <<<"${validation_run}"
 
-            if [[ "${security_status}" == "completed" ]]; then
-              echo "::error::Security run ${security_run_id} concluded ${security_conclusion}."
-              exit 1
-            fi
+              if [[ "${run_status}" == "completed" &&
+                    "${run_conclusion}" == "success" ]]; then
+                echo "${workflow_label} run ${run_id} passed for ${DEPLOY_SHA}."
+                return 0
+              fi
 
-            if [[ "${attempt}" -eq 120 ]]; then
-              echo "::error::Timed out waiting for Security validation of ${DEPLOY_SHA}."
-              exit 1
-            fi
+              if [[ "${run_status}" == "completed" ]]; then
+                echo "::error::${workflow_label} run ${run_id} concluded ${run_conclusion}."
+                exit 1
+              fi
 
-            echo "Waiting for Security validation of ${DEPLOY_SHA} (${security_status:-missing})."
-            sleep 15
-          done
+              if [[ "${attempt}" -eq 120 ]]; then
+                echo "::error::Timed out waiting for ${workflow_label} validation of ${DEPLOY_SHA}."
+                exit 1
+              fi
+
+              echo "Waiting for ${workflow_label} validation of ${DEPLOY_SHA} (${run_status:-missing})."
+              sleep 15
+            done
+          }
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            require_workflow ci.yml CI
+          fi
+          require_workflow security.yml Security
 
       - name: Check out the exact commit that passed CI
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
