@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_ROOT="${APP_ROOT:-/opt/shuzimingpian/current}"
-ENV_FILE="${ENV_FILE:-/opt/shuzimingpian/.env.production}"
+APP_ROOT="${APP_ROOT:-/opt/cf-ai-card/current}"
+ENV_FILE="${ENV_FILE:-/opt/cf-ai-card/.env.production}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/shuzimingpian}"
-COMPOSE_PROJECT="${COMPOSE_PROJECT:-cf-ai-card}"
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-cf-ai-card-prod}"
 REPORT_DIR="${BACKUP_ROOT}/restore-rehearsals"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DATABASE="restore_rehearsal_${STAMP//[^0-9]/}"
@@ -43,4 +43,3 @@ cat >"${REPORT_DIR}/${STAMP}.json" <<EOF
 EOF
 chmod 600 "${REPORT_DIR}/${STAMP}.json"
 printf 'restore rehearsal passed: %s\n' "${REPORT_DIR}/${STAMP}.json"
-

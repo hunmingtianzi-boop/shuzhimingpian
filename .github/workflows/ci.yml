@@ -148,7 +148,14 @@ jobs:
       - name: Initialize extensions and least-privilege roles
         env:
           PGPASSWORD: ci-owner-password
-        run: psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cf_ai_card -d cf_ai_card -f infra/postgres/001_extensions.sql
+          PGHOST: 127.0.0.1
+          PGDATABASE: cf_ai_card
+          POSTGRES_USER: cf_ai_card
+          APP_DB_PASSWORD: change-me-app-local-only
+          WORKER_DB_PASSWORD: change-me-worker-local-only
+        run: |
+          psql -v ON_ERROR_STOP=1 -f infra/postgres/001_extensions.sql
+          sh infra/postgres/002_application_roles.sh
       - name: Verify migration round trip
         working-directory: services/api
         run: |

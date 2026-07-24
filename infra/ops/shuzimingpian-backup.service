@@ -5,8 +5,11 @@ After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/shuzimingpian/current/infra/ops/backup.sh
+Environment=APP_ROOT=/opt/cf-ai-card/current
+Environment=ENV_FILE=/opt/cf-ai-card/.env.production
+Environment=BACKUP_ROOT=/var/backups/shuzimingpian
+Environment=COMPOSE_PROJECT=cf-ai-card-prod
+ExecStart=/opt/cf-ai-card/current/infra/ops/backup.sh
 User=root
 Group=root
 UMask=0077
-

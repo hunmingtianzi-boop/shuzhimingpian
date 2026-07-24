@@ -1,0 +1,24 @@
+# Immutable application image tags for one production release. Keep this file
+# last in the Compose file list so a failed deployment can select the previous
+# SHA without overwriting its images.
+services:
+  migrate:
+    image: cf-ai-card-prod-api:${DEPLOY_SHA:?required}
+  seed:
+    image: cf-ai-card-prod-api:${DEPLOY_SHA:?required}
+  index:
+    image: cf-ai-card-prod-api:${DEPLOY_SHA:?required}
+  api:
+    image: cf-ai-card-prod-api:${DEPLOY_SHA:?required}
+
+  worker:
+    image: cf-ai-card-prod-worker:${DEPLOY_SHA:?required}
+  beat:
+    image: cf-ai-card-prod-worker:${DEPLOY_SHA:?required}
+
+  card-web:
+    image: cf-ai-card-prod-card-web:${DEPLOY_SHA:?required}
+  admin-web:
+    image: cf-ai-card-prod-admin-web:${DEPLOY_SHA:?required}
+  gateway:
+    image: cf-ai-card-prod-gateway:${DEPLOY_SHA:?required}

@@ -101,8 +101,11 @@ describe("CardsPage", () => {
     const shareDialog = await screen.findByRole("dialog", { name: "分享名片" });
     await user.click(within(shareDialog).getByRole("button", { name: "复制分享链接" }));
     expect(writeText).toHaveBeenCalledWith(publishedCard.shareUrl);
-    expect(await within(shareDialog).findByText("分享链接已复制。")).toBeInTheDocument();
-    await user.click(within(shareDialog).getByRole("button", { name: "关闭" }));
+    const updatedShareDialog = await screen.findByRole("dialog", { name: "分享名片" });
+    expect(
+      await within(updatedShareDialog).findByText("分享链接已复制。"),
+    ).toBeInTheDocument();
+    await user.click(within(updatedShareDialog).getByRole("button", { name: "关闭" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "分享名片" })).not.toBeInTheDocument(),
     );

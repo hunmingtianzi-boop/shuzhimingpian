@@ -1,6 +1,9 @@
 # Local environment and secrets
 .env
 .env.local
+.env.*
+!.env.example
+!**/.env.example
 *.pem
 *.key
 
