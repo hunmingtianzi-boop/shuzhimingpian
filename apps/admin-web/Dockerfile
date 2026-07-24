@@ -18,6 +18,7 @@ ENV VITE_PUBLIC_BASE=${VITE_PUBLIC_BASE}
 RUN pnpm --filter @cf/admin-web exec vite build --base "${VITE_PUBLIC_BASE}"
 
 FROM nginx:1.31.2-alpine3.23 AS runtime
+RUN apk upgrade --no-cache
 COPY apps/admin-web/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html
 RUN chmod 0644 /etc/nginx/nginx.conf \

@@ -20,6 +20,7 @@ ENV VITE_ENABLE_BLANK_ENTERPRISE_TEMPLATE=${VITE_ENABLE_BLANK_ENTERPRISE_TEMPLAT
 RUN pnpm --filter @cf/card-web exec vite build --base "${VITE_PUBLIC_BASE}"
 
 FROM nginx:1.31.2-alpine3.23 AS runtime
+RUN apk upgrade --no-cache
 COPY apps/card-web/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /workspace/apps/card-web/dist /usr/share/nginx/html
 RUN chmod 0644 /etc/nginx/nginx.conf \

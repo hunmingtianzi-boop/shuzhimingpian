@@ -1,4 +1,5 @@
 FROM nginx:1.31.2-alpine3.23
+RUN apk upgrade --no-cache
 COPY infra/gateway/nginx.conf /etc/nginx/nginx.conf
 RUN chmod 0644 /etc/nginx/nginx.conf
 USER nginx
