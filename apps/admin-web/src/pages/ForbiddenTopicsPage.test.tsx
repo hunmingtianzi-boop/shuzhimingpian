@@ -48,16 +48,14 @@ describe("ForbiddenTopicsPage", () => {
       name: "确认停用禁答主题",
     });
     await user.click(
-      within(deactivateDialog).getByRole("button", { name: "确认停用" }),
+      await within(deactivateDialog).findByRole("button", { name: "确认停用" }),
     );
 
     await waitFor(() =>
       expect(toggle).toHaveBeenCalledWith("topic-1", 4, false),
     );
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "确认停用禁答主题" }),
-      ).not.toBeInTheDocument(),
+      expect(deactivateDialog).not.toBeInTheDocument(),
     );
   });
 
@@ -76,14 +74,12 @@ describe("ForbiddenTopicsPage", () => {
       name: "确认删除禁答主题",
     });
     await user.click(
-      within(deleteDialog).getByRole("button", { name: "确认删除" }),
+      await within(deleteDialog).findByRole("button", { name: "确认删除" }),
     );
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith("topic-1", 4));
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "确认删除禁答主题" }),
-      ).not.toBeInTheDocument(),
+      expect(deleteDialog).not.toBeInTheDocument(),
     );
   });
 
@@ -114,8 +110,11 @@ describe("ForbiddenTopicsPage", () => {
       name: /主题名称/,
     });
     fireEvent.change(topicName, { target: { value: "报价边界" } });
+    const updatedEditor = await screen.findByRole("dialog", {
+      name: "编辑禁答主题",
+    });
     await user.click(
-      within(editor).getByRole("button", { name: "保存禁答主题" }),
+      await within(updatedEditor).findByRole("button", { name: "保存禁答主题" }),
     );
 
     await waitFor(() => expect(update).toHaveBeenCalled());

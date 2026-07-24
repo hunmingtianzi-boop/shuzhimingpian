@@ -197,6 +197,13 @@ jobs:
         env:
           RESTORE_DATABASE_URL: postgresql://cf_ai_card:ci-owner-password@127.0.0.1:5432/cf_ai_card_restore_test
         run: |
+          $heads = @(& python -m alembic -c services/api/alembic.ini heads)
+          $alembicExitCode = $LASTEXITCODE
+          $headMatch = [regex]::Match([string]($heads | Select-Object -First 1), '^(\S+) \(head\)$')
+          if ($alembicExitCode -ne 0 -or $heads.Count -ne 1 -or -not $headMatch.Success) {
+            throw "Expected exactly one Alembic migration head, got: $($heads -join ', ')"
+          }
+          $expectedAlembicVersion = $headMatch.Groups[1].Value
           $backup = Get-ChildItem artifacts/backups/*.dump |
             Sort-Object LastWriteTimeUtc |
             Select-Object -Last 1
@@ -204,7 +211,7 @@ jobs:
           ./tools/ops/postgres-restore-rehearsal.ps1 `
             -BackupFile $backup.FullName `
             -ReportDirectory artifacts/restore-rehearsals `
-            -ExpectedAlembicVersion 20260711_0008 `
+            -ExpectedAlembicVersion $expectedAlembicVersion `
             -RpoObjectiveHours 24 `
             -RtoObjectiveSeconds 14400
       - name: Upload backup and restore rehearsal evidence

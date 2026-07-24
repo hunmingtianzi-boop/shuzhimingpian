@@ -99,16 +99,24 @@ describe("CatalogPage", () => {
 
     await screen.findByText("企业 AI 助手");
     await user.click(screen.getByRole("button", { name: "定时发布" }));
-    fireEvent.change(screen.getByLabelText(/发布时间/), {
+    const scheduleDialog = await screen.findByRole("dialog", {
+      name: "设置定时发布",
+    });
+    fireEvent.change(await within(scheduleDialog).findByLabelText(/发布时间/), {
       target: { value: "2099-01-01T09:00" },
     });
-    await user.click(screen.getByRole("button", { name: "确认定时发布" }));
+    await user.click(
+      await within(scheduleDialog).findByRole("button", { name: "确认定时发布" }),
+    );
 
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       targetType: "product",
       targetId: "product-1",
       version: 3,
     })));
+    await waitFor(() =>
+      expect(scheduleDialog).not.toBeInTheDocument(),
+    );
   });
 
   it("edits a product and keeps the server version for If-Match", async () => {
@@ -121,9 +129,13 @@ describe("CatalogPage", () => {
 
     await screen.findByText("企业 AI 助手");
     await user.click(screen.getByRole("button", { name: "编辑" }));
-    const name = screen.getByRole("textbox", { name: /产品名称/ });
+    const editor = await screen.findByRole("dialog", { name: "编辑产品" });
+    const name = await within(editor).findByRole("textbox", { name: /产品名称/ });
     fireEvent.change(name, { target: { value: "企业知识助手" } });
-    await user.click(screen.getByRole("button", { name: "保存产品" }));
+    const updatedEditor = await screen.findByRole("dialog", { name: "编辑产品" });
+    await user.click(
+      await within(updatedEditor).findByRole("button", { name: "保存产品" }),
+    );
 
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][0]).toBe("product-1");
@@ -146,13 +158,11 @@ describe("CatalogPage", () => {
       name: "确认归档产品",
     });
     await user.click(
-      within(archiveDialog).getByRole("button", { name: "确认归档" }),
+      await within(archiveDialog).findByRole("button", { name: "确认归档" }),
     );
     await waitFor(() => expect(archive).toHaveBeenCalledWith("product-1", 3));
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "确认归档产品" }),
-      ).not.toBeInTheDocument(),
+      expect(archiveDialog).not.toBeInTheDocument(),
     );
 
     await user.click(await screen.findByRole("button", { name: "删除" }));
@@ -161,13 +171,11 @@ describe("CatalogPage", () => {
       name: "确认删除产品",
     });
     await user.click(
-      within(deleteDialog).getByRole("button", { name: "确认删除" }),
+      await within(deleteDialog).findByRole("button", { name: "确认删除" }),
     );
     await waitFor(() => expect(remove).toHaveBeenCalledWith("product-1", 3));
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "确认删除产品" }),
-      ).not.toBeInTheDocument(),
+      expect(deleteDialog).not.toBeInTheDocument(),
     );
   });
 

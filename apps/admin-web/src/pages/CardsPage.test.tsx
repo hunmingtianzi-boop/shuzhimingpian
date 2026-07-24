@@ -76,13 +76,13 @@ describe("CardsPage", () => {
     await screen.findByText("林顾问");
     await user.click(screen.getByRole("button", { name: "发布" }));
     const publishDialog = await screen.findByRole("dialog", { name: "确认发布名片" });
-    await user.click(within(publishDialog).getByRole("button", { name: "确认发布" }));
+    await user.click(
+      await within(publishDialog).findByRole("button", { name: "确认发布" }),
+    );
 
     await waitFor(() => expect(publish).toHaveBeenCalledWith("card-1", 6));
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "确认发布名片" }),
-      ).not.toBeInTheDocument(),
+      expect(publishDialog).not.toBeInTheDocument(),
     );
   });
 
@@ -104,16 +104,20 @@ describe("CardsPage", () => {
     expect(publicLink).toHaveAttribute("rel", "noopener noreferrer");
     await user.click(screen.getByRole("button", { name: "分享" }));
     const shareDialog = await screen.findByRole("dialog", { name: "分享名片" });
-    await user.click(within(shareDialog).getByRole("button", { name: "复制分享链接" }));
+    await user.click(
+      await within(shareDialog).findByRole("button", { name: "复制分享链接" }),
+    );
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(publishedCard.shareUrl),
     );
     expect(
       await within(shareDialog).findByText("分享链接已复制。"),
     ).toBeInTheDocument();
-    await user.click(within(shareDialog).getByRole("button", { name: "关闭" }));
+    await user.click(
+      await within(shareDialog).findByRole("button", { name: "关闭" }),
+    );
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "分享名片" })).not.toBeInTheDocument(),
+      expect(shareDialog).not.toBeInTheDocument(),
     );
   });
 
@@ -143,7 +147,9 @@ describe("CardsPage", () => {
     await user.click(screen.getByRole("button", { name: "停用" }));
     expect(deactivate).not.toHaveBeenCalled();
     const deactivateDialog = await screen.findByRole("dialog", { name: "确认停用名片" });
-    await user.click(within(deactivateDialog).getByRole("button", { name: "确认停用" }));
+    await user.click(
+      await within(deactivateDialog).findByRole("button", { name: "确认停用" }),
+    );
     await waitFor(() => expect(deactivate).toHaveBeenCalledWith("card-1", 7));
   });
 

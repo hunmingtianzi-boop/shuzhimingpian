@@ -54,6 +54,9 @@ importers:
       jsdom:
         specifier: 29.1.1
         version: 29.1.1
+      tabster:
+        specifier: 8.8.0
+        version: 8.8.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
