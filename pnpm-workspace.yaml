@@ -3,3 +3,5 @@ packages:
   - "services/*"
   - "packages/*"
 
+overrides:
+  postcss: "8.5.18"
