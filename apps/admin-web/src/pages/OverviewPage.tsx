@@ -8,18 +8,24 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@fluentui/react-components";
-import { ArrowClockwise24Regular } from "@fluentui/react-icons";
+import {
+  ArrowClockwise24Regular,
+  Sparkle24Regular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 
+import { ApiError } from "../api/client";
 import { enterpriseReadinessApi } from "../api/enterpriseReadinessApi";
 import type {
   DashboardOverview,
   EmployeeAnalyticsPage,
   EnterpriseReadiness,
+  TopicAnalysis,
 } from "../api/types";
 import { workflowApi } from "../api/workflowApi";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
+import { OperationFeedback } from "../components/OperationFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { PaginationBar } from "../components/PaginationBar";
 import { ResourceState } from "../components/ResourceState";
@@ -40,6 +46,159 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
+  );
+}
+
+function asApiError(error: unknown): ApiError {
+  return error instanceof ApiError
+    ? error
+    : new ApiError("AI 话题总结发生未知错误。", { code: "UNKNOWN_ERROR" });
+}
+
+function TopicHeatmapPanel({
+  periodDays,
+  resource,
+}: {
+  periodDays: number;
+  resource: ReturnType<typeof useResource<TopicAnalysis>>;
+}) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [generatedData, setGeneratedData] = useState<TopicAnalysis>();
+  const [notice, setNotice] = useState<string>();
+  const [error, setError] = useState<ApiError>();
+  const data = generatedData ?? resource.data;
+  const maximum = Math.max(1, ...(data?.topics.map((topic) => topic.count) ?? []));
+
+  const analyze = async () => {
+    if (analyzing) return;
+    setAnalyzing(true);
+    setNotice(undefined);
+    setError(undefined);
+    try {
+      const result = await workflowApi.analyzeTopics(periodDays);
+      setGeneratedData(result);
+      setNotice(
+        `已分析 ${result.analyzedQuestionCount} 条用户问题，归纳为 ${result.topics.length} 个话题。`,
+      );
+      resource.reload();
+    } catch (caught) {
+      setError(asApiError(caught));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <section className="content-panel topic-analysis-panel" aria-labelledby="topic-analysis-title">
+      <div className="section-heading-inline">
+        <div>
+          <h2 id="topic-analysis-title">高频话题</h2>
+          <p>AI 对用户原始提问进行脱敏归类，帮助判断客户最关注什么。</p>
+        </div>
+        <Button
+          appearance={data?.status === "not_generated" ? "primary" : "subtle"}
+          icon={<Sparkle24Regular />}
+          disabled={analyzing || data?.status === "empty"}
+          onClick={() => void analyze()}
+        >
+          {analyzing
+            ? "AI 正在总结"
+            : data?.status === "ready" || data?.status === "stale"
+              ? "重新总结"
+              : "AI 总结用户问题"}
+        </Button>
+      </div>
+
+      <OperationFeedback notice={notice} error={error} onRetry={() => void analyze()} />
+
+      {resource.status !== "ready" || !data ? (
+        <ResourceState
+          compact
+          status={resource.status === "ready" ? "empty" : resource.status}
+          description={resource.error?.message}
+          errorCode={resource.error?.code}
+          requestId={resource.error?.requestId}
+          onRetry={resource.status === "error" ? resource.reload : undefined}
+        />
+      ) : data.status === "empty" ? (
+        <ResourceState
+          compact
+          status="empty"
+          title={`最近 ${periodDays} 天暂无用户问题`}
+          description="客户通过名片向 AI 提问后，这里会出现可分析的话题。"
+        />
+      ) : data.status === "not_generated" ? (
+        <div className="topic-analysis-empty">
+          <strong>已有 {data.questionCount} 条用户问题可分析</strong>
+          <span>点击“AI 总结用户问题”，系统会合并同义问题并生成高频话题。</span>
+        </div>
+      ) : (
+        <>
+          <div className="topic-analysis-summary">
+            <div>
+              <span>AI 结论</span>
+              <strong>{data.summary || "已完成话题归类。"}</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>周期内问题</dt>
+                <dd>{data.questionCount}</dd>
+              </div>
+              <div>
+                <dt>本次分析</dt>
+                <dd>{data.analyzedQuestionCount}</dd>
+              </div>
+              <div>
+                <dt>归纳话题</dt>
+                <dd>{data.topics.length}</dd>
+              </div>
+            </dl>
+          </div>
+          {data.status === "stale" && (
+            <div className="topic-analysis-stale" role="status">
+              新增问题尚未纳入当前结论，请重新总结。
+            </div>
+          )}
+          <div className="topic-heatmap" role="list" aria-label="用户高频话题热力分布">
+            {data.topics.map((topic) => {
+              const level = Math.max(1, Math.ceil((topic.count / maximum) * 5));
+              return (
+                <article
+                  className="topic-heatmap-item"
+                  data-level={level}
+                  key={topic.topic}
+                  role="listitem"
+                  aria-label={`${topic.topic}，${topic.count} 次，${formatRate(topic.share)}`}
+                >
+                  <div className="topic-heatmap-heading">
+                    <strong>{topic.topic}</strong>
+                    <span>{topic.count} 次 · {formatRate(topic.share)}</span>
+                  </div>
+                  <div className="topic-heatmap-bar" aria-hidden>
+                    <i style={{ width: `${Math.max(6, topic.share * 100)}%` }} />
+                  </div>
+                  {topic.sampleQuestions.length > 0 && (
+                    <ul aria-label={`${topic.topic}代表问题`}>
+                      {topic.sampleQuestions.map((question, index) => (
+                        <li key={`${topic.topic}-${index}`}>{question}</li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+          <div className="dashboard-generated">
+            {data.generatedAt
+              ? `AI 分析生成于 ${formatTimestamp(data.generatedAt)}`
+              : "AI 分析已生成"}
+            {data.questionCount > data.analyzedQuestionCount
+              ? ` · 展示最近 ${data.analyzedQuestionCount} 条问题的归类`
+              : ""}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -329,6 +488,10 @@ export function OverviewPage() {
     () => workflowApi.listEmployeeAnalytics({ periodDays, limit: 20, offset: employeeOffset }),
     `${periodDays}:${employeeOffset}`,
   );
+  const topicResource = useResource(
+    () => workflowApi.getTopicAnalysis(periodDays),
+    periodDays,
+  );
 
   const changePeriod = (days: number) => {
     setPeriodDays(days);
@@ -354,7 +517,11 @@ export function OverviewPage() {
             <Button
               appearance="subtle"
               icon={<ArrowClockwise24Regular />}
-              onClick={resource.reload}
+              onClick={() => {
+                resource.reload();
+                topicResource.reload();
+                employeeResource.reload();
+              }}
             >
               刷新
             </Button>
@@ -365,6 +532,11 @@ export function OverviewPage() {
       {resource.status === "ready" && resource.data ? (
         <>
           <DashboardContent data={resource.data} />
+          <TopicHeatmapPanel
+            key={periodDays}
+            periodDays={periodDays}
+            resource={topicResource}
+          />
           <EmployeePerformance
             resource={employeeResource}
             dashboard={resource.data}

@@ -43,8 +43,18 @@ function renderPage(role = "company_admin", permissions: string[] = []) {
 describe("ExportsPage", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  function mockAvailability(
+    availability = { visitors: 42, leads: 0, conversations: 42 },
+  ) {
+    vi.spyOn(exportsApi, "availability").mockResolvedValue({
+      ...availability,
+      generatedAt: "2026-07-25T00:00:00Z",
+    });
+  }
+
   it("lists exports and creates a sensitive administrator export", async () => {
     const user = userEvent.setup();
+    mockAvailability({ visitors: 42, leads: 2, conversations: 42 });
     vi.spyOn(exportsApi, "list").mockResolvedValue({ items: [item], total: 1, limit: 50, offset: 0 });
     const create = vi.spyOn(exportsApi, "create").mockResolvedValue({
       ...item, id: "export-2", status: "pending",
@@ -52,6 +62,10 @@ describe("ExportsPage", () => {
     renderPage();
 
     await screen.findByText("可下载");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "导出数据类型" }),
+      "leads",
+    );
     await user.click(screen.getByRole("checkbox", { name: "包含未脱敏联系方式" }));
     await user.click(screen.getByRole("button", { name: "创建导出" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("leads", true));
@@ -59,13 +73,31 @@ describe("ExportsPage", () => {
   });
 
   it("disables sensitive export for a card owner", async () => {
+    mockAvailability();
     vi.spyOn(exportsApi, "list").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     renderPage("card_owner");
     expect(await screen.findByRole("checkbox", { name: "包含未脱敏联系方式" })).toBeDisabled();
   });
 
-  it("shows a permission state when no dataset can be read", () => {
+  it("shows a permission state when no dataset can be read", async () => {
+    mockAvailability({ visitors: 0, leads: 0, conversations: 0 });
     renderPage("auditor");
-    expect(screen.getByText("没有访问权限")).toBeInTheDocument();
+    expect(await screen.findByText("没有访问权限")).toBeInTheDocument();
+  });
+
+  it("selects a populated data type and disables an empty one", async () => {
+    mockAvailability({ visitors: 42, leads: 0, conversations: 42 });
+    vi.spyOn(exportsApi, "list").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    const { container } = renderPage();
+
+    await screen.findByText("当前暂无数据");
+    const availabilityButtons = container.querySelectorAll(".export-availability-item");
+    expect(availabilityButtons).toHaveLength(3);
+    expect(availabilityButtons[0]).toHaveAttribute("aria-pressed", "true");
+    expect(availabilityButtons[1]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "创建导出" })).toBeEnabled();
+    const options = container.querySelectorAll("select option");
+    expect(options[1]).toBeDisabled();
+    expect(options[1]).toHaveTextContent("线索（无数据）");
   });
 });

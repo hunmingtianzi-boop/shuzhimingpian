@@ -10,6 +10,7 @@ from app.api.dependencies import get_idempotency_key, get_staff_principal
 from app.api.errors import ApiError
 from app.api.export_schemas import (
     CreateExportRequest,
+    ExportAvailabilityEnvelope,
     ExportRequestEnvelope,
     ExportRequestListEnvelope,
 )
@@ -137,6 +138,20 @@ async def list_exports(
         scope=_scope(principal), limit=limit, offset=offset
     )
     return ExportRequestListEnvelope(data=records, total=total, limit=limit, offset=offset)
+
+
+@router.get(
+    "/exports/availability",
+    response_model=ExportAvailabilityEnvelope,
+    operation_id="getAdminDataExportAvailability",
+)
+async def get_export_availability(
+    request: Request,
+    principal: StaffDependency,
+) -> ExportAvailabilityEnvelope:
+    _require_any_export_access(principal)
+    availability = await _store(request).availability(scope=_scope(principal))
+    return ExportAvailabilityEnvelope(data=availability)
 
 
 @router.get(

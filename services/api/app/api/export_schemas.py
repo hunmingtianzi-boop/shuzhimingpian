@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExportModel(BaseModel):
@@ -13,6 +13,17 @@ class ExportModel(BaseModel):
 
 class CreateExportRequest(ExportModel):
     include_sensitive: bool = False
+
+
+class ExportAvailabilityView(ExportModel):
+    visitors: int = Field(ge=0)
+    leads: int = Field(ge=0)
+    conversations: int = Field(ge=0)
+    generated_at: datetime
+
+
+class ExportAvailabilityEnvelope(ExportModel):
+    data: ExportAvailabilityView
 
 
 class ExportRequestView(ExportModel):
@@ -42,6 +53,8 @@ class ExportRequestListEnvelope(ExportModel):
 
 __all__ = [
     "CreateExportRequest",
+    "ExportAvailabilityEnvelope",
+    "ExportAvailabilityView",
     "ExportRequestEnvelope",
     "ExportRequestListEnvelope",
     "ExportRequestView",

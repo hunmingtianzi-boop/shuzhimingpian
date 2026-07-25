@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client";
 import { exportsApi } from "../api/exportsApi";
-import type { DataExport, ExportType } from "../api/exportsApi";
+import type { DataExport, ExportAvailability, ExportType } from "../api/exportsApi";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
 import { OperationFeedback } from "../components/OperationFeedback";
@@ -62,7 +62,7 @@ export function saveExportFile(blob: Blob, fileName: string): void {
 
 export function ExportsPage() {
   const { user } = useAuth();
-  const [exportType, setExportType] = useState<ExportType>("leads");
+  const [exportType, setExportType] = useState<ExportType>("visitors");
   const [includeSensitive, setIncludeSensitive] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -81,12 +81,32 @@ export function ExportsPage() {
       : Promise.resolve({ items: [], total: 0, limit: 50, offset: 0 }),
     allowedTypes.join(","),
   );
+  const availability = useResource<ExportAvailability>(
+    () =>
+      allowedTypes.length > 0
+        ? exportsApi.availability()
+        : Promise.resolve({
+            visitors: 0,
+            leads: 0,
+            conversations: 0,
+            generatedAt: new Date(0).toISOString(),
+          }),
+    allowedTypes.join(","),
+  );
 
   useEffect(() => {
     if (!allowedTypes.includes(exportType) && allowedTypes[0]) {
       setExportType(allowedTypes[0]);
+      return;
     }
-  }, [allowedTypes, exportType]);
+    if (!availability.data) return;
+    const counts = availability.data;
+    if (counts[exportType] > 0) return;
+    const populatedType = allowedTypes.find((type) => counts[type] > 0);
+    if (populatedType) {
+      setExportType(populatedType);
+    }
+  }, [allowedTypes, availability.data, exportType]);
 
   useEffect(() => {
     const active = resource.data?.items.some(
@@ -98,7 +118,11 @@ export function ExportsPage() {
   }, [resource.data, resource.reload]);
 
   const createExport = async () => {
-    if (pendingAction || !allowedTypes.includes(exportType)) return;
+    if (
+      pendingAction ||
+      !allowedTypes.includes(exportType) ||
+      (availability.data?.[exportType] ?? 0) === 0
+    ) return;
     setPendingAction("create");
     setNotice(undefined);
     setError(undefined);
@@ -148,13 +172,59 @@ export function ExportsPage() {
     <main className="page-stack">
       <PageHeader
         title="数据导出"
-        description="异步生成 CSV；敏感字段仅企业管理员可选择，文件将在到期后自动清除。"
+        description="先查看各类真实数据量，再异步生成 CSV。文件到期后自动清除。"
         actions={
-          <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>
+          <Button
+            appearance="subtle"
+            icon={<ArrowClockwise24Regular />}
+            onClick={() => {
+              resource.reload();
+              availability.reload();
+            }}
+          >
             刷新
           </Button>
         }
       />
+      <section className="content-panel export-availability" aria-labelledby="export-availability-title">
+        <div className="section-heading-inline">
+          <div>
+            <h2 id="export-availability-title">当前可导出数据</h2>
+            <p>数量来自服务器实时统计。选择有数据的类型后再创建导出任务。</p>
+          </div>
+        </div>
+        {availability.status === "ready" && availability.data ? (
+          <div className="export-availability-grid">
+            {(Object.keys(TYPE_LABELS) as ExportType[]).map((type) => {
+              const count = availability.data?.[type] ?? 0;
+              const allowed = allowedTypes.includes(type);
+              return (
+                <Button
+                  key={type}
+                  className={`export-availability-item${exportType === type ? " is-selected" : ""}`}
+                  appearance="subtle"
+                  disabled={!allowed || count === 0}
+                  aria-pressed={exportType === type}
+                  onClick={() => setExportType(type)}
+                >
+                  <span>{TYPE_LABELS[type]}</span>
+                  <strong>{count}</strong>
+                  <small>{count > 0 ? "条数据可导出" : "当前暂无数据"}</small>
+                </Button>
+              );
+            })}
+          </div>
+        ) : (
+          <ResourceState
+            compact
+            status={availability.status === "ready" ? "empty" : availability.status}
+            description={availability.error?.message}
+            errorCode={availability.error?.code}
+            requestId={availability.error?.requestId}
+            onRetry={availability.status === "error" ? availability.reload : undefined}
+          />
+        )}
+      </section>
       <section className="content-panel filter-panel" aria-label="创建导出">
         <Select
           aria-label="导出数据类型"
@@ -162,7 +232,14 @@ export function ExportsPage() {
           onChange={(_, data) => setExportType(data.value as ExportType)}
         >
           {allowedTypes.map((type) => (
-            <option key={type} value={type}>{TYPE_LABELS[type]}</option>
+            <option
+              key={type}
+              value={type}
+              disabled={(availability.data?.[type] ?? 0) === 0}
+            >
+              {TYPE_LABELS[type]}
+              {(availability.data?.[type] ?? 0) === 0 ? "（无数据）" : ""}
+            </option>
           ))}
         </Select>
         <Checkbox
@@ -174,10 +251,14 @@ export function ExportsPage() {
         <Button
           appearance="primary"
           icon={<DocumentAdd24Regular />}
-          disabled={Boolean(pendingAction)}
+          disabled={Boolean(pendingAction) || (availability.data?.[exportType] ?? 0) === 0}
           onClick={() => void createExport()}
         >
-          {pendingAction === "create" ? "正在创建" : "创建导出"}
+          {pendingAction === "create"
+            ? "正在创建"
+            : (availability.data?.[exportType] ?? 0) === 0
+              ? "当前类型无数据"
+              : "创建导出"}
         </Button>
       </section>
       <OperationFeedback notice={notice} error={error} onRetry={resource.reload} />

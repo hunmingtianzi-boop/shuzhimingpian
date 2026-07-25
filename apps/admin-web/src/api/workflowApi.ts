@@ -26,6 +26,8 @@ import type {
   PageResult,
   PrivacyRequest,
   PrivacyRequestStatus,
+  TopicAnalysis,
+  TopicAnalysisItem,
   Visit,
 } from "./types";
 
@@ -124,6 +126,35 @@ function normalizeDashboard(payload: unknown): DashboardOverview {
     conversationRate: numberValue(raw.conversation_rate),
     leadRate: numberValue(raw.lead_rate),
     daily: Array.isArray(raw.daily) ? raw.daily.map(normalizeDaily) : [],
+  };
+}
+
+function normalizeTopicItem(value: unknown): TopicAnalysisItem {
+  const raw = isRecord(value) ? value : invalid("高频话题");
+  return {
+    topic: requiredString(raw.topic, "话题名称"),
+    count: numberValue(raw.count),
+    share: numberValue(raw.share),
+    sampleQuestions: stringArray(raw.sample_questions),
+  };
+}
+
+function normalizeTopicAnalysis(payload: unknown): TopicAnalysis {
+  const raw = dataRecord(payload, "高频话题分析");
+  const status = stringValue(raw.status);
+  if (!["empty", "not_generated", "ready", "stale"].includes(status)) {
+    invalid("高频话题分析状态");
+  }
+  return {
+    status: status as TopicAnalysis["status"],
+    generatedAt: optionalString(raw.generated_at),
+    periodDays: numberValue(raw.period_days),
+    questionCount: numberValue(raw.question_count),
+    analyzedQuestionCount: numberValue(raw.analyzed_question_count),
+    summary: optionalString(raw.summary),
+    topics: Array.isArray(raw.topics) ? raw.topics.map(normalizeTopicItem) : [],
+    provider: optionalString(raw.provider),
+    model: optionalString(raw.model),
   };
 }
 
@@ -417,6 +448,22 @@ export function createWorkflowApi(client: ApiClient) {
     async getDashboard(periodDays = 30): Promise<DashboardOverview> {
       return normalizeDashboard(
         await client.get(`/admin/dashboard${query({ period_days: periodDays })}`),
+      );
+    },
+
+    async getTopicAnalysis(periodDays = 30): Promise<TopicAnalysis> {
+      return normalizeTopicAnalysis(
+        await client.get(
+          `/admin/analytics/topics${query({ period_days: periodDays })}`,
+        ),
+      );
+    },
+
+    async analyzeTopics(periodDays = 30): Promise<TopicAnalysis> {
+      return normalizeTopicAnalysis(
+        await client.post(
+          `/admin/analytics/topics:analyze${query({ period_days: periodDays })}`,
+        ),
       );
     },
 

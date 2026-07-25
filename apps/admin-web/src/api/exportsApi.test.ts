@@ -47,6 +47,32 @@ describe("exportsApi", () => {
     expect(JSON.parse(String(createRequest[1]?.body))).toEqual({ include_sensitive: false });
   });
 
+  it("loads real exportable data counts", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: {
+        access_token: "access", csrf_token: "csrf",
+      } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          visitors: 42,
+          leads: 0,
+          conversations: 42,
+          generated_at: "2026-07-25T00:00:00Z",
+        },
+      }), { status: 200 }));
+    const api = createExportsApi(await authenticatedClient(fetcher));
+
+    await expect(api.availability()).resolves.toMatchObject({
+      visitors: 42,
+      leads: 0,
+      conversations: 42,
+    });
+    expect(fetcher.mock.calls[1][0]).toBe(
+      "https://api.example.test/admin/exports/availability",
+    );
+  });
+
   it("downloads binary CSV and decodes the server filename", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

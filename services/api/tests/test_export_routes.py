@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError, api_error_handler
-from app.api.export_schemas import ExportRequestView
+from app.api.export_schemas import ExportAvailabilityView, ExportRequestView
 from app.api.routes import exports as export_routes
 from app.core.tokens import StaffPrincipal
 from app.db.models import DataExportRequest, DataExportStatus, DataExportType
@@ -35,6 +35,15 @@ class ExportRouteStore:
     async def list(self, **kwargs: Any) -> tuple[list[ExportRequestView], int]:
         self.calls.append(("list", kwargs))
         return [self.view], 1
+
+    async def availability(self, **kwargs: Any) -> ExportAvailabilityView:
+        self.calls.append(("availability", kwargs))
+        return ExportAvailabilityView(
+            visitors=42,
+            leads=0,
+            conversations=42,
+            generated_at=datetime.now(UTC),
+        )
 
     async def get(self, **kwargs: Any) -> ExportRequestView:
         self.calls.append(("get", kwargs))
@@ -130,6 +139,22 @@ def test_download_uses_authenticated_store_and_no_store_headers(
     assert response.headers["cache-control"] == "private, no-store"
     assert "attachment" in response.headers["content-disposition"]
     assert [call[0] for call in store.calls] == ["get", "download"]
+
+
+def test_availability_exposes_real_exportable_counts(
+    export_client: tuple[TestClient, ExportRouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = export_client
+    response = client.get("/api/v1/admin/exports/availability")
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["visitors"] == 42
+    assert payload["leads"] == 0
+    assert payload["conversations"] == 42
+    assert payload["generated_at"]
+    call = store.calls[-1]
+    assert call[0] == "availability"
+    assert call[1]["scope"].company_id == principal_box["value"].company_id
 
 
 def test_expired_record_clears_ciphertext_and_reports_expired() -> None:

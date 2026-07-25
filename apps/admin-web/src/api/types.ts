@@ -614,6 +614,31 @@ export type DashboardOverview = {
   daily: DashboardDailyMetric[];
 };
 
+export type TopicAnalysisStatus =
+  | "empty"
+  | "not_generated"
+  | "ready"
+  | "stale";
+
+export type TopicAnalysisItem = {
+  topic: string;
+  count: number;
+  share: number;
+  sampleQuestions: string[];
+};
+
+export type TopicAnalysis = {
+  status: TopicAnalysisStatus;
+  generatedAt?: string;
+  periodDays: number;
+  questionCount: number;
+  analyzedQuestionCount: number;
+  summary?: string;
+  topics: TopicAnalysisItem[];
+  provider?: string;
+  model?: string;
+};
+
 export type EmployeeAnalytics = {
   userId: string;
   membershipId: string;

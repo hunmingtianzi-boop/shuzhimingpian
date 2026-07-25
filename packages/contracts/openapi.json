@@ -8806,6 +8806,55 @@
         }
       }
     },
+    "/admin/exports/availability": {
+      "get": {
+        "tags": [
+          "Data Exports"
+        ],
+        "summary": "Get Export Availability",
+        "operationId": "getAdminDataExportAvailability",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportAvailabilityEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/exports/{export_id}": {
       "get": {
         "tags": [
@@ -9778,6 +9827,128 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DashboardEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/analytics/topics": {
+      "get": {
+        "tags": [
+          "Business Workflow"
+        ],
+        "summary": "Get Topic Analysis",
+        "operationId": "getAdminTopicAnalysis",
+        "parameters": [
+          {
+            "name": "period_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 30,
+              "title": "Period Days"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicAnalysisEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/analytics/topics:analyze": {
+      "post": {
+        "tags": [
+          "Business Workflow"
+        ],
+        "summary": "Analyze Topics",
+        "operationId": "analyzeAdminConversationTopics",
+        "parameters": [
+          {
+            "name": "period_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 30,
+              "title": "Period Days"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicAnalysisEnvelope"
                 }
               }
             }
@@ -14377,6 +14548,52 @@
           "data"
         ],
         "title": "EvaluationJobEnvelope"
+      },
+      "ExportAvailabilityEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ExportAvailabilityView"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ExportAvailabilityEnvelope"
+      },
+      "ExportAvailabilityView": {
+        "properties": {
+          "visitors": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Visitors"
+          },
+          "leads": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Leads"
+          },
+          "conversations": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Conversations"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "visitors",
+          "leads",
+          "conversations",
+          "generated_at"
+        ],
+        "title": "ExportAvailabilityView"
       },
       "ExportRequestEnvelope": {
         "properties": {
@@ -20547,6 +20764,149 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TestPlatformLlmProfileRequest"
+      },
+      "TopicAnalysisEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TopicAnalysisView"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "TopicAnalysisEnvelope"
+      },
+      "TopicAnalysisItem": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Topic"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Count"
+          },
+          "share": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Share"
+          },
+          "sample_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Sample Questions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "topic",
+          "count",
+          "share"
+        ],
+        "title": "TopicAnalysisItem"
+      },
+      "TopicAnalysisView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "not_generated",
+              "ready",
+              "stale"
+            ],
+            "title": "Status"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "period_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Period Days"
+          },
+          "question_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Question Count"
+          },
+          "analyzed_question_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Analyzed Question Count"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 600
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicAnalysisItem"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Topics"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "period_days",
+          "question_count",
+          "analyzed_question_count"
+        ],
+        "title": "TopicAnalysisView"
       },
       "TransitionPlatformEnterpriseRequest": {
         "properties": {

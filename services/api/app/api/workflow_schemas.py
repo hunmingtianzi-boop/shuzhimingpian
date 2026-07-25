@@ -38,6 +38,29 @@ class DashboardEnvelope(WorkflowModel):
     data: DashboardOverview
 
 
+class TopicAnalysisItem(WorkflowModel):
+    topic: str = Field(min_length=1, max_length=40)
+    count: int = Field(ge=1)
+    share: float = Field(ge=0, le=1)
+    sample_questions: list[str] = Field(default_factory=list, max_length=2)
+
+
+class TopicAnalysisView(WorkflowModel):
+    status: Literal["empty", "not_generated", "ready", "stale"]
+    generated_at: datetime | None = None
+    period_days: int = Field(ge=1, le=90)
+    question_count: int = Field(ge=0)
+    analyzed_question_count: int = Field(ge=0)
+    summary: str | None = Field(default=None, max_length=600)
+    topics: list[TopicAnalysisItem] = Field(default_factory=list, max_length=8)
+    provider: str | None = None
+    model: str | None = None
+
+
+class TopicAnalysisEnvelope(WorkflowModel):
+    data: TopicAnalysisView
+
+
 class EmployeeAnalyticsItem(WorkflowModel):
     user_id: uuid.UUID
     membership_id: uuid.UUID

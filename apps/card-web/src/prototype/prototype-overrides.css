@@ -19,24 +19,6 @@
 
 .bp-prototype-flag { display: none; }
 
-/* The employee-card review page is intentionally a full-size iPhone-like surface. */
-.bp-statusbar { display: none; }
-.bp-card-statusbar {
-  display: grid;
-  height: 45px;
-  padding: 0 28px;
-  align-items: end;
-  grid-template-columns: 1fr 94px 1fr;
-  color: #101827;
-  background: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
-  font-size: 16px;
-  font-weight: 720;
-  letter-spacing: -.04em;
-}
-.bp-card-statusbar i { width: 94px; height: 27px; border-radius: 18px; background: #090b0f; }
-.bp-card-statusbar span { align-self: end; padding-bottom: 2px; font-size: 13px; letter-spacing: -.14em; text-align: right; }
-
 .bp-topbar {
   position: sticky;
   z-index: 3;

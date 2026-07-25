@@ -36,6 +36,13 @@ export type ExportDownload = {
   fileName: string;
 };
 
+export type ExportAvailability = {
+  visitors: number;
+  leads: number;
+  conversations: number;
+  generatedAt: string;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -94,6 +101,21 @@ function fileNameFromDisposition(value: string | null): string | undefined {
 
 export function createExportsApi(client: ApiClient = apiClient) {
   return {
+    async availability(): Promise<ExportAvailability> {
+      const value = unwrapData(await client.get("/admin/exports/availability"));
+      if (!isRecord(value)) {
+        throw new ApiError("可导出数据统计接口返回了无法识别的数据。", {
+          code: "INVALID_API_RESPONSE",
+        });
+      }
+      return {
+        visitors: typeof value.visitors === "number" ? value.visitors : 0,
+        leads: typeof value.leads === "number" ? value.leads : 0,
+        conversations: typeof value.conversations === "number" ? value.conversations : 0,
+        generatedAt: stringField(value.generated_at, "generated_at"),
+      };
+    },
+
     async list(options: { limit?: number; offset?: number } = {}): Promise<ExportList> {
       const limit = options.limit ?? 50;
       const offset = options.offset ?? 0;

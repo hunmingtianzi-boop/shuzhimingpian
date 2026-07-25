@@ -10,15 +10,20 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.errors import ApiError
-from app.api.export_schemas import ExportRequestView
+from app.api.export_schemas import ExportAvailabilityView, ExportRequestView
 from app.core.config import Settings
 from app.core.pii import PiiCipher, PiiCipherError
 from app.db.models import (
+    Card,
+    Conversation,
     DataExportRequest,
     DataExportStatus,
     DataExportType,
+    Lead,
     OutboxEvent,
     OutboxStatus,
+    Visit,
+    Visitor,
 )
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
@@ -178,6 +183,81 @@ class ExportStore:
                 )
             ).all()
             return [self._view(record) for record in records], total
+
+    async def availability(self, *, scope: ExportScope) -> ExportAvailabilityView:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            owner_filter = (
+                (Card.owner_user_id == scope.actor_user_id,)
+                if scope.is_card_owner
+                else ()
+            )
+            visitors = int(
+                await session.scalar(
+                    select(func.count(func.distinct(Visitor.id)))
+                    .select_from(Visitor)
+                    .join(
+                        Visit,
+                        (Visit.tenant_id == Visitor.tenant_id)
+                        & (Visit.company_id == Visitor.company_id)
+                        & (Visit.visitor_id == Visitor.id),
+                    )
+                    .join(
+                        Card,
+                        (Card.tenant_id == Visit.tenant_id)
+                        & (Card.company_id == Visit.company_id)
+                        & (Card.id == Visit.card_id),
+                    )
+                    .where(
+                        Visitor.tenant_id == scope.tenant_id,
+                        Visitor.company_id == scope.company_id,
+                        *owner_filter,
+                    )
+                )
+                or 0
+            )
+            leads = int(
+                await session.scalar(
+                    select(func.count(Lead.id))
+                    .select_from(Lead)
+                    .join(
+                        Card,
+                        (Card.tenant_id == Lead.tenant_id)
+                        & (Card.company_id == Lead.company_id)
+                        & (Card.id == Lead.card_id),
+                    )
+                    .where(
+                        Lead.tenant_id == scope.tenant_id,
+                        Lead.company_id == scope.company_id,
+                        *owner_filter,
+                    )
+                )
+                or 0
+            )
+            conversations = int(
+                await session.scalar(
+                    select(func.count(Conversation.id))
+                    .select_from(Conversation)
+                    .join(
+                        Card,
+                        (Card.tenant_id == Conversation.tenant_id)
+                        & (Card.company_id == Conversation.company_id)
+                        & (Card.id == Conversation.card_id),
+                    )
+                    .where(
+                        Conversation.tenant_id == scope.tenant_id,
+                        Conversation.company_id == scope.company_id,
+                        *owner_filter,
+                    )
+                )
+                or 0
+            )
+            return ExportAvailabilityView(
+                visitors=visitors,
+                leads=leads,
+                conversations=conversations,
+                generated_at=datetime.now(UTC),
+            )
 
     async def get(
         self,

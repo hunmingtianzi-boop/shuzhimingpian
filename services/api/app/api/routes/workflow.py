@@ -20,6 +20,7 @@ from app.api.workflow_schemas import (
     NotificationListEnvelope,
     OpportunityCandidateListEnvelope,
     SummaryEnvelope,
+    TopicAnalysisEnvelope,
     UpdateKnowledgeGapRequest,
     VisitEventEnvelope,
     VisitEventRequest,
@@ -29,6 +30,7 @@ from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal, VisitorPrincipal
 from app.services.admin_store import AdminScope, AdminStore
 from app.services.summary_provider import DeepSeekSummaryProvider
+from app.services.topic_analysis import TopicAnalysisService
 from app.services.workflow_store import WorkflowScope, WorkflowStore
 
 logger = structlog.get_logger(__name__)
@@ -75,6 +77,16 @@ def _admin_store(request: Request) -> AdminStore:
     )
 
 
+def _topic_service(request: Request) -> TopicAnalysisService:
+    return TopicAnalysisService(
+        request.app.state.session_factory,
+        request.app.state.settings,
+        request.app.state.http_client,
+        getattr(request.app.state, "redis", None),
+        semaphore=getattr(request.app.state, "ai_semaphore", None),
+    )
+
+
 def _require_access(
     principal: StaffPrincipal,
     *permissions: str,
@@ -108,6 +120,53 @@ async def get_dashboard(
     )
     overview = await _store(request).dashboard(scope=_scope(principal), period_days=period_days)
     return DashboardEnvelope(data=overview)
+
+
+@router.get(
+    "/admin/analytics/topics",
+    response_model=TopicAnalysisEnvelope,
+    operation_id="getAdminTopicAnalysis",
+)
+async def get_topic_analysis(
+    request: Request,
+    principal: StaffDependency,
+    period_days: Annotated[int, Query(ge=1, le=90)] = 30,
+) -> TopicAnalysisEnvelope:
+    _require_access(
+        principal,
+        "analytics.read",
+        "conversations.read",
+        allow_card_owner=True,
+    )
+    result = await _topic_service(request).get(
+        scope=_scope(principal),
+        period_days=period_days,
+    )
+    return TopicAnalysisEnvelope(data=result)
+
+
+@router.post(
+    "/admin/analytics/topics:analyze",
+    response_model=TopicAnalysisEnvelope,
+    operation_id="analyzeAdminConversationTopics",
+)
+async def analyze_topics(
+    request: Request,
+    principal: StaffDependency,
+    period_days: Annotated[int, Query(ge=1, le=90)] = 30,
+) -> TopicAnalysisEnvelope:
+    _require_access(
+        principal,
+        "analytics.read",
+        "conversations.read",
+        allow_card_owner=True,
+    )
+    result = await _topic_service(request).analyze(
+        scope=_scope(principal),
+        period_days=period_days,
+        trace_id=request_id_ctx.get(),
+    )
+    return TopicAnalysisEnvelope(data=result)
 
 
 @router.get(

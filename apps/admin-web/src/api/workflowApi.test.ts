@@ -118,6 +118,52 @@ const privacyRequest = {
 };
 
 describe("workflowApi production contracts", () => {
+  it("normalizes and regenerates conversation topic analysis", async () => {
+    const topicPayload = {
+      data: {
+        status: "ready",
+        generated_at: "2026-07-25T00:00:00Z",
+        period_days: 30,
+        question_count: 92,
+        analyzed_question_count: 92,
+        summary: "用户主要关注赛事报名与项目孵化。",
+        topics: [
+          {
+            topic: "赛事报名",
+            count: 40,
+            share: 0.4348,
+            sample_questions: ["怎么报名？"],
+          },
+        ],
+        provider: "deepseek",
+        model: "deepseek-chat",
+      },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse(topicPayload))
+      .mockResolvedValueOnce(jsonResponse(topicPayload));
+    const api = await authenticatedApi(fetcher);
+
+    await expect(api.getTopicAnalysis(30)).resolves.toMatchObject({
+      status: "ready",
+      questionCount: 92,
+      topics: [{ topic: "赛事报名", sampleQuestions: ["怎么报名？"] }],
+    });
+    await expect(api.analyzeTopics(30)).resolves.toMatchObject({
+      analyzedQuestionCount: 92,
+      provider: "deepseek",
+    });
+    expect(fetcher.mock.calls[1][0]).toBe(
+      "https://api.example.test/api/v1/admin/analytics/topics?period_days=30",
+    );
+    expect(fetcher.mock.calls[2][0]).toBe(
+      "https://api.example.test/api/v1/admin/analytics/topics:analyze?period_days=30",
+    );
+    expect(fetcher.mock.calls[2][1]).toMatchObject({ method: "POST" });
+  });
+
   it("normalizes paginated employee analytics and reconciliation", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

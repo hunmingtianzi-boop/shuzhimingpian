@@ -226,60 +226,34 @@ function AppHeader({
   title?: string;
   onShare?: () => void;
 }) {
-  const [clock, setClock] = useState(() =>
-    new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
-      new Date(),
-    ),
-  );
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setClock(
-        new Intl.DateTimeFormat("zh-CN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }).format(new Date()),
-      );
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
   return (
-    <>
-      <div className="bp-statusbar bp-card-statusbar" aria-hidden="true">
-        <strong>{clock}</strong>
-        <i />
-        <span>▮▮▮　◒　▰</span>
-      </div>
-      <header className={`bp-topbar${title ? "" : " bp-card-topbar"}${switchTarget ? " bp-switch-topbar" : ""}`}>
-        {switchTarget ? (
-          <a className="bp-card-switch" href={switchTarget.href} aria-label={switchTarget.ariaLabel}>
-            {switchTarget.kind === "enterprise" ? (
-              <BuildingsIcon size={16} weight="fill" />
-            ) : (
-              <IdentificationCardIcon size={16} weight="fill" />
-            )}
-            <span>{switchTarget.label}</span>
-          </a>
-        ) : back ? (
-          <button type="button" onClick={back} aria-label="返回">
-            <ArrowLeftIcon size={26} />
-          </button>
-        ) : (
-          <span className="bp-topbar-spacer" aria-hidden="true" />
-        )}
-        <strong>{title ?? ""}</strong>
-        {onShare ? (
-          <button type="button" onClick={onShare} aria-label="分享名片">
-            <ShareNetworkIcon size={24} />
-            {!title && !switchTarget && <small>分享</small>}
-          </button>
-        ) : (
-          <span className="bp-topbar-spacer" aria-hidden="true" />
-        )}
-      </header>
-    </>
+    <header className={`bp-topbar${title ? "" : " bp-card-topbar"}${switchTarget ? " bp-switch-topbar" : ""}`}>
+      {switchTarget ? (
+        <a className="bp-card-switch" href={switchTarget.href} aria-label={switchTarget.ariaLabel}>
+          {switchTarget.kind === "enterprise" ? (
+            <BuildingsIcon size={16} weight="fill" />
+          ) : (
+            <IdentificationCardIcon size={16} weight="fill" />
+          )}
+          <span>{switchTarget.label}</span>
+        </a>
+      ) : back ? (
+        <button type="button" onClick={back} aria-label="返回">
+          <ArrowLeftIcon size={26} />
+        </button>
+      ) : (
+        <span className="bp-topbar-spacer" aria-hidden="true" />
+      )}
+      <strong>{title ?? ""}</strong>
+      {onShare ? (
+        <button type="button" onClick={onShare} aria-label="分享名片">
+          <ShareNetworkIcon size={24} />
+          {!title && !switchTarget && <small>分享</small>}
+        </button>
+      ) : (
+        <span className="bp-topbar-spacer" aria-hidden="true" />
+      )}
+    </header>
   );
 }
 

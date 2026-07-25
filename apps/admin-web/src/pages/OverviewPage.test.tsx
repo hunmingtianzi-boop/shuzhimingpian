@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/client";
 import { enterpriseReadinessApi } from "../api/enterpriseReadinessApi";
-import type { DashboardOverview, EmployeeAnalyticsPage } from "../api/types";
+import type {
+  DashboardOverview,
+  EmployeeAnalyticsPage,
+  TopicAnalysis,
+} from "../api/types";
 import { workflowApi } from "../api/workflowApi";
 import { AuthContext, type AuthContextValue } from "../auth/AuthContext";
 import { adminLightTheme } from "../theme";
@@ -61,6 +65,31 @@ const employees: EmployeeAnalyticsPage = {
   },
 };
 
+const topicAnalysis: TopicAnalysis = {
+  status: "ready",
+  generatedAt: "2026-07-12T03:00:00Z",
+  periodDays: 30,
+  questionCount: 12,
+  analyzedQuestionCount: 12,
+  summary: "客户主要关注赛事报名、项目孵化与企业合作方式。",
+  topics: [
+    {
+      topic: "赛事报名",
+      count: 6,
+      share: 0.5,
+      sampleQuestions: ["浙客松怎么报名？", "参赛需要什么条件？"],
+    },
+    {
+      topic: "项目孵化",
+      count: 4,
+      share: 0.3333,
+      sampleQuestions: ["项目能获得哪些孵化支持？"],
+    },
+  ],
+  provider: "deepseek",
+  model: "deepseek-chat",
+};
+
 const auth: AuthContextValue = {
   status: "authenticated",
   user: {
@@ -97,6 +126,7 @@ describe("OverviewPage employee analytics", () => {
       processingImportBatchCount: 1,
       failedImportBatchCount: 0,
     });
+    vi.spyOn(workflowApi, "getTopicAnalysis").mockResolvedValue(topicAnalysis);
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -112,6 +142,8 @@ describe("OverviewPage employee analytics", () => {
     expect(await screen.findByRole("heading", { name: "运营就绪状态" })).toBeInTheDocument();
     expect(await screen.findByText("名片 AI")).toBeInTheDocument();
     expect(await screen.findByText("未发布名片")).toBeInTheDocument();
+    expect(await screen.findByText("赛事报名")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "用户高频话题热力分布" })).toBeInTheDocument();
   });
 
   it("keeps the employee query period in sync and resets pagination", async () => {
@@ -139,5 +171,26 @@ describe("OverviewPage employee analytics", () => {
 
     expect(await screen.findByText("没有访问权限")).toBeInTheDocument();
     expect(screen.getByLabelText("核心指标")).toBeInTheDocument();
+  });
+
+  it("runs the AI topic summary for the selected period", async () => {
+    const user = userEvent.setup();
+    vi.mocked(workflowApi.getTopicAnalysis).mockResolvedValue({
+      ...topicAnalysis,
+      status: "not_generated",
+      generatedAt: undefined,
+      summary: undefined,
+      topics: [],
+    });
+    vi.spyOn(workflowApi, "getDashboard").mockResolvedValue(dashboard);
+    vi.spyOn(workflowApi, "listEmployeeAnalytics").mockResolvedValue(employees);
+    const analyze = vi.spyOn(workflowApi, "analyzeTopics").mockResolvedValue(topicAnalysis);
+    renderPage();
+
+    await screen.findByText("已有 12 条用户问题可分析");
+    await user.click(screen.getByRole("button", { name: "AI 总结用户问题" }));
+
+    await waitFor(() => expect(analyze).toHaveBeenCalledWith(30));
+    expect(await screen.findByText(/已分析 12 条用户问题/)).toBeInTheDocument();
   });
 });
