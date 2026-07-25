@@ -41,7 +41,10 @@ function renderPage(role = "company_admin", permissions: string[] = []) {
 }
 
 describe("ExportsPage", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   function mockAvailability(
     availability = { visitors: 42, leads: 0, conversations: 42 },
@@ -52,24 +55,36 @@ describe("ExportsPage", () => {
     });
   }
 
-  it("lists exports and creates a sensitive administrator export", async () => {
+  it("creates and downloads a sensitive administrator export with one click", async () => {
     const user = userEvent.setup();
     mockAvailability({ visitors: 42, leads: 2, conversations: 42 });
     vi.spyOn(exportsApi, "list").mockResolvedValue({ items: [item], total: 1, limit: 50, offset: 0 });
     const create = vi.spyOn(exportsApi, "create").mockResolvedValue({
-      ...item, id: "export-2", status: "pending",
+      ...item, id: "export-2", status: "completed",
+    });
+    const download = vi.spyOn(exportsApi, "download").mockResolvedValue({
+      blob: new Blob(["id\r\nlead-1\r\n"], { type: "text/csv" }),
+      fileName: "线索.csv",
+    });
+    const createObjectURL = vi.fn(() => "blob:export-test");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectURL,
     });
     renderPage();
 
     await screen.findByText("可下载");
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "导出数据类型" }),
-      "leads",
-    );
     await user.click(screen.getByRole("checkbox", { name: "包含未脱敏联系方式" }));
-    await user.click(screen.getByRole("button", { name: "创建导出" }));
+    await user.click(screen.getByRole("button", { name: "导出线索数据，共 2 条" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("leads", true));
-    expect(await screen.findByText("导出任务已创建，页面会自动更新处理状态。")).toBeInTheDocument();
+    await waitFor(() => expect(download).toHaveBeenCalledWith("export-2", "leads.csv"));
+    expect(await screen.findByText(/线索 CSV 已生成，下载已开始/)).toBeInTheDocument();
+    expect(createObjectURL).toHaveBeenCalled();
   });
 
   it("disables sensitive export for a card owner", async () => {
@@ -85,7 +100,7 @@ describe("ExportsPage", () => {
     expect(await screen.findByText("没有访问权限")).toBeInTheDocument();
   });
 
-  it("selects a populated data type and disables an empty one", async () => {
+  it("makes populated data directly exportable and disables an empty type", async () => {
     mockAvailability({ visitors: 42, leads: 0, conversations: 42 });
     vi.spyOn(exportsApi, "list").mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     const { container } = renderPage();
@@ -93,11 +108,9 @@ describe("ExportsPage", () => {
     await screen.findByText("当前暂无数据");
     const availabilityButtons = container.querySelectorAll(".export-availability-item");
     expect(availabilityButtons).toHaveLength(3);
-    expect(availabilityButtons[0]).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "导出访客数据，共 42 条" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "导出对话数据，共 42 条" })).toBeEnabled();
     expect(availabilityButtons[1]).toBeDisabled();
-    expect(screen.getByRole("button", { name: "创建导出" })).toBeEnabled();
-    const options = container.querySelectorAll("select option");
-    expect(options[1]).toBeDisabled();
-    expect(options[1]).toHaveTextContent("线索（无数据）");
+    expect(screen.getByRole("button", { name: "线索当前暂无数据" })).toBeDisabled();
   });
 });

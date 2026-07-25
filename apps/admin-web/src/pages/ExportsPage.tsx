@@ -1,7 +1,6 @@
 import {
   Button,
   Checkbox,
-  Select,
   Table,
   TableBody,
   TableCell,
@@ -12,7 +11,6 @@ import {
 import {
   ArrowClockwise24Regular,
   ArrowDownload24Regular,
-  DocumentAdd24Regular,
 } from "@fluentui/react-icons";
 import { useEffect, useMemo, useState } from "react";
 
@@ -44,6 +42,8 @@ const STATUS_LABELS: Record<DataExport["status"], string> = {
   failed: "生成失败",
   expired: "已过期",
 };
+const EXPORT_POLL_INTERVAL_MS = 1_000;
+const EXPORT_POLL_ATTEMPTS = 45;
 
 function asApiError(error: unknown): ApiError {
   return error instanceof ApiError
@@ -56,13 +56,22 @@ export function saveExportFile(blob: Blob, fileName: string): void {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export function ExportsPage() {
   const { user } = useAuth();
-  const [exportType, setExportType] = useState<ExportType>("visitors");
   const [includeSensitive, setIncludeSensitive] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -95,20 +104,6 @@ export function ExportsPage() {
   );
 
   useEffect(() => {
-    if (!allowedTypes.includes(exportType) && allowedTypes[0]) {
-      setExportType(allowedTypes[0]);
-      return;
-    }
-    if (!availability.data) return;
-    const counts = availability.data;
-    if (counts[exportType] > 0) return;
-    const populatedType = allowedTypes.find((type) => counts[type] > 0);
-    if (populatedType) {
-      setExportType(populatedType);
-    }
-  }, [allowedTypes, availability.data, exportType]);
-
-  useEffect(() => {
     const active = resource.data?.items.some(
       (item) => item.status === "pending" || item.status === "processing",
     );
@@ -117,19 +112,49 @@ export function ExportsPage() {
     return () => window.clearInterval(timer);
   }, [resource.data, resource.reload]);
 
-  const createExport = async () => {
+  const createAndDownloadExport = async (exportType: ExportType) => {
     if (
       pendingAction ||
       !allowedTypes.includes(exportType) ||
       (availability.data?.[exportType] ?? 0) === 0
     ) return;
-    setPendingAction("create");
-    setNotice(undefined);
+    setPendingAction(`create:${exportType}`);
+    setNotice(`正在生成${TYPE_LABELS[exportType]} CSV，请稍候…`);
     setError(undefined);
     try {
-      await exportsApi.create(exportType, isAdmin && includeSensitive);
-      setNotice("导出任务已创建，页面会自动更新处理状态。");
+      let current = await exportsApi.create(exportType, isAdmin && includeSensitive);
       resource.reload();
+
+      for (
+        let attempt = 0;
+        attempt < EXPORT_POLL_ATTEMPTS &&
+        (current.status === "pending" || current.status === "processing");
+        attempt += 1
+      ) {
+        await wait(EXPORT_POLL_INTERVAL_MS);
+        current = await exportsApi.get(current.id);
+      }
+
+      resource.reload();
+      if (current.status === "completed") {
+        const download = await exportsApi.download(current.id, current.fileName);
+        saveExportFile(download.blob, download.fileName);
+        setNotice(
+          `${TYPE_LABELS[exportType]} CSV 已生成，下载已开始。若浏览器询问，请允许保存文件。`,
+        );
+        return;
+      }
+      if (current.status === "failed") {
+        throw new ApiError("导出文件生成失败，请重试。", {
+          code: current.failureCode || "EXPORT_FAILED",
+        });
+      }
+      if (current.status === "expired") {
+        throw new ApiError("导出文件已经过期，请重新生成。", {
+          code: "EXPORT_EXPIRED",
+        });
+      }
+      setNotice("任务仍在后台生成。完成后可在下方任务列表点击“下载 CSV”。");
     } catch (caught) {
       setError(asApiError(caught));
     } finally {
@@ -172,7 +197,7 @@ export function ExportsPage() {
     <main className="page-stack">
       <PageHeader
         title="数据导出"
-        description="先查看各类真实数据量，再异步生成 CSV。文件到期后自动清除。"
+        description="选择一类数据即可生成并下载 CSV。文件到期后自动清除。"
         actions={
           <Button
             appearance="subtle"
@@ -190,7 +215,7 @@ export function ExportsPage() {
         <div className="section-heading-inline">
           <div>
             <h2 id="export-availability-title">当前可导出数据</h2>
-            <p>数量来自服务器实时统计。选择有数据的类型后再创建导出任务。</p>
+            <p>点击有数据的卡片，系统会自动生成并开始下载 CSV。</p>
           </div>
         </div>
         {availability.status === "ready" && availability.data ? (
@@ -198,18 +223,32 @@ export function ExportsPage() {
             {(Object.keys(TYPE_LABELS) as ExportType[]).map((type) => {
               const count = availability.data?.[type] ?? 0;
               const allowed = allowedTypes.includes(type);
+              const isCreating = pendingAction === `create:${type}`;
               return (
                 <Button
                   key={type}
-                  className={`export-availability-item${exportType === type ? " is-selected" : ""}`}
+                  className="export-availability-item"
                   appearance="subtle"
-                  disabled={!allowed || count === 0}
-                  aria-pressed={exportType === type}
-                  onClick={() => setExportType(type)}
+                  disabled={!allowed || count === 0 || Boolean(pendingAction)}
+                  aria-label={
+                    count > 0
+                      ? `导出${TYPE_LABELS[type]}数据，共 ${count} 条`
+                      : `${TYPE_LABELS[type]}当前暂无数据`
+                  }
+                  onClick={() => void createAndDownloadExport(type)}
                 >
-                  <span>{TYPE_LABELS[type]}</span>
-                  <strong>{count}</strong>
-                  <small>{count > 0 ? "条数据可导出" : "当前暂无数据"}</small>
+                  <span className="export-availability-copy">
+                    <span className="export-availability-label">{TYPE_LABELS[type]}</span>
+                    <strong>{count}</strong>
+                    <small>
+                      {isCreating
+                        ? "正在生成 CSV…"
+                        : count > 0
+                          ? "一键导出 CSV"
+                          : "当前暂无数据"}
+                    </small>
+                  </span>
+                  {count > 0 ? <ArrowDownload24Regular className="export-availability-icon" /> : null}
                 </Button>
               );
             })}
@@ -225,41 +264,17 @@ export function ExportsPage() {
           />
         )}
       </section>
-      <section className="content-panel filter-panel" aria-label="创建导出">
-        <Select
-          aria-label="导出数据类型"
-          value={exportType}
-          onChange={(_, data) => setExportType(data.value as ExportType)}
-        >
-          {allowedTypes.map((type) => (
-            <option
-              key={type}
-              value={type}
-              disabled={(availability.data?.[type] ?? 0) === 0}
-            >
-              {TYPE_LABELS[type]}
-              {(availability.data?.[type] ?? 0) === 0 ? "（无数据）" : ""}
-            </option>
-          ))}
-        </Select>
+      <section className="content-panel export-options" aria-label="导出设置">
+        <div>
+          <strong>导出设置</strong>
+          <p>默认隐藏完整联系方式，管理员可按需导出未脱敏数据。</p>
+        </div>
         <Checkbox
           label="包含未脱敏联系方式"
           checked={includeSensitive}
           disabled={!isAdmin}
           onChange={(_, data) => setIncludeSensitive(data.checked === true)}
         />
-        <Button
-          appearance="primary"
-          icon={<DocumentAdd24Regular />}
-          disabled={Boolean(pendingAction) || (availability.data?.[exportType] ?? 0) === 0}
-          onClick={() => void createExport()}
-        >
-          {pendingAction === "create"
-            ? "正在创建"
-            : (availability.data?.[exportType] ?? 0) === 0
-              ? "当前类型无数据"
-              : "创建导出"}
-        </Button>
       </section>
       <OperationFeedback notice={notice} error={error} onRetry={resource.reload} />
       <section className="content-panel data-panel">
@@ -304,7 +319,7 @@ export function ExportsPage() {
                           disabled={item.status !== "completed" || Boolean(pendingAction)}
                           onClick={() => void downloadExport(item)}
                         >
-                          {pendingAction === item.id ? "下载中" : "下载"}
+                          {pendingAction === item.id ? "下载中" : "下载 CSV"}
                         </Button>
                       </TableCell>
                     </TableRow>

@@ -1537,15 +1537,16 @@ a:hover {
 }
 
 .export-availability-item {
+  position: relative;
   min-height: 92px;
   justify-content: flex-start !important;
-  padding: 14px 16px !important;
+  padding: 14px 46px 14px 16px !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
   text-align: left;
 }
 
-.export-availability-item > span {
+.export-availability-copy {
   width: 100%;
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1553,21 +1554,48 @@ a:hover {
   gap: 4px 12px;
 }
 
-.export-availability-item strong {
+.export-availability-label {
+  font-weight: 650;
+}
+
+.export-availability-copy strong {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 25px;
   font-variant-numeric: tabular-nums;
 }
 
-.export-availability-item small {
+.export-availability-copy small {
   grid-column: 1 / -1;
   color: var(--muted);
 }
 
-.export-availability-item.is-selected {
+.export-availability-item:not(:disabled):hover {
   border-color: var(--accent) !important;
-  box-shadow: inset 3px 0 0 var(--accent);
   background: #f1f6ff !important;
+}
+
+.export-availability-icon {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  color: var(--accent);
+}
+
+.export-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.export-options > div {
+  display: grid;
+  gap: 4px;
+}
+
+.export-options p {
+  margin: 0;
+  color: var(--muted);
 }
 
 .topic-analysis-panel {
@@ -2227,6 +2255,11 @@ a:hover {
 
   .export-availability-grid {
     grid-template-columns: 1fr;
+  }
+
+  .export-options {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .topic-analysis-summary {
