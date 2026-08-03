@@ -10,7 +10,7 @@ from typing import Literal, Mapping, Sequence
 from .policy import InputPolicyDecision, QuestionScope
 from .schemas import ChatMessage, RetrievedEvidence
 
-DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.5.2"
+DEFAULT_PROMPT_VERSION = "company-chat-hybrid-v1.6.0"
 
 ConversationMode = Literal["new", "continuation", "restate"]
 _HISTORY_MAX_MESSAGES = 6
