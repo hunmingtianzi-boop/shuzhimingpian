@@ -297,7 +297,7 @@ test("platform administrator signs in and creates an isolated enterprise", async
 
   await page.getByLabel("账号").fill("platform@example.test");
   await page.getByLabel("密码").fill("Local-Platform-Password-2026!");
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.getByRole("heading", { name: "平台运营中心" })).toBeVisible();
   await page.getByRole("link", { name: "企业管理" }).click();
   await expect(page.getByRole("heading", { name: "企业中心" })).toBeVisible();
