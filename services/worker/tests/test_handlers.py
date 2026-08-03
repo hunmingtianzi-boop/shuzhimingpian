@@ -29,6 +29,17 @@ class StubRepository:
     async def summary_recipient(self, _event: OutboxRecord) -> uuid.UUID:
         return self.summary_owner
 
+    async def send_wecom_lead_notification(
+        self,
+        _event: OutboxRecord,
+        *,
+        lead_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> bool:
+        assert lead_id
+        assert owner_user_id
+        return True
+
     async def build_export(
         self,
         _event: OutboxRecord,
@@ -83,6 +94,7 @@ async def test_lead_handler_creates_only_static_non_pii_notification() -> None:
     assert len(result.notifications) == 1
     assert "联系方式" in result.notifications[0].body
     assert "@" not in result.notifications[0].body
+    assert result.metadata["wecom_notification_delivered"] is True
 
 
 @pytest.mark.asyncio

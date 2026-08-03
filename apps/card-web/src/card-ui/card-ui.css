@@ -4163,6 +4163,88 @@ body,
   box-shadow: none;
 }
 
+.tz-wecom-modal {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(1, 8, 18, 0.82);
+  backdrop-filter: blur(14px);
+}
+
+.tz-wecom-modal-card {
+  position: relative;
+  width: min(100%, 360px);
+  padding: 28px 24px 22px;
+  border: 1px solid rgba(98, 222, 232, 0.34);
+  border-radius: 22px;
+  background: linear-gradient(150deg, #071d2b, #031219 70%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.tz-wecom-modal-card > small {
+  color: #63dfe8;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.tz-wecom-modal-card h2 {
+  margin: 8px 30px 18px;
+  color: #f4ffff;
+  font-size: 21px;
+  line-height: 1.35;
+}
+
+.tz-wecom-modal-card img {
+  display: block;
+  width: min(72vw, 248px);
+  aspect-ratio: 1;
+  margin: 0 auto 16px;
+  padding: 10px;
+  border-radius: 18px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.tz-wecom-modal-card p {
+  margin: 0;
+  color: rgba(225, 242, 245, 0.72);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.tz-wecom-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(151, 211, 220, 0.24);
+  border-radius: 50%;
+  background: rgba(8, 32, 44, 0.9);
+  color: #efffff;
+}
+
+.tz-wecom-modal-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tz-wecom-lead-fallback {
+  margin-top: 18px;
+  border: 0;
+  background: transparent;
+  color: #65dee9;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 /* AI assistant */
 .tz-stage[data-tenant="tuotu"] .tz-assistant-heading .tz-kicker,
 .tz-stage[data-tenant="tuotu"] .tz-assistant-page .tz-section-title h2,

@@ -42,6 +42,10 @@ from app.db.models import (
     VisitorProfileSignal,
     VisitorProfileSignalSource,
     VisitSummary,
+    WeComCallbackEvent,
+    WeComCardContactWay,
+    WeComCustomerLink,
+    WeComUserBinding,
     WorkerJobResult,
 )
 from app.db.session import (
@@ -99,6 +103,10 @@ __all__ = [
     "VisitorProfileSignal",
     "VisitorProfileSignalSource",
     "VisitSummary",
+    "WeComCallbackEvent",
+    "WeComCardContactWay",
+    "WeComCustomerLink",
+    "WeComUserBinding",
     "WorkerJobResult",
     "async_session_factory",
     "engine",

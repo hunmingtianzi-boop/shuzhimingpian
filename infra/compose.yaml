@@ -197,6 +197,17 @@ services:
     environment:
       <<: *api-environment
       DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-cf_ai_card_app}:${APP_DB_PASSWORD:-change-me-app-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
+      WECOM_CORP_ID: ${WECOM_CORP_ID:-}
+      WECOM_AGENT_ID: ${WECOM_AGENT_ID:-}
+      WECOM_APP_SECRET: ${WECOM_APP_SECRET:-}
+      WECOM_TENANT_ID: ${WECOM_TENANT_ID:-}
+      WECOM_COMPANY_ID: ${WECOM_COMPANY_ID:-}
+      WECOM_API_BASE_URL: ${WECOM_API_BASE_URL:-https://qyapi.weixin.qq.com}
+      WECOM_OAUTH_REDIRECT_URI: ${WECOM_OAUTH_REDIRECT_URI:-}
+      WECOM_OAUTH_STATE_TTL_SECONDS: ${WECOM_OAUTH_STATE_TTL_SECONDS:-600}
+      WECOM_CALLBACK_TOKEN: ${WECOM_CALLBACK_TOKEN:-}
+      WECOM_CALLBACK_ENCODING_AES_KEY: ${WECOM_CALLBACK_ENCODING_AES_KEY:-}
+      WECOM_TIMEOUT_SECONDS: ${WECOM_TIMEOUT_SECONDS:-8}
     ports:
       - "8000:8000"
     depends_on:

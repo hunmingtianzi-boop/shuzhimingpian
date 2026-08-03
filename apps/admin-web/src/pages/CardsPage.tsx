@@ -71,6 +71,7 @@ type CardTableProps = {
   onEdit: (card: ManagedCard) => void;
   onShare: (card: ManagedCard) => void;
   onOverride: (card: ManagedCard) => void;
+  onWeCom: (card: ManagedCard) => void;
   onAction: (type: CardAction["type"], card: ManagedCard) => void;
 };
 
@@ -81,6 +82,7 @@ function CardTable({
   onEdit,
   onShare,
   onOverride,
+  onWeCom,
   onAction,
 }: CardTableProps) {
   const enterprise = kind === "enterprise";
@@ -139,6 +141,16 @@ function CardTable({
                   >
                     编辑
                   </Button>
+                  {!enterprise && (
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<QrCode24Regular />}
+                      onClick={() => onWeCom(card)}
+                    >
+                      企微联系入口
+                    </Button>
+                  )}
                   {card.status === "published" && (
                     <>
                       <Button
@@ -213,6 +225,7 @@ export function CardsPage() {
   const [mutating, setMutating] = useState(false);
   const [actionError, setActionError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
+  const [wecomPendingId, setWecomPendingId] = useState<string>();
 
   const openCreate = (kind: ManagedCard["cardKind"]) => {
     setCreateKind(kind);
@@ -288,6 +301,31 @@ export function CardsPage() {
     setCopyError(undefined);
   };
 
+  const provisionWeCom = async (card: ManagedCard) => {
+    if (wecomPendingId) return;
+    setWecomPendingId(card.id);
+    setActionError(undefined);
+    setNotice(undefined);
+    try {
+      const contact = await adminApi.provisionWeComCardContactWay(card.id);
+      setNotice(
+        contact.qrCodeUrl
+          ? `“${card.displayName}”的企微联系入口已启用，公开名片会自动展示。`
+          : `“${card.displayName}”已绑定企微，但企业微信未返回二维码。`,
+      );
+    } catch (caught) {
+      setActionError(
+        caught instanceof ApiError
+          ? caught
+          : new ApiError("生成企微联系入口时发生未知错误。", {
+              code: "UNKNOWN_ERROR",
+            }),
+      );
+    } finally {
+      setWecomPendingId(undefined);
+    }
+  };
+
   return (
     <main className="page-stack">
       <PageHeader
@@ -296,6 +334,16 @@ export function CardsPage() {
         actions={
           resource.status === "permission" ? undefined : (
             <div className="row-actions">
+              {auth.wecomBind && (
+                <Button
+                  appearance="secondary"
+                  icon={<QrCode24Regular />}
+                  disabled={auth.loginPending}
+                  onClick={() => void auth.wecomBind?.()}
+                >
+                  {auth.loginPending ? "正在连接企微" : "绑定我的企业微信"}
+                </Button>
+              )}
               {canManageEnterpriseCards && (
                 <Button
                   appearance="primary"
@@ -320,6 +368,14 @@ export function CardsPage() {
       {notice && (
         <MessageBar intent="success">
           <MessageBarBody>{notice}</MessageBarBody>
+        </MessageBar>
+      )}
+      {actionError && !action && (
+        <MessageBar intent="error">
+          <MessageBarBody>
+            {actionError.message}
+            {actionError.requestId ? `（请求 ${actionError.requestId}）` : ""}
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -379,6 +435,7 @@ export function CardsPage() {
               onEdit={edit}
               onShare={share}
               onOverride={setOverrideTarget}
+              onWeCom={provisionWeCom}
               onAction={requestAction}
             />
           </section>
@@ -400,6 +457,7 @@ export function CardsPage() {
               onEdit={edit}
               onShare={share}
               onOverride={setOverrideTarget}
+              onWeCom={provisionWeCom}
               onAction={requestAction}
             />
           </section>

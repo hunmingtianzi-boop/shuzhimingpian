@@ -48,7 +48,7 @@ class EventHandlerRegistry:
         if event.event_type == "data_export.requested.v1":
             return await self._data_export(event, payload)
         if event.event_type == "lead.created.v1":
-            return self._lead(event, payload)
+            return await self._lead(event, payload)
         if event.event_type == "privacy_request.created.v1":
             return await self._privacy_request(event, payload)
         if event.event_type == "enterprise.created.v1":
@@ -136,11 +136,15 @@ class EventHandlerRegistry:
             metadata={"gate_passed": passed},
         )
 
-    @staticmethod
-    def _lead(event: OutboxRecord, payload: Mapping[str, Any]) -> HandlerResult:
+    async def _lead(self, event: OutboxRecord, payload: Mapping[str, Any]) -> HandlerResult:
         lead_id = _uuid_value(payload, "lead_id")
         owner_user_id = _uuid_value(payload, "owner_user_id")
         _uuid_value(payload, "card_id")
+        wecom_delivered = await self._repository.send_wecom_lead_notification(
+            event,
+            lead_id=lead_id,
+            owner_user_id=owner_user_id,
+        )
         return HandlerResult(
             handler_name="lead-notification-v1",
             notifications=(
@@ -153,7 +157,10 @@ class EventHandlerRegistry:
                     resource_id=lead_id,
                 ),
             ),
-            metadata={"event_id": str(event.id)},
+            metadata={
+                "event_id": str(event.id),
+                "wecom_notification_delivered": wecom_delivered,
+            },
         )
 
     async def _privacy_request(

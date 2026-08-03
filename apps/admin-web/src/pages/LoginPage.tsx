@@ -7,6 +7,7 @@ import {
 } from "@fluentui/react-components";
 import {
   Building24Regular,
+  Chat24Regular,
   LockClosed24Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -21,6 +22,7 @@ export type LoginFormProps = {
   apiConfigured: boolean;
   error?: ApiError;
   onLogin: (input: LoginInput) => Promise<void>;
+  onWeComLogin?: () => Promise<void>;
 };
 
 export function LoginForm({
@@ -28,6 +30,7 @@ export function LoginForm({
   apiConfigured,
   error,
   onLogin,
+  onWeComLogin,
 }: LoginFormProps) {
   const [account, setAccount] = useState("");
   const [credential, setCredential] = useState("");
@@ -105,6 +108,24 @@ export function LoginForm({
       >
         {pending ? "正在登录" : "登录"}
       </Button>
+
+      {onWeComLogin && (
+        <>
+          <div className="login-divider" role="separator">
+            <span>或</span>
+          </div>
+          <Button
+            type="button"
+            appearance="outline"
+            size="large"
+            icon={<Chat24Regular />}
+            disabled={!apiConfigured || pending}
+            onClick={() => void onWeComLogin().catch(() => undefined)}
+          >
+            企业微信登录
+          </Button>
+        </>
+      )}
     </form>
   );
 }
@@ -128,6 +149,7 @@ export function LoginPage() {
           apiConfigured={auth.apiConfigured}
           error={auth.error}
           onLogin={auth.login}
+          onWeComLogin={auth.wecomLogin}
         />
       </section>
     </main>

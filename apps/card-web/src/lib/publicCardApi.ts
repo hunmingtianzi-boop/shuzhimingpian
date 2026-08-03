@@ -8,6 +8,11 @@ export type PublicCardData = {
   title: string;
   avatar_url?: string | null;
   contact_fields: PublicLinkItem[];
+  wecom_contact?: {
+    available: boolean;
+    qr_code_url?: string | null;
+    label: string;
+  } | null;
   company: {
     id: string;
     name: string;
@@ -98,6 +103,14 @@ function parsePublicCard(value: unknown): PublicCardData {
     title: requiredString(data, "title"),
     avatar_url: optionalString(data, "avatar_url"),
     contact_fields: stringRecordList(data.contact_fields),
+    wecom_contact: isRecord(data.wecom_contact)
+      ? {
+          available: data.wecom_contact.available === true,
+          qr_code_url: optionalString(data.wecom_contact, "qr_code_url"),
+          label:
+            optionalString(data.wecom_contact, "label") || "添加企业微信",
+        }
+      : undefined,
     company: {
       id: requiredString(company, "id"),
       name: requiredString(company, "name"),

@@ -15,6 +15,7 @@ import {
   ApiError,
 } from "../api/client";
 import type { AdminUser, LoginInput } from "../api/types";
+import { appHref } from "../routing";
 
 type AuthStatus = "bootstrapping" | "unauthenticated" | "authenticated";
 
@@ -25,6 +26,8 @@ export type AuthContextValue = {
   loginPending: boolean;
   apiConfigured: boolean;
   login: (input: LoginInput) => Promise<void>;
+  wecomLogin?: () => Promise<void>;
+  wecomBind?: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -57,7 +60,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        await apiClient.refreshSession();
+        const query = new URLSearchParams(globalThis.location.search);
+        const code = query.get("code");
+        const state = query.get("state");
+        const isWeComCallback = globalThis.location.pathname.endsWith(
+          "/wecom/callback",
+        );
+        if (isWeComCallback && code && state) {
+          const flow = apiClient.consumeWeComFlow();
+          if (flow === "bind") {
+            await apiClient.refreshSession();
+            await apiClient.bindWithWeCom(code, state);
+          } else {
+            await apiClient.loginWithWeCom(code, state);
+          }
+          globalThis.history.replaceState(
+            {},
+            "",
+            apiClient.consumeWeComReturnTo(),
+          );
+        } else {
+          await apiClient.refreshSession();
+        }
         const currentUser = await adminApi.me();
         if (!active) return;
         setUser(currentUser);
@@ -107,6 +131,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const wecomLogin = useCallback(async () => {
+    setLoginPending(true);
+    setError(undefined);
+    try {
+      const authorizeUrl = await apiClient.createWeComLoginUrl(appHref("/"));
+      globalThis.location.assign(authorizeUrl);
+    } catch (caught) {
+      const apiError = asApiError(caught);
+      setError(apiError);
+      setStatus("unauthenticated");
+      throw apiError;
+    } finally {
+      setLoginPending(false);
+    }
+  }, []);
+
+  const wecomBind = useCallback(async () => {
+    setLoginPending(true);
+    setError(undefined);
+    try {
+      const authorizeUrl = await apiClient.createWeComBindingUrl(appHref("/cards"));
+      globalThis.location.assign(authorizeUrl);
+    } catch (caught) {
+      const apiError = asApiError(caught);
+      setError(apiError);
+      throw apiError;
+    } finally {
+      setLoginPending(false);
+    }
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       status,
@@ -115,9 +170,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginPending,
       apiConfigured: apiClient.isConfigured(),
       login,
+      wecomLogin,
+      wecomBind,
       logout,
     }),
-    [error, login, loginPending, logout, status, user],
+    [error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

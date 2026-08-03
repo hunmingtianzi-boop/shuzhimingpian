@@ -26,6 +26,10 @@ class QuestionScope(StrEnum):
     GENERAL = "general"
     AMBIGUOUS = "ambiguous"
     MIXED = "mixed"
+    # The wording does not prove whether the subject is the current enterprise
+    # or an open-domain topic.  The orchestrator must probe published knowledge
+    # before resolving this to ENTERPRISE or GENERAL.
+    UNRESOLVED = "unresolved"
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +152,19 @@ _CONTEXTUAL_FOLLOW_UP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_ASSISTANT_META_OR_CASUAL_PATTERN = re.compile(
+    r"(?:你是谁|你是(?:人|机器人|AI)吗|你会什么|能聊什么|讲个笑话|"
+    r"陪我聊|随便聊|你有病|无聊|心情|晚安)",
+    re.IGNORECASE,
+)
+
+_POSSIBLE_NAMED_SUBJECT_PATTERN = re.compile(
+    r"^(?:(?:请)?(?:介绍|说说|讲讲|了解|解释|总结|分析)(?:一下)?[\s:：]*"
+    r"[^，。！？?]{2,48}|什么是[^，。！？?]{2,48}|[^，。！？?]{2,48}"
+    r"(?:是什么|是做什么的|怎么样|如何参与|怎么参与|怎么报名))[？?。.]?$",
+    re.IGNORECASE,
+)
+
 
 def classify_question_scope(
     text: str,
@@ -157,7 +174,8 @@ def classify_question_scope(
 
     Explicit general requests remain available, while enterprise topics and
     enterprise-context follow-ups stay inside the published-evidence boundary.
-    Unknown first-turn subjects are clarified instead of guessed.
+    Unknown first-turn subjects remain unresolved so the orchestrator can
+    probe enterprise knowledge before allowing an open-domain answer.
     """
 
     normalized = _normalize_input(text)
@@ -193,11 +211,15 @@ def _classify_scope_without_history(text: str) -> QuestionScope:
         return QuestionScope.GENERAL
     if has_enterprise_topic:
         return QuestionScope.ENTERPRISE
+    if _ASSISTANT_META_OR_CASUAL_PATTERN.search(text):
+        return QuestionScope.GENERAL
+    if _POSSIBLE_NAMED_SUBJECT_PATTERN.fullmatch(text):
+        return QuestionScope.UNRESOLVED
     if has_general_task:
         return QuestionScope.GENERAL
     if _CONTEXTUAL_FOLLOW_UP_PATTERN.fullmatch(text):
         return QuestionScope.AMBIGUOUS
-    return QuestionScope.GENERAL
+    return QuestionScope.UNRESOLVED
 
 
 class InputSecurityPolicy:
@@ -313,11 +335,7 @@ class EvidenceGate:
         *,
         question_scope: QuestionScope = QuestionScope.ENTERPRISE,
     ) -> EvidenceGateDecision:
-        accepted = tuple(
-            item
-            for item in sorted(evidence, key=lambda item: item.score, reverse=True)
-            if self._score_allowed(item) and item.text.strip()
-        )[: self.config.max_evidence]
+        accepted = self.accepted_evidence(evidence)
         flags = set(decision.flags)
         if not accepted:
             if self.allows_evidence_free_answer(
@@ -389,6 +407,24 @@ class EvidenceGate:
                 self.allows_general_answer(decision, question_scope=question_scope)
             ),
         )
+
+    def accepted_evidence(
+        self,
+        evidence: Sequence[RetrievedEvidence],
+    ) -> tuple[RetrievedEvidence, ...]:
+        """Return the exact calibrated evidence set used by the policy gate.
+
+        Query planning uses this method to measure per-subquery coverage with
+        the same thresholds that later control generation.  Keeping one source
+        of truth prevents a weak retrieval candidate from being counted as a
+        covered long-tail question.
+        """
+
+        return tuple(
+            item
+            for item in sorted(evidence, key=lambda item: item.score, reverse=True)
+            if self._score_allowed(item) and item.text.strip()
+        )[: self.config.max_evidence]
 
     def allows_general_answer(
         self,

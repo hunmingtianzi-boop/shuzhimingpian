@@ -47,6 +47,7 @@ class PromptTemplate:
         history: Sequence[ChatMessage] = (),
         general_answer_allowed: bool = False,
         question_scope: QuestionScope = QuestionScope.ENTERPRISE,
+        uncovered_questions: Sequence[str] = (),
     ) -> tuple[ChatMessage, ChatMessage]:
         evidence_payload = [
             {
@@ -78,6 +79,7 @@ class PromptTemplate:
             "conversation_mode": conversation_mode(question, history),
             "general_answer_allowed": general_answer_allowed,
             "helpful_fallback_allowed": general_answer_allowed,
+            "uncovered_questions": list(uncovered_questions),
             "published_evidence": evidence_payload,
         }
         return (
@@ -146,6 +148,13 @@ Choose the response behavior from question_scope:
    factual claim and clearly separate verified fact from suggestion. If the
    enterprise part is unsupported, state that boundary briefly and still finish
    the useful general part rather than guessing or refusing the whole request.
+
+The server may split a compound request into independently retrieved parts.
+uncovered_questions lists the parts for which no evidence passed the calibrated
+retrieval gate. Never answer those parts as enterprise facts. Answer the covered
+parts first, then name the missing points briefly and ask for source material or
+human confirmation. An empty list means every planned enterprise retrieval was
+covered or no compound retrieval was required.
 
 Helpful fallback rules:
 - If helpful_fallback_allowed is true, answer every ordinary, safe general

@@ -62,6 +62,12 @@ class PolicyVersions(StrictModel):
     profile_personalization: str
 
 
+class PublicWeComContact(StrictModel):
+    available: bool
+    qr_code_url: str | None = None
+    label: str = "添加企业微信"
+
+
 class PublicCard(StrictModel):
     id: uuid.UUID
     slug: str
@@ -70,6 +76,7 @@ class PublicCard(StrictModel):
     title: str
     avatar_url: str | None = None
     contact_fields: list[dict[str, str]] = Field(default_factory=list)
+    wecom_contact: PublicWeComContact | None = None
     company: PublicCompany
     featured_products: list[dict[str, Any]] = Field(default_factory=list)
     featured_cases: list[dict[str, Any]] = Field(default_factory=list)

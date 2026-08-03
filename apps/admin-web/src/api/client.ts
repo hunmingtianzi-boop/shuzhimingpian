@@ -23,6 +23,8 @@ type SessionTokens = {
 
 export const ADMIN_AUTH_EXPIRED_EVENT = "cf-admin-auth-expired";
 export const ADMIN_CSRF_TOKEN_KEY = "cf-admin-csrf-token";
+export const ADMIN_WECOM_RETURN_TO_KEY = "cf-admin-wecom-return-to";
+export const ADMIN_WECOM_FLOW_KEY = "cf-admin-wecom-flow";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -164,6 +166,86 @@ export class ApiClient {
       { authenticated: false, retryAfterRefresh: false },
     );
     this.storeSessionTokens(readSessionTokens(payload));
+  }
+
+  async createWeComLoginUrl(returnTo = "/"): Promise<string> {
+    const safeReturnTo = safeRelativePath(returnTo);
+    const payload = await this.execute(
+      `/auth/wecom/login-url?return_to=${encodeURIComponent(safeReturnTo)}`,
+      { method: "GET" },
+      { authenticated: false, retryAfterRefresh: false },
+    );
+    const data = unwrapData(payload);
+    if (!isRecord(data)) {
+      throw new ApiError("企业微信登录接口返回了无法识别的数据。", {
+        code: "INVALID_API_RESPONSE",
+      });
+    }
+    const authorizeUrl = requiredString(data.authorize_url, "authorize_url");
+    try {
+      this.getStorage()?.setItem(ADMIN_WECOM_RETURN_TO_KEY, safeReturnTo);
+      this.getStorage()?.setItem(ADMIN_WECOM_FLOW_KEY, "login");
+    } catch {
+      // A failed storage write does not prevent OAuth; the callback falls back to root.
+    }
+    return authorizeUrl;
+  }
+
+  async createWeComBindingUrl(returnTo = "/"): Promise<string> {
+    const safeReturnTo = safeRelativePath(returnTo);
+    const payload = await this.get(
+      `/auth/wecom/bind-url?return_to=${encodeURIComponent(safeReturnTo)}`,
+    );
+    const data = unwrapData(payload);
+    if (!isRecord(data)) {
+      throw new ApiError("企业微信绑定接口返回了无法识别的数据。", {
+        code: "INVALID_API_RESPONSE",
+      });
+    }
+    const authorizeUrl = requiredString(data.authorize_url, "authorize_url");
+    try {
+      this.getStorage()?.setItem(ADMIN_WECOM_RETURN_TO_KEY, safeReturnTo);
+      this.getStorage()?.setItem(ADMIN_WECOM_FLOW_KEY, "bind");
+    } catch {
+      // OAuth can continue; the callback falls back to the current workspace.
+    }
+    return authorizeUrl;
+  }
+
+  async loginWithWeCom(code: string, state: string): Promise<void> {
+    const payload = await this.execute(
+      "/auth/wecom/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ code, state }),
+      },
+      { authenticated: false, retryAfterRefresh: false },
+    );
+    this.storeSessionTokens(readSessionTokens(payload));
+  }
+
+  async bindWithWeCom(code: string, state: string): Promise<void> {
+    await this.post("/auth/wecom/bind", { code, state });
+  }
+
+  consumeWeComFlow(): "login" | "bind" {
+    try {
+      const value = this.getStorage()?.getItem(ADMIN_WECOM_FLOW_KEY);
+      this.getStorage()?.removeItem(ADMIN_WECOM_FLOW_KEY);
+      return value === "bind" ? "bind" : "login";
+    } catch {
+      return "login";
+    }
+  }
+
+  consumeWeComReturnTo(): string {
+    try {
+      const value = this.getStorage()?.getItem(ADMIN_WECOM_RETURN_TO_KEY) ?? "/";
+      this.getStorage()?.removeItem(ADMIN_WECOM_RETURN_TO_KEY);
+      return safeRelativePath(value);
+    } catch {
+      return "/";
+    }
   }
 
   async refreshSession(): Promise<void> {
@@ -439,6 +521,21 @@ function versionHeaders(options: VersionRequestOptions): Headers {
     headers.set("Idempotency-Key", options.idempotencyKey);
   }
   return headers;
+}
+
+function safeRelativePath(value: string): string {
+  const normalized = value.trim() || "/";
+  if (
+    !normalized.startsWith("/") ||
+    normalized.startsWith("//") ||
+    normalized.includes("\\") ||
+    normalized.includes("\r") ||
+    normalized.includes("\n") ||
+    normalized.length > 500
+  ) {
+    return "/";
+  }
+  return normalized;
 }
 
 export function apiBaseUrlFromEnvironment(): string {

@@ -61,6 +61,8 @@ REQUIRED_TABLES = {
     "visitor_profile_signal_sources",
     "knowledge_import_batches",
     "knowledge_import_items",
+    "wecom_user_bindings",
+    "wecom_callback_events",
 }
 
 COMPANY_SCOPED_TABLES = REQUIRED_TABLES - {
@@ -404,3 +406,27 @@ def test_platform_onboarding_has_a_narrow_authenticated_rls_path(
     assert "membership.role = 'platform_admin'" in migration_sql
     for table_name in ("tenants", "companies", "users", "memberships", "cards"):
         assert f"create policy {table_name}_platform_insert" in migration_sql
+
+
+def test_wecom_identity_and_callbacks_are_encrypted_scoped_and_deduplicated(
+    migration_sql: str,
+) -> None:
+    binding = Base.metadata.tables["wecom_user_bindings"]
+    callback = Base.metadata.tables["wecom_callback_events"]
+    assert {
+        "wecom_user_id_ciphertext",
+        "wecom_user_id_hmac",
+        "profile_ciphertext",
+        "encryption_key_ref",
+    } <= set(binding.columns.keys())
+    assert {
+        "provider_event_key",
+        "payload_ciphertext",
+        "status",
+        "received_at",
+    } <= set(callback.columns.keys())
+    for table_name in ("wecom_user_bindings", "wecom_callback_events"):
+        assert f"alter table {table_name} force row level security" in migration_sql
+        assert f"create policy {table_name}_scope_isolation" in migration_sql
+    assert "uq_wecom_callback_events_provider_key" in migration_sql
+    assert "grant select, insert, update on wecom_user_bindings" in migration_sql

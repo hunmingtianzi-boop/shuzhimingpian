@@ -5,6 +5,7 @@ from functools import lru_cache
 from ipaddress import ip_network
 from typing import Literal
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -106,6 +107,21 @@ class Settings(BaseSettings):
     embedding_dimension: int = Field(default=1_024, ge=64, le=4_096)
     embedding_timeout_seconds: float = Field(default=20.0, ge=2, le=120)
 
+    # Enterprise WeChat (WeCom) pilot connector. Provider credentials remain
+    # environment-backed while identity bindings and callbacks are encrypted,
+    # tenant-scoped database records.
+    wecom_corp_id: str | None = None
+    wecom_agent_id: int | None = Field(default=None, ge=1)
+    wecom_app_secret: SecretStr | None = None
+    wecom_tenant_id: UUID | None = None
+    wecom_company_id: UUID | None = None
+    wecom_api_base_url: str = "https://qyapi.weixin.qq.com"
+    wecom_oauth_redirect_uri: str | None = None
+    wecom_oauth_state_ttl_seconds: int = Field(default=600, ge=120, le=1_800)
+    wecom_callback_token: SecretStr | None = None
+    wecom_callback_encoding_aes_key: SecretStr | None = None
+    wecom_timeout_seconds: float = Field(default=8.0, ge=2, le=30)
+
     retrieval_top_k: int = Field(default=8, ge=1, le=30)
     retrieval_context_k: int = Field(default=5, ge=1, le=10)
     retrieval_vector_weight: float = Field(default=0.65, ge=0, le=1)
@@ -196,6 +212,9 @@ class Settings(BaseSettings):
         "admin_bootstrap_password",
         "field_encryption_previous_keys",
         "metrics_bearer_token",
+        "wecom_app_secret",
+        "wecom_callback_token",
+        "wecom_callback_encoding_aes_key",
         mode="before",
     )
     @classmethod
@@ -206,6 +225,28 @@ class Settings(BaseSettings):
             return value if value.get_secret_value().strip() else None
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("wecom_agent_id", mode="before")
+    @classmethod
+    def empty_wecom_agent_id_is_unconfigured(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("wecom_tenant_id", "wecom_company_id", mode="before")
+    @classmethod
+    def empty_wecom_scope_is_unconfigured(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("wecom_corp_id", "wecom_oauth_redirect_uri", mode="before")
+    @classmethod
+    def empty_wecom_text_is_unconfigured(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
         return value
 
     @field_validator("admin_bootstrap_tenant_slug", "admin_bootstrap_account", mode="before")
@@ -323,6 +364,62 @@ class Settings(BaseSettings):
                 "EMBEDDING_BASE_URL, EMBEDDING_API_KEY and EMBEDDING_MODEL are required "
                 "when EMBEDDING_PROVIDER is enabled"
             )
+        wecom_core = (self.wecom_corp_id, self.wecom_agent_id, self.wecom_app_secret)
+        if any(value is not None for value in wecom_core) and not all(
+            value is not None for value in wecom_core
+        ):
+            raise ValueError(
+                "WECOM_CORP_ID, WECOM_AGENT_ID and WECOM_APP_SECRET must be configured together"
+            )
+        wecom_callback = (
+            self.wecom_callback_token,
+            self.wecom_callback_encoding_aes_key,
+        )
+        if any(value is not None for value in wecom_callback) and not all(
+            value is not None for value in wecom_callback
+        ):
+            raise ValueError(
+                "WECOM_CALLBACK_TOKEN and WECOM_CALLBACK_ENCODING_AES_KEY must be "
+                "configured together"
+            )
+        wecom_scope = (self.wecom_tenant_id, self.wecom_company_id)
+        if any(value is not None for value in wecom_scope) and not all(
+            value is not None for value in wecom_scope
+        ):
+            raise ValueError(
+                "WECOM_TENANT_ID and WECOM_COMPANY_ID must be configured together"
+            )
+        if (self.wecom_oauth_redirect_uri or any(wecom_callback)) and not all(
+            value is not None for value in (*wecom_core, *wecom_scope)
+        ):
+            raise ValueError(
+                "WeCom OAuth and callbacks require core credentials and a tenant/company scope"
+            )
+        wecom_base = urlsplit(self.wecom_api_base_url.strip().rstrip("/"))
+        if (
+            wecom_base.scheme.casefold() != "https"
+            or not wecom_base.netloc
+            or wecom_base.username
+            or wecom_base.password
+            or wecom_base.path
+            or wecom_base.query
+            or wecom_base.fragment
+        ):
+            raise ValueError("WECOM_API_BASE_URL must be an HTTPS origin")
+        self.wecom_api_base_url = self.wecom_api_base_url.strip().rstrip("/")
+        if self.wecom_oauth_redirect_uri:
+            oauth_redirect = urlsplit(self.wecom_oauth_redirect_uri)
+            local_redirect = oauth_redirect.hostname in {"localhost", "127.0.0.1"}
+            if (
+                oauth_redirect.scheme.casefold() not in {"http", "https"}
+                or not oauth_redirect.netloc
+                or oauth_redirect.username
+                or oauth_redirect.password
+                or (oauth_redirect.scheme.casefold() != "https" and not local_redirect)
+            ):
+                raise ValueError(
+                    "WECOM_OAUTH_REDIRECT_URI must use HTTPS outside local development"
+                )
         bootstrap_values = (
             self.admin_bootstrap_tenant_slug,
             self.admin_bootstrap_account,

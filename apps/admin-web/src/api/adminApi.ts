@@ -20,6 +20,7 @@ import type {
   ManagedCardInput,
   Product,
   ProductInput,
+  WeComCardContactWay,
 } from "./types";
 
 type JsonRecord = Record<string, unknown>;
@@ -334,6 +335,17 @@ function normalizeManagedCard(rawValue: unknown): ManagedCard {
     publishedAt: optionalString(rawValue.published_at) || undefined,
     createdAt: optionalString(rawValue.created_at) || undefined,
     updatedAt: optionalString(rawValue.updated_at) || undefined,
+  };
+}
+
+function normalizeWeComCardContactWay(payload: unknown): WeComCardContactWay {
+  const rawValue = requireRecord(payload, "企微联系入口");
+  return {
+    id: requireId(rawValue, "企微联系入口"),
+    cardId: requireString(rawValue.card_id, "企微联系入口 card_id"),
+    ownerUserId: requireString(rawValue.owner_user_id, "企微联系入口 owner_user_id"),
+    qrCodeUrl: optionalString(rawValue.qr_code_url) || undefined,
+    provisionedAt: requireString(rawValue.provisioned_at, "企微联系入口 provisioned_at"),
   };
 }
 
@@ -820,6 +832,15 @@ export function createAdminApi(client: ApiClient) {
           {},
           { version },
         ),
+      ),
+    );
+  },
+
+  async provisionWeComCardContactWay(id: string): Promise<WeComCardContactWay> {
+    return normalizeWeComCardContactWay(
+      await client.post(
+        `/admin/cards/${encodeURIComponent(id)}/wecom-contact-way`,
+        {},
       ),
     );
   },

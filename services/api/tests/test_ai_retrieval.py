@@ -80,6 +80,8 @@ async def test_hybrid_sql_enforces_scope_publication_and_current_version() -> No
     assert "<=> CAST(:query_embedding AS vector)" in sql
     assert "similarity(e.evidence_text, :query_text)" in sql
     assert "similarity(e.title, :query_text)" in sql
+    assert "e.metadata -> 'aliases'" in sql
+    assert "e.metadata -> 'tags'" in sql
     assert "FULL OUTER JOIN lexical_ranked" in sql
     assert "CAST(:embedding_model AS text) IS NULL" in sql
     assert "e.embedding_model = CAST(:embedding_model AS text)" in sql
@@ -117,6 +119,8 @@ async def test_lexical_path_has_no_vector_expression_but_keeps_all_scope_filters
     assert "query_embedding" not in sql
     assert "similarity(e.evidence_text, :query_text)" in sql
     assert "similarity(e.title, :query_text)" in sql
+    assert "e.metadata -> 'aliases'" in sql
+    assert "e.metadata -> 'tags'" in sql
     assert "d.current_version_id = c.version_id" in sql
     assert "v.review_status = :published_review_status" in sql
     assert "c.visibility = :public_visibility" in sql

@@ -44,13 +44,23 @@ from app.api.scheduled_publish_schemas import (
     ScheduledPublishJobListEnvelope,
     SchedulePublishRequest,
 )
+from app.api.wecom_schemas import (
+    WeComCardContactWayEnvelope,
+    WeComCardContactWayRecord,
+)
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
 from app.db.models import CardKind, ContentStatus, ScheduledPublishResourceType
+from app.integrations.wecom import (
+    WeComClient,
+    WeComConfigurationError,
+    WeComProviderError,
+)
 from app.services.admin_store import AdminScope, AdminStore
 from app.services.catalog_knowledge import CatalogKnowledgeSynchronizer
 from app.services.catalog_store import CatalogScope, CatalogStore, require_version
 from app.services.scheduled_publish_store import ScheduledPublishStore
+from app.services.wecom_store import WeComCardContactRecord, WeComStore
 
 router = APIRouter(prefix="/admin", tags=["Admin Content"])
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
@@ -168,6 +178,28 @@ def _scheduled_publish_store(request: Request) -> ScheduledPublishStore:
     if override is not None:
         return override
     return ScheduledPublishStore(request.app.state.session_factory)
+
+
+def _wecom_store(request: Request) -> WeComStore:
+    return WeComStore(request.app.state.session_factory, request.app.state.settings)
+
+
+def _wecom_client(request: Request) -> WeComClient:
+    return WeComClient(
+        settings=request.app.state.settings,
+        http_client=request.app.state.http_client,
+        redis=getattr(request.app.state, "redis", None),
+    )
+
+
+def _wecom_contact_record(record: WeComCardContactRecord) -> WeComCardContactWayRecord:
+    return WeComCardContactWayRecord(
+        id=record.id,
+        card_id=record.card_id,
+        owner_user_id=record.owner_user_id,
+        qr_code_url=record.qr_code_url,
+        provisioned_at=record.provisioned_at,
+    )
 
 
 def _scope(principal: StaffPrincipal) -> AdminScope:
@@ -1188,6 +1220,81 @@ async def get_managed_card(
     )
     _set_etag(response, record.version)
     return ManagedCardEnvelope(data=record)
+
+
+@router.get(
+    "/cards/{card_id}/wecom-contact-way",
+    response_model=WeComCardContactWayEnvelope,
+    operation_id="getAdminCardWeComContactWay",
+)
+async def get_card_wecom_contact_way(
+    card_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> WeComCardContactWayEnvelope:
+    _require_permission(principal, "card.read")
+    scope = _catalog_scope(principal)
+    record = await _wecom_store(request).get_card_contact_way(
+        tenant_id=scope.tenant_id,
+        company_id=scope.company_id,
+        actor_user_id=scope.actor_user_id,
+        card_id=card_id,
+        card_owner_only=scope.is_card_owner,
+    )
+    return WeComCardContactWayEnvelope(
+        data=_wecom_contact_record(record) if record is not None else None
+    )
+
+
+@router.post(
+    "/cards/{card_id}/wecom-contact-way",
+    response_model=WeComCardContactWayEnvelope,
+    operation_id="provisionAdminCardWeComContactWay",
+)
+async def provision_card_wecom_contact_way(
+    card_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> WeComCardContactWayEnvelope:
+    _require_permission(principal, "card.write")
+    scope = _catalog_scope(principal)
+    store = _wecom_store(request)
+    provisioning = await store.prepare_card_contact_way(
+        tenant_id=scope.tenant_id,
+        company_id=scope.company_id,
+        actor_user_id=scope.actor_user_id,
+        card_id=card_id,
+        card_owner_only=scope.is_card_owner,
+    )
+    if provisioning.existing is not None:
+        return WeComCardContactWayEnvelope(
+            data=_wecom_contact_record(provisioning.existing)
+        )
+    try:
+        provider_contact = await _wecom_client(request).add_contact_way(
+            user_ids=(provisioning.wecom_user_id,),
+            state=provisioning.state,
+            remark=f"数智名片-{provisioning.card_display_name}",
+        )
+    except WeComConfigurationError as exc:
+        raise ApiError(409, "WECOM_NOT_CONFIGURED", "企业微信尚未完成配置") from exc
+    except WeComProviderError as exc:
+        raise ApiError(
+            502,
+            exc.code,
+            "企业微信暂时无法生成联系入口，请核对客户联系权限",
+            details={"provider_code": exc.provider_code} if exc.provider_code else None,
+        ) from exc
+    record = await store.save_card_contact_way(
+        tenant_id=scope.tenant_id,
+        company_id=scope.company_id,
+        actor_user_id=scope.actor_user_id,
+        provisioning=provisioning,
+        config_id=provider_contact.config_id,
+        qr_code_url=provider_contact.qr_code_url,
+        trace_id=request_id_ctx.get(),
+    )
+    return WeComCardContactWayEnvelope(data=_wecom_contact_record(record))
 
 
 @router.put(

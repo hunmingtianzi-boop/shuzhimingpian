@@ -325,6 +325,8 @@ eligible AS (
 
 def _build_hybrid_sql(schema: KnowledgeSqlSchema) -> str:
     eligible = _eligible_cte(schema)
+    metadata_score = _metadata_hint_score_sql("e")
+    metadata_match = _metadata_hint_match_sql("e")
     return f"""
 WITH {eligible},
 vector_candidates AS (
@@ -359,7 +361,8 @@ lexical_candidates AS (
                 0.0
             ),
             similarity(e.evidence_text, :query_text),
-            similarity(e.title, :query_text)
+            similarity(e.title, :query_text),
+            {metadata_score}
         ) AS lexical_score
     FROM eligible AS e
     WHERE e.search_tsv @@ websearch_to_tsquery(
@@ -367,6 +370,7 @@ lexical_candidates AS (
           )
        OR similarity(e.evidence_text, :query_text) >= :trigram_threshold
        OR similarity(e.title, :query_text) >= :trigram_threshold
+       OR {metadata_match}
     ORDER BY lexical_score DESC, e.evidence_id
     LIMIT :candidate_limit
 ),
@@ -417,6 +421,8 @@ LIMIT :top_k
 
 def _build_lexical_sql(schema: KnowledgeSqlSchema) -> str:
     eligible = _eligible_cte(schema)
+    metadata_score = _metadata_hint_score_sql("e")
+    metadata_match = _metadata_hint_match_sql("e")
     return f"""
 WITH {eligible},
 lexical_candidates AS (
@@ -431,7 +437,8 @@ lexical_candidates AS (
                 0.0
             ),
             similarity(e.evidence_text, :query_text),
-            similarity(e.title, :query_text)
+            similarity(e.title, :query_text),
+            {metadata_score}
         ) AS lexical_score
     FROM eligible AS e
     WHERE e.search_tsv @@ websearch_to_tsquery(
@@ -439,6 +446,7 @@ lexical_candidates AS (
           )
        OR similarity(e.evidence_text, :query_text) >= :trigram_threshold
        OR similarity(e.title, :query_text) >= :trigram_threshold
+       OR {metadata_match}
     ORDER BY lexical_score DESC, e.evidence_id
     LIMIT :candidate_limit
 ),
@@ -526,6 +534,48 @@ SELECT
     match_score AS lexical_score,
     match_score AS fused_score
 FROM faq_match
+""".strip()
+
+
+def _metadata_hint_values_sql(alias: str) -> str:
+    return f"""
+(
+    CASE
+        WHEN jsonb_typeof({alias}.metadata -> 'aliases') = 'array'
+            THEN {alias}.metadata -> 'aliases'
+        ELSE '[]'::jsonb
+    END
+    ||
+    CASE
+        WHEN jsonb_typeof({alias}.metadata -> 'tags') = 'array'
+            THEN {alias}.metadata -> 'tags'
+        ELSE '[]'::jsonb
+    END
+)
+""".strip()
+
+
+def _metadata_hint_score_sql(alias: str) -> str:
+    values = _metadata_hint_values_sql(alias)
+    return f"""
+COALESCE(
+    (
+        SELECT MAX(similarity(hint.value, :query_text))
+        FROM jsonb_array_elements_text({values}) AS hint(value)
+    ),
+    0.0
+)
+""".strip()
+
+
+def _metadata_hint_match_sql(alias: str) -> str:
+    values = _metadata_hint_values_sql(alias)
+    return f"""
+EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text({values}) AS hint(value)
+    WHERE similarity(hint.value, :query_text) >= :trigram_threshold
+)
 """.strip()
 
 

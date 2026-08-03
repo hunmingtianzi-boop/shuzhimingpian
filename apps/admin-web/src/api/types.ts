@@ -568,6 +568,14 @@ export type ManagedCardInput = {
   policyVersions: ManagedCard["policyVersions"];
 };
 
+export type WeComCardContactWay = {
+  id: string;
+  cardId: string;
+  ownerUserId: string;
+  qrCodeUrl?: string;
+  provisionedAt: string;
+};
+
 export type CardAssetUpload = {
   url: string;
   contentType: "image/webp";

@@ -25,6 +25,7 @@ from app.api.schemas import (
     PublicCard,
     PublicCompany,
     PublicFaqItem,
+    PublicWeComContact,
     VisitSession,
 )
 from app.api.schemas import (
@@ -34,6 +35,7 @@ from app.api.schemas import (
     MessageCitation as MessageCitationSchema,
 )
 from app.core.config import Settings
+from app.core.pii import PiiCipher
 from app.core.redaction import redact_sensitive_text
 from app.core.tokens import (
     ProfileLinkTokenError,
@@ -71,6 +73,7 @@ from app.db.models import (
     Visitor,
     VisitorProfileSignal,
     VisitSummary,
+    WeComCardContactWay,
 )
 
 
@@ -134,6 +137,7 @@ class PublicStore:
     ) -> None:
         self._sessions = session_factory
         self._settings = settings
+        self._cipher = PiiCipher.from_settings(settings)
 
     async def get_public_card(self, *, slug: str) -> PublicCard:
         async with self._sessions() as session, session.begin():
@@ -206,6 +210,14 @@ class PublicStore:
             if not isinstance(suggested, list):
                 suggested = []
             suggested_questions = [str(item) for item in suggested if isinstance(item, str)][:6]
+            wecom_contact = await session.scalar(
+                select(WeComCardContactWay).where(
+                    WeComCardContactWay.tenant_id == scope.tenant_id,
+                    WeComCardContactWay.company_id == scope.company_id,
+                    WeComCardContactWay.card_id == card.id,
+                    WeComCardContactWay.revoked_at.is_(None),
+                )
+            )
             return PublicCard(
                 id=card.id,
                 slug=card.slug,
@@ -226,6 +238,18 @@ class PublicStore:
                 contact_fields=_public_dict_list(
                     card_settings.get("contact_fields"),
                     allowed_keys=("label", "value", "href"),
+                ),
+                wecom_contact=(
+                    PublicWeComContact(
+                        available=wecom_contact.qr_code_url_ciphertext is not None,
+                        qr_code_url=(
+                            self._cipher.decrypt(wecom_contact.qr_code_url_ciphertext)
+                            if wecom_contact.qr_code_url_ciphertext
+                            else None
+                        ),
+                    )
+                    if wecom_contact is not None
+                    else None
                 ),
                 featured_products=_public_dict_list(
                     company_settings.get("featured_products"),
@@ -957,6 +981,22 @@ class PublicStore:
                     "mode": result.trace.retrieval_mode,
                     "count": result.trace.retrieval_count,
                     "citation_count": result.trace.citation_count,
+                    "query_complexity": result.trace.extra.get(
+                        "query_complexity", "not_applicable"
+                    ),
+                    "subquery_count": int(result.trace.extra.get("subquery_count", 0)),
+                    "covered_subquery_count": int(
+                        result.trace.extra.get("covered_subquery_count", 0)
+                    ),
+                    "uncovered_subquery_count": int(
+                        result.trace.extra.get("uncovered_subquery_count", 0)
+                    ),
+                    "coverage_ratio": float(
+                        result.trace.extra.get("retrieval_coverage_ratio", 1.0)
+                    ),
+                    "confidence_band": result.trace.extra.get(
+                        "confidence_band", "not_applicable"
+                    ),
                     "evidence_ids": list(result.trace.extra.get("retrieved_evidence_ids", ())),
                     "version_ids": list(result.trace.extra.get("retrieved_version_ids", ())),
                 },

@@ -466,6 +466,7 @@ function PersonalPage({
   onLead: () => void;
   onShare: () => void;
 }) {
+  const [wecomOpen, setWecomOpen] = useState(false);
   const companyName = card?.company.name || tenant.brand.name;
   const hasRealOwner = Boolean(
     card && card.card_kind !== "enterprise" && card.display_name !== card.company.name,
@@ -482,6 +483,9 @@ function PersonalPage({
     alt: `${companyName}品牌标识`,
   };
   const capabilityIcons = [Path, Target, Handshake];
+  const wecomQrCode = card?.wecom_contact?.available
+    ? card.wecom_contact.qr_code_url
+    : undefined;
 
   return (
     <main className="tz-page tz-owner-page" id="personal-view">
@@ -530,10 +534,52 @@ function PersonalPage({
         </div>
       </section>
 
-      <button className="tz-contact-owner" type="button" onClick={onLead}>
-        <PaperPlaneTilt weight="fill" aria-hidden="true" />联系本人
+      <button
+        className="tz-contact-owner"
+        type="button"
+        onClick={() => wecomQrCode ? setWecomOpen(true) : onLead()}
+      >
+        <PaperPlaneTilt weight="fill" aria-hidden="true" />
+        {wecomQrCode ? card?.wecom_contact?.label || "添加企业微信" : "联系本人"}
       </button>
-      <p className="tz-owner-note">联系请求将进入企业合作留资流程，不直接公开个人联系方式。</p>
+      <p className="tz-owner-note">
+        {wecomQrCode
+          ? "通过专属企微入口添加，后续由本人跟进。"
+          : "联系请求将进入企业合作留资流程，不直接公开个人联系方式。"}
+      </p>
+
+      {wecomOpen && wecomQrCode && (
+        <div
+          className="tz-wecom-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wecom-contact-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setWecomOpen(false);
+          }}
+        >
+          <div className="tz-wecom-modal-card">
+            <button
+              type="button"
+              className="tz-wecom-modal-close"
+              onClick={() => setWecomOpen(false)}
+              aria-label="关闭企业微信二维码"
+            >
+              <X weight="bold" aria-hidden="true" />
+            </button>
+            <small>专属联系入口</small>
+            <h2 id="wecom-contact-title">添加 {ownerName} 的企业微信</h2>
+            <img src={wecomQrCode} alt={`添加${ownerName}企业微信的二维码`} />
+            <p>请使用微信扫一扫，或长按识别二维码。通过此入口添加后，线索会自动归属给 {ownerName}。</p>
+            <button type="button" className="tz-wecom-lead-fallback" onClick={() => {
+              setWecomOpen(false);
+              onLead();
+            }}>
+              无法扫码？提交联系需求
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

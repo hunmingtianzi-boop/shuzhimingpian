@@ -10,6 +10,11 @@ from typing import Any
 import httpx
 from app.core.config import Settings as ApiSettings
 from app.core.pii import PiiCipher, PiiCipherError, mask_value
+from app.integrations.wecom import (
+    WeComClient,
+    WeComConfigurationError,
+    WeComProviderError,
+)
 from app.services.admin_store import AdminScope, AdminStore
 from app.services.audit import append_audit
 from sqlalchemy import text
@@ -713,6 +718,71 @@ class PostgresOutboxRepository:
                     "company_id": event.company_id,
                 },
             )
+
+    async def send_wecom_lead_notification(
+        self,
+        event: OutboxRecord,
+        *,
+        lead_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> bool:
+        """Deliver a non-PII lead alert to the bound owner, when configured."""
+
+        if event.aggregate_type != "lead" or event.aggregate_id != lead_id:
+            raise RuntimeError("wecom_lead_event_mismatch")
+        if not (
+            self._settings.wecom_corp_id
+            and self._settings.wecom_agent_id
+            and self._settings.wecom_app_secret
+        ):
+            return False
+        async with self._engine.begin() as connection:
+            await self._set_scope(connection, event.tenant_id, event.company_id)
+            encrypted_user_id = await connection.scalar(
+                text(
+                    """
+                    SELECT wecom_user_id_ciphertext
+                    FROM wecom_user_bindings
+                    WHERE tenant_id = :tenant_id
+                      AND company_id = :company_id
+                      AND user_id = :owner_user_id
+                      AND revoked_at IS NULL
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "tenant_id": event.tenant_id,
+                    "company_id": event.company_id,
+                    "owner_user_id": owner_user_id,
+                },
+            )
+        if encrypted_user_id is None:
+            return False
+        try:
+            wecom_user_id = self._cipher.decrypt(bytes(encrypted_user_id))
+        except PiiCipherError as exc:
+            raise RuntimeError("wecom_binding_decryption_failed") from exc
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self._settings.wecom_timeout_seconds, connect=5.0),
+                follow_redirects=False,
+            ) as client:
+                await WeComClient(
+                    settings=self._settings,  # type: ignore[arg-type]
+                    http_client=client,
+                ).send_text(
+                    user_id=wecom_user_id,
+                    content=(
+                        "数智名片收到一位新客户，请进入后台线索中心及时跟进。"
+                    ),
+                )
+        except WeComConfigurationError:
+            return False
+        except WeComProviderError as exc:
+            raise RuntimeError(exc.code) from exc
+        return True
 
     async def build_export(
         self,

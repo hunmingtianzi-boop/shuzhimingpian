@@ -345,6 +345,69 @@ class AuthStore:
                 )
             )
 
+    async def authenticate_trusted_identity(
+        self,
+        *,
+        user_id: uuid.UUID,
+        membership_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        company_id: uuid.UUID,
+        event_type: str,
+        account_hash: str,
+        request_ip_hash: str | None = None,
+    ) -> StaffAuthentication:
+        """Issue a staff session after a trusted external identity is resolved."""
+
+        authentication: StaffAuthentication | None = None
+        issued_session_id: uuid.UUID | None = None
+        async with self._sessions() as session, session.begin():
+            await set_rls_context(
+                session,
+                tenant_id=tenant_id,
+                company_id=company_id,
+            )
+            identity = await self._load_active_identity(
+                session,
+                user_id=user_id,
+                membership_id=membership_id,
+                tenant_id=tenant_id,
+                company_id=company_id,
+            )
+            if identity is not None:
+                issued_session_id = uuid.uuid4()
+                tokens = self._issue_tokens(identity, session_id=issued_session_id)
+                session.add(
+                    AuthSession(
+                        id=issued_session_id,
+                        user_id=identity.user_id,
+                        tenant_id=identity.tenant_id,
+                        company_id=identity.company_id,
+                        refresh_token_hash=hash_refresh_token(tokens.refresh_token),
+                        expires_at=datetime.fromtimestamp(
+                            tokens.refresh_expires_at,
+                            tz=UTC,
+                        ),
+                    )
+                )
+                authentication = StaffAuthentication(tokens=tokens, identity=identity)
+            session.add(
+                _security_event(
+                    event_type=event_type,
+                    outcome="succeeded" if authentication else "blocked",
+                    account_hash=account_hash,
+                    request_ip_hash=request_ip_hash,
+                    reason_code=None if authentication else "identity_inactive",
+                    user_id=user_id,
+                    membership_id=membership_id,
+                    tenant_id=tenant_id,
+                    company_id=company_id,
+                    session_id=issued_session_id,
+                )
+            )
+        if authentication is None:
+            raise _invalid_credentials()
+        return authentication
+
     async def get_current(self, principal: StaffPrincipal) -> StaffIdentity:
         now = datetime.now(UTC)
         async with self._sessions() as session, session.begin():

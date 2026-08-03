@@ -141,6 +141,14 @@ class OutboxRepository(Protocol):
 
     async def summary_recipient(self, event: OutboxRecord) -> uuid.UUID | None: ...
 
+    async def send_wecom_lead_notification(
+        self,
+        event: OutboxRecord,
+        *,
+        lead_id: uuid.UUID,
+        owner_user_id: uuid.UUID,
+    ) -> bool: ...
+
     async def build_export(
         self,
         event: OutboxRecord,

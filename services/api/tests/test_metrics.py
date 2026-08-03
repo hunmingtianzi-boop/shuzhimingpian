@@ -29,6 +29,10 @@ def test_registry_renders_cumulative_histograms_and_ai_aggregates() -> None:
         retrieval_count=5,
         citation_count=0,
         refusal_code="insufficient_evidence",
+        query_complexity="compound",
+        confidence_band="low",
+        subquery_count=2,
+        coverage_ratio=0.0,
     )
     registry.observe_first_token(source="generated", duration_seconds=1.1)
 
@@ -43,6 +47,14 @@ def test_registry_renders_cumulative_histograms_and_ai_aggregates() -> None:
     assert 'le="0.25"' in rendered
     assert 'cf_ai_tokens_total{model="test-model",provider="deepseek",type="input"} 100' in rendered
     assert 'cf_ai_refusals_total{code="insufficient_evidence"} 1' in rendered
+    assert (
+        'cf_rag_queries_total{complexity="compound",confidence="low",outcome="refusal"} 1'
+        in rendered
+    )
+    assert (
+        'cf_rag_low_confidence_blocks_total{code="insufficient_evidence"} 1'
+        in rendered
+    )
     assert 'cf_ai_time_to_first_content_seconds_count{source="generated"} 1' in rendered
 
 

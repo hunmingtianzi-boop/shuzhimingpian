@@ -13,6 +13,7 @@ HTTP_DURATION_BUCKETS = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 AI_DURATION_BUCKETS = (0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 40.0, 80.0)
 FIRST_TOKEN_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0)
 COUNT_BUCKETS = (0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0)
+COVERAGE_BUCKETS = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 LabelSet = tuple[tuple[str, str], ...]
 MetricKey = tuple[str, LabelSet]
@@ -169,6 +170,10 @@ class MetricsRegistry:
         retrieval_count: int,
         citation_count: int,
         refusal_code: str | None,
+        query_complexity: str = "not_applicable",
+        confidence_band: str = "not_applicable",
+        subquery_count: int = 0,
+        coverage_ratio: float = 1.0,
     ) -> None:
         base_labels = {
             "provider": provider,
@@ -227,6 +232,36 @@ class MetricsRegistry:
                 "cf_ai_refusals_total",
                 labels={"code": refusal_code},
                 help_text="Policy and evidence-gate refusals by bounded refusal code.",
+            )
+        rag_labels = {
+            "complexity": query_complexity,
+            "confidence": confidence_band,
+            "outcome": outcome,
+        }
+        self.counter(
+            "cf_rag_queries_total",
+            labels=rag_labels,
+            help_text="RAG requests by bounded query complexity, confidence and outcome.",
+        )
+        self.histogram(
+            "cf_rag_subqueries",
+            float(max(0, subquery_count)),
+            buckets=COUNT_BUCKETS,
+            labels={"complexity": query_complexity},
+            help_text="Number of independently retrieved subqueries per RAG request.",
+        )
+        self.histogram(
+            "cf_rag_coverage_ratio",
+            min(1.0, max(0.0, coverage_ratio)),
+            buckets=COVERAGE_BUCKETS,
+            labels={"confidence": confidence_band},
+            help_text="Share of planned retrieval subqueries with calibrated evidence.",
+        )
+        if refusal_code is not None and confidence_band == "low":
+            self.counter(
+                "cf_rag_low_confidence_blocks_total",
+                labels={"code": refusal_code},
+                help_text="Low-confidence answers blocked before reaching the visitor.",
             )
 
     def observe_ai_error(self, *, provider: str, model: str, category: str) -> None:

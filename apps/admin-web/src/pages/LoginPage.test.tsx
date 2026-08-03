@@ -40,4 +40,22 @@ describe("LoginForm", () => {
       credential: "safe-password",
     });
   });
+
+  it("offers enterprise WeChat login when the connector action is available", async () => {
+    const user = userEvent.setup();
+    const onWeComLogin = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FluentProvider theme={adminLightTheme}>
+        <LoginForm
+          pending={false}
+          apiConfigured
+          onLogin={async () => undefined}
+          onWeComLogin={onWeComLogin}
+        />
+      </FluentProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "企业微信登录" }));
+    expect(onWeComLogin).toHaveBeenCalledTimes(1);
+  });
 });

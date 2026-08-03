@@ -38,9 +38,10 @@ def test_question_scope_requires_clarification_when_the_subject_is_missing() -> 
     assert classify_question_scope("这个怎么理解？") is QuestionScope.AMBIGUOUS
 
 
-def test_question_scope_defaults_new_conversation_topics_to_general() -> None:
+def test_question_scope_probes_unknown_named_subjects_before_general_fallback() -> None:
     assert classify_question_scope("你是人吗？") is QuestionScope.GENERAL
-    assert classify_question_scope("介绍拓海") is QuestionScope.GENERAL
+    assert classify_question_scope("介绍拓海") is QuestionScope.UNRESOLVED
+    assert classify_question_scope("什么是拓海？") is QuestionScope.UNRESOLVED
 
 
 def test_new_general_question_does_not_inherit_old_enterprise_scope() -> None:

@@ -85,7 +85,7 @@ class FakeEmbeddingProvider:
         if self.error:
             raise self.error
         return EmbeddingBatch(
-            embeddings=((0.1, 0.2, 0.3),),
+            embeddings=tuple((0.1, 0.2, 0.3) for _text in texts),
             provider=self.provider_name,
             model=self.model_name,
             request_id="embedding-request",
@@ -100,6 +100,19 @@ class FakeRepository:
     async def search(self, query: RetrievalQuery) -> Sequence[RetrievedEvidence]:
         self.calls.append(query)
         return self.evidence
+
+
+class QueryAwareRepository(FakeRepository):
+    def __init__(self, evidence_by_term: dict[str, Sequence[RetrievedEvidence]]) -> None:
+        super().__init__(())
+        self.evidence_by_term = evidence_by_term
+
+    async def search(self, query: RetrievalQuery) -> Sequence[RetrievedEvidence]:
+        self.calls.append(query)
+        for term, evidence in self.evidence_by_term.items():
+            if term in query.text:
+                return evidence
+        return ()
 
 
 class FailingRepository:
@@ -145,9 +158,13 @@ def _credentials() -> ProviderCredentials:
     return ProviderCredentials(api_key="-".join(["unit", "test", "credential"]))
 
 
-def _evidence(text: str = "标准版包含智能名片功能。") -> RetrievedEvidence:
+def _evidence(
+    text: str = "标准版包含智能名片功能。",
+    *,
+    evidence_id: str = "chunk-1",
+) -> RetrievedEvidence:
     return RetrievedEvidence(
-        evidence_id="chunk-1",
+        evidence_id=evidence_id,
         document_id="doc-1",
         version_id="version-3",
         ordinal=2,
@@ -372,6 +389,105 @@ async def test_general_chat_skips_knowledge_retrieval() -> None:
     assert result.trace.retrieval_mode == "skipped"
     assert result.trace.extra["retrieval_skipped"] == "general_question"
     assert len(chat.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_named_subject_probes_knowledge_before_enterprise_answer() -> None:
+    repository = FakeRepository([_evidence("拓海是企业已发布的创新项目。")])
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="拓海是企业已发布的创新项目。",
+            cited_evidence_ids=["chunk-1"],
+        )
+    )
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="介绍拓海",
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert len(repository.calls) == 1
+    assert result.trace.extra["initial_question_scope"] == "unresolved"
+    assert result.trace.extra["question_scope"] == "enterprise"
+    assert result.trace.extra["question_scope_source"] == "knowledge_probe"
+    assert result.trace.extra["confidence_band"] == "high"
+    assert result.citations[0].evidence_id == "chunk-1"
+
+
+@pytest.mark.asyncio
+async def test_unknown_named_subject_falls_back_to_general_only_after_empty_probe() -> None:
+    repository = FakeRepository([])
+    chat = FakeChatProvider(StructuredModelAnswer(answer="我暂时没有这个对象的公开资料。"))
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="介绍拓海",
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert len(repository.calls) == 1
+    assert result.trace.extra["question_scope"] == "general"
+    assert result.trace.extra["confidence_band"] == "low"
+    assert result.citations == ()
+
+
+@pytest.mark.asyncio
+async def test_compound_question_retrieves_each_part_and_marks_partial_coverage() -> None:
+    repository = QueryAwareRepository(
+        {"业务": [_evidence("企业已发布三项核心业务。")]}
+    )
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="已发布资料确认企业有三项核心业务；合作伙伴申请条件暂无资料。",
+            cited_evidence_ids=["chunk-1"],
+        )
+    )
+    orchestrator = RAGOrchestrator(chat, repository)
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="你们有哪些业务，同时怎么申请成为合作伙伴？",
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert len(repository.calls) == 2
+    assert any("业务" in call.text for call in repository.calls)
+    assert any("合作伙伴" in call.text for call in repository.calls)
+    assert result.trace.extra["query_complexity"] == "compound"
+    assert result.trace.extra["subquery_count"] == 2
+    assert result.trace.extra["covered_subquery_count"] == 1
+    assert result.trace.extra["uncovered_subquery_count"] == 1
+    assert result.trace.extra["retrieval_coverage_ratio"] == pytest.approx(0.5)
+    assert result.trace.extra["confidence_band"] == "medium"
+    prompt_payload = json.loads(chat.calls[0][0][1].content)
+    assert prompt_payload["uncovered_questions"] == ["怎么申请成为合作伙伴"]
 
 
 @pytest.mark.asyncio

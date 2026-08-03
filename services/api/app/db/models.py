@@ -399,6 +399,228 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     revoke_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
+class WeComUserBinding(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
+    """Encrypted mapping between an internal membership and a WeCom member."""
+
+    __tablename__ = "wecom_user_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(
+            ["membership_id"], ["memberships.id"], ondelete="CASCADE"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "membership_id",
+            name="uq_wecom_user_bindings_membership",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "corp_id_hmac",
+            "wecom_user_id_hmac",
+            name="uq_wecom_user_bindings_provider_user",
+        ),
+        CheckConstraint("char_length(corp_id_hmac) = 64", name="corp_id_hmac_sha256"),
+        CheckConstraint(
+            "char_length(wecom_user_id_hmac) = 64",
+            name="wecom_user_id_hmac_sha256",
+        ),
+        Index(
+            "ix_wecom_user_bindings_company_active",
+            "company_id",
+            "revoked_at",
+            "updated_at",
+        ),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    membership_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    corp_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    wecom_user_id_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    wecom_user_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WeComCallbackEvent(UUIDPrimaryKeyMixin, CompanyScopeMixin, Base):
+    """Verified WeCom callback retained encrypted for idempotent processing."""
+
+    __tablename__ = "wecom_callback_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "provider_event_key",
+            name="uq_wecom_callback_events_provider_key",
+        ),
+        CheckConstraint("char_length(corp_id_hmac) = 64", name="corp_id_hmac_sha256"),
+        CheckConstraint(
+            "char_length(provider_event_key) = 64",
+            name="provider_event_key_sha256",
+        ),
+        CheckConstraint(
+            "status IN ('received', 'processed', 'failed')",
+            name="status_allowed",
+        ),
+        CheckConstraint("attempts >= 0", name="attempts_non_negative"),
+        Index(
+            "ix_wecom_callback_events_processing",
+            "company_id",
+            "status",
+            "received_at",
+        ),
+    )
+
+    corp_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_event_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    change_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    payload_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="received", server_default=text("'received'")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WeComCardContactWay(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
+    """A card-scoped WeCom customer-contact QR code with opaque attribution."""
+
+    __tablename__ = "wecom_card_contact_ways"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "card_id"],
+            ["cards.tenant_id", "cards.company_id", "cards.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["binding_id"], ["wecom_user_bindings.id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(["owner_user_id"], ["users.id"], ondelete="CASCADE"),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "state_token_hmac",
+            name="uq_wecom_card_contact_ways_state",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "config_id_hmac",
+            name="uq_wecom_card_contact_ways_config",
+        ),
+        CheckConstraint(
+            "char_length(state_token_hmac) = 64",
+            name="wecom_card_contact_state_hmac_sha256",
+        ),
+        CheckConstraint(
+            "char_length(config_id_hmac) = 64",
+            name="wecom_card_contact_config_hmac_sha256",
+        ),
+        Index(
+            "uq_wecom_card_contact_ways_active_card",
+            "tenant_id",
+            "company_id",
+            "card_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+        Index(
+            "ix_wecom_card_contact_ways_owner_active",
+            "owner_user_id",
+            "revoked_at",
+            "updated_at",
+        ),
+    )
+
+    card_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    binding_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    owner_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    state_token_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_id_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    config_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    qr_code_url_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    provisioned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WeComCustomerLink(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
+    """Idempotent attribution from an external WeCom customer to one card owner."""
+
+    __tablename__ = "wecom_customer_links"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "card_id"],
+            ["cards.tenant_id", "cards.company_id", "cards.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "lead_id"],
+            ["leads.tenant_id", "leads.company_id", "leads.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["contact_way_id"], ["wecom_card_contact_ways.id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["binding_id"], ["wecom_user_bindings.id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(["owner_user_id"], ["users.id"], ondelete="CASCADE"),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "binding_id",
+            "external_user_id_hmac",
+            name="uq_wecom_customer_links_owner_external",
+        ),
+        CheckConstraint(
+            "char_length(external_user_id_hmac) = 64",
+            name="wecom_customer_external_hmac_sha256",
+        ),
+        Index(
+            "ix_wecom_customer_links_card_created",
+            "card_id",
+            "created_at",
+        ),
+    )
+
+    card_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    contact_way_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    binding_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    owner_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    external_user_id_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    external_user_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    lead_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class StaffCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Unscoped login index; all post-password reads must switch into its scope."""
 
@@ -2723,5 +2945,9 @@ __all__ = [
     "Visitor",
     "VisitorProfile",
     "VisitSummary",
+    "WeComCallbackEvent",
+    "WeComCardContactWay",
+    "WeComCustomerLink",
+    "WeComUserBinding",
     "WorkerJobResult",
 ]

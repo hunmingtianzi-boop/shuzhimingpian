@@ -386,6 +386,16 @@ async def _generate_and_persist(
                 retrieval_count=trace.retrieval_count,
                 citation_count=trace.citation_count,
                 refusal_code=result.refusal.code.value if result.refusal else None,
+                query_complexity=str(
+                    trace.extra.get("query_complexity", "not_applicable")
+                ),
+                confidence_band=str(
+                    trace.extra.get("confidence_band", "not_applicable")
+                ),
+                subquery_count=int(trace.extra.get("subquery_count", 0)),
+                coverage_ratio=float(
+                    trace.extra.get("retrieval_coverage_ratio", 1.0)
+                ),
             )
         return stored_answer
     except TimeoutError as exc:

@@ -60,6 +60,12 @@ class WorkerSettings(BaseSettings):
     embedding_dimension: int = Field(default=1_024, ge=64, le=4_096)
     embedding_timeout_seconds: float = Field(default=20.0, ge=2, le=120)
 
+    wecom_corp_id: str | None = None
+    wecom_agent_id: int | None = Field(default=None, ge=1)
+    wecom_app_secret: SecretStr | None = None
+    wecom_api_base_url: str = "https://qyapi.weixin.qq.com"
+    wecom_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
+
     worker_health_host: str = "0.0.0.0"  # noqa: S104 - container health endpoint
     worker_health_port: int = Field(default=8020, ge=1, le=65_535)
     worker_health_timeout_seconds: float = Field(default=3.0, ge=0.2, le=10)
@@ -75,12 +81,31 @@ class WorkerSettings(BaseSettings):
             raise ValueError("worker setting cannot be blank")
         return normalized
 
+    @field_validator("wecom_corp_id", "wecom_agent_id", "wecom_app_secret", mode="before")
+    @classmethod
+    def blank_wecom_values_are_unconfigured(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def validate_timing(self) -> "WorkerSettings":
         if self.outbox_heartbeat_seconds * 2 >= self.outbox_lease_seconds:
             raise ValueError("OUTBOX_HEARTBEAT_SECONDS must be less than half the lease")
         if self.outbox_backoff_base_seconds > self.outbox_backoff_max_seconds:
             raise ValueError("outbox backoff base cannot exceed maximum")
+        configured = (
+            bool(self.wecom_corp_id),
+            self.wecom_agent_id is not None,
+            self.wecom_app_secret is not None
+            and bool(self.wecom_app_secret.get_secret_value()),
+        )
+        if any(configured) and not all(configured):
+            raise ValueError(
+                "WECOM_CORP_ID, WECOM_AGENT_ID and WECOM_APP_SECRET must be configured together"
+            )
         if self.app_env in {"staging", "production"}:
             url = self.worker_database_url.get_secret_value()
             if "change-me" in url or "cf_ai_card_worker" not in url:

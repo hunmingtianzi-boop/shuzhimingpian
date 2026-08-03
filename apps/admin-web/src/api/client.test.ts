@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADMIN_CSRF_TOKEN_KEY, ApiClient } from "./client";
+import {
+  ADMIN_CSRF_TOKEN_KEY,
+  ADMIN_WECOM_RETURN_TO_KEY,
+  ApiClient,
+} from "./client";
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -24,7 +28,7 @@ function sessionResponse(accessToken: string, csrfToken: string) {
 describe("ApiClient cookie and CSRF authentication", () => {
   beforeEach(() => {
     sessionStorage.clear();
-    localStorage.clear();
+    globalThis.localStorage?.clear();
   });
 
   afterEach(() => {
@@ -53,7 +57,7 @@ describe("ApiClient cookie and CSRF authentication", () => {
         return `${key}:${sessionStorage.getItem(key) ?? ""}`;
       }).join("\n"),
     ).not.toMatch(/refresh[_-]?token|access-one/i);
-    expect(localStorage.length).toBe(0);
+    expect(globalThis.localStorage?.length ?? 0).toBe(0);
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
       account: "admin@example.test",
       credential: "password",
@@ -64,6 +68,41 @@ describe("ApiClient cookie and CSRF authentication", () => {
     expect(
       (fetcher.mock.calls[1][1]?.headers as Headers).get("Authorization"),
     ).toBe("Bearer access-one");
+  });
+
+  it("starts and exchanges a one-time WeCom login without persisting access", async () => {
+    const authorizeUrl =
+      "https://open.weixin.qq.com/connect/oauth2/authorize?state=signed-state";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: { authorize_url: authorizeUrl } }))
+      .mockResolvedValueOnce(sessionResponse("wecom-access", "wecom-csrf"))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "user-1" } }));
+    const client = new ApiClient({
+      baseUrl: "https://api.example.test",
+      fetcher,
+    });
+
+    await expect(client.createWeComLoginUrl("/c/admin/")).resolves.toBe(
+      authorizeUrl,
+    );
+    expect(sessionStorage.getItem(ADMIN_WECOM_RETURN_TO_KEY)).toBe("/c/admin/");
+    await client.loginWithWeCom("oauth-code", "signed-state");
+    await client.get("/auth/me");
+
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "https://api.example.test/auth/wecom/login-url?return_to=%2Fc%2Fadmin%2F",
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({
+      code: "oauth-code",
+      state: "signed-state",
+    });
+    expect(
+      (fetcher.mock.calls[2][1]?.headers as Headers).get("Authorization"),
+    ).toBe("Bearer wecom-access");
+    expect(sessionStorage.getItem(ADMIN_CSRF_TOKEN_KEY)).toBe("wecom-csrf");
+    expect(client.consumeWeComReturnTo()).toBe("/c/admin/");
+    expect(sessionStorage.getItem(ADMIN_WECOM_RETURN_TO_KEY)).toBeNull();
   });
 
   it("bootstraps from stored CSRF and the HttpOnly cookie with a bodyless refresh", async () => {

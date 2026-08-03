@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import time
@@ -121,6 +122,7 @@ class RAGOrchestratorConfig:
     faq_fast_path_enabled: bool = False
     faq_similarity_threshold: float = 0.92
     faq_max_question_chars: int = 180
+    max_subqueries: int = 3
 
     def __post_init__(self) -> None:
         if self.top_k <= 0 or self.candidate_limit < self.top_k:
@@ -141,6 +143,8 @@ class RAGOrchestratorConfig:
             raise ValueError("faq_similarity_threshold must be between 0 and 1")
         if self.faq_max_question_chars <= 0:
             raise ValueError("faq_max_question_chars must be positive")
+        if not 1 <= self.max_subqueries <= 5:
+            raise ValueError("max_subqueries must be between 1 and 5")
 
 
 @dataclass(slots=True)
@@ -270,45 +274,64 @@ class RAGOrchestrator:
 
         direct_question_scope = classify_question_scope(normalized)
         question_scope = classify_question_scope(normalized, request.history)
+        initial_question_scope = question_scope
         include_history_for_retrieval = _should_include_history_for_retrieval(
             normalized,
             direct_question_scope=direct_question_scope,
             history=request.history,
         )
-        retrieval_text = _compose_retrieval_text(
+        planned_questions = _plan_retrieval_questions(
             normalized,
-            request.history,
-            include_history=include_history_for_retrieval,
+            max_subqueries=self.config.max_subqueries,
         )
-        canonical_lookup_text, normalized_intent = _canonical_faq_lookup_text(
-            normalized,
-            company_name=request.company_name,
-        )
-        if normalized_intent is not None and not include_history_for_retrieval:
-            retrieval_text = canonical_lookup_text
-            trace.extra["faq_normalized_intent"] = normalized_intent
+        retrieval_texts: list[str] = []
+        normalized_intents: list[str] = []
+        for planned_question in planned_questions:
+            lookup_text, normalized_intent = _canonical_faq_lookup_text(
+                planned_question,
+                company_name=request.company_name,
+            )
+            if normalized_intent is not None and not include_history_for_retrieval:
+                planned_question = lookup_text
+                normalized_intents.append(normalized_intent)
+            retrieval_texts.append(
+                _compose_retrieval_text(
+                    planned_question,
+                    request.history,
+                    include_history=include_history_for_retrieval,
+                )
+            )
+        if normalized_intents:
+            trace.extra["faq_normalized_intent"] = tuple(normalized_intents)
             trace.extra["retrieval_query_normalized"] = True
-        trace.extra["question_scope"] = question_scope.value
+        trace.extra["initial_question_scope"] = initial_question_scope.value
         trace.extra["question_scope_source"] = (
             "conversation" if direct_question_scope is QuestionScope.AMBIGUOUS else "direct"
         )
         if question_scope is QuestionScope.AMBIGUOUS:
+            trace.extra["question_scope"] = question_scope.value
             return _scope_clarification(trace)
 
         skip_retrieval = question_scope is QuestionScope.GENERAL
+        trace.extra["query_complexity"] = (
+            "skipped" if skip_retrieval else "compound" if len(retrieval_texts) > 1 else "single"
+        )
+        trace.extra["subquery_count"] = 0 if skip_retrieval else len(retrieval_texts)
         faq_evidence = None
         if skip_retrieval:
             trace.extra["fast_faq_skipped"] = "general_question"
-        elif not include_history_for_retrieval:
+        elif not include_history_for_retrieval and len(retrieval_texts) == 1:
             faq_evidence = await self._find_fast_faq_evidence(
                 request=request,
                 normalized=normalized,
                 trace=trace,
             )
+        elif len(retrieval_texts) > 1:
+            trace.extra["fast_faq_skipped"] = "compound_question"
         else:
             trace.extra["fast_faq_skipped"] = "contextual_follow_up"
 
-        embedding: tuple[float, ...] | None = None
+        embeddings: tuple[tuple[float, ...], ...] = ()
         if (
             not skip_retrieval
             and faq_evidence is None
@@ -318,13 +341,13 @@ class RAGOrchestrator:
             embedding_started = time.perf_counter()
             try:
                 batch = await self._embedding_provider.embed(
-                    [retrieval_text],
+                    retrieval_texts,
                     credentials=embedding_credentials,
                     trace_id=trace_id,
                 )
-                if len(batch.embeddings) != 1:
+                if len(batch.embeddings) != len(retrieval_texts):
                     raise ValueError("embedding provider returned the wrong batch size")
-                embedding = batch.embeddings[0]
+                embeddings = batch.embeddings
                 trace.extra["embedding_request_id"] = batch.request_id
             except AIProviderError as exc:
                 trace.extra["embedding_ms"] = _elapsed_ms(embedding_started)
@@ -358,25 +381,28 @@ class RAGOrchestrator:
 
         if skip_retrieval:
             evidence = ()
+            subquery_evidence: tuple[tuple[RetrievedEvidence, ...], ...] = ()
             trace.retrieval_mode = "skipped"
             trace.extra["retrieval_skipped"] = "general_question"
         elif faq_evidence is not None:
             evidence = (faq_evidence,)
+            subquery_evidence = (evidence,)
             trace.retrieval_mode = "lexical"
             trace.retrieval_ms = int(trace.extra.get("faq_lookup_ms", 0))
             trace.extra["interaction_kind"] = "faq_evidence_path"
         else:
-            trace.retrieval_mode = "hybrid" if embedding is not None else "lexical"
+            trace.retrieval_mode = "hybrid" if embeddings else "lexical"
             top_k = request.top_k if request.top_k is not None else self.config.top_k
             retrieval_started = time.perf_counter()
             try:
-                evidence = tuple(
-                    await self._retrieval_repository.search(
+                search_results = await asyncio.gather(
+                    *(
+                        self._retrieval_repository.search(
                         RetrievalQuery(
                             tenant_id=request.tenant_id,
                             company_id=request.company_id,
                             text=retrieval_text,
-                            embedding=embedding,
+                            embedding=(embeddings[index] if embeddings else None),
                             top_k=top_k,
                             candidate_limit=max(top_k, self.config.candidate_limit),
                             trigram_threshold=self.config.trigram_threshold,
@@ -385,6 +411,8 @@ class RAGOrchestrator:
                             lexical_weight=self.config.lexical_weight,
                             card_id=request.card_id,
                         )
+                        )
+                        for index, retrieval_text in enumerate(retrieval_texts)
                     )
                 )
             except AIServiceError as exc:
@@ -399,7 +427,55 @@ class RAGOrchestrator:
                     ),
                     trace,
                 )
+            subquery_evidence = tuple(tuple(items) for items in search_results)
+            evidence = _merge_retrieved_evidence(
+                subquery_evidence,
+                max_evidence=max(top_k, self.config.top_k),
+            )
             trace.retrieval_ms = _elapsed_ms(retrieval_started)
+
+        covered = tuple(
+            bool(self._evidence_gate.accepted_evidence(items))
+            for items in subquery_evidence
+        )
+        covered_count = sum(covered)
+        planned_count = len(covered)
+        coverage_ratio = covered_count / planned_count if planned_count else 1.0
+        confidence_band = (
+            "not_applicable"
+            if not planned_count
+            else "high"
+            if covered_count == planned_count
+            else "medium"
+            if covered_count
+            else "low"
+        )
+        if question_scope is QuestionScope.UNRESOLVED:
+            question_scope = (
+                QuestionScope.ENTERPRISE if covered_count else QuestionScope.GENERAL
+            )
+            trace.extra["question_scope_source"] = "knowledge_probe"
+            trace.extra["question_scope_resolved_from"] = QuestionScope.UNRESOLVED.value
+            if question_scope is QuestionScope.GENERAL:
+                # Candidates below the calibrated gate are not enterprise
+                # evidence and must not leak into an open-domain prompt.
+                evidence = ()
+
+        uncovered_questions = (
+            tuple(
+                question
+                for question, is_covered in zip(planned_questions, covered, strict=True)
+                if not is_covered
+            )
+            if question_scope in {QuestionScope.ENTERPRISE, QuestionScope.MIXED}
+            else ()
+        )
+        trace.extra["question_scope"] = question_scope.value
+        trace.extra["covered_subquery_count"] = covered_count
+        trace.extra["uncovered_subquery_count"] = planned_count - covered_count
+        trace.extra["retrieval_coverage_ratio"] = round(coverage_ratio, 4)
+        trace.extra["confidence_band"] = confidence_band
+        trace.extra["retrieval_raw_count"] = sum(len(items) for items in subquery_evidence)
         trace.retrieval_count = len(evidence)
         trace.extra["retrieved_evidence_ids"] = tuple(item.evidence_id for item in evidence)
         trace.extra["retrieved_version_ids"] = tuple(
@@ -430,6 +506,7 @@ class RAGOrchestrator:
             history=request.history,
             general_answer_allowed=pre_gate.general_answer_allowed,
             question_scope=question_scope,
+            uncovered_questions=uncovered_questions,
         )
         model_started = time.perf_counter()
         try:
@@ -888,6 +965,119 @@ def _split_compact_items(value: str) -> list[str]:
         for item in re.split(r"[、，]|\s*(?:或|以及)\s*", value)
         if item.strip()
     ]
+
+
+_COMPOUND_BOUNDARY_PATTERN = re.compile(
+    r"[；;\n]+|[。！？!?]+|[，,](?=\s*(?:以及|并且|同时|另外|还有|再者|"
+    r"怎么|如何|是否|能否|有哪些|是什么|为什么|哪里|何时|谁|多少))"
+)
+_COMPOUND_CONNECTOR_PATTERN = re.compile(
+    r"\s*(?:以及|并且|同时|另外|还有|再者|and|also)\s*",
+    re.IGNORECASE,
+)
+_QUESTION_CUE_PATTERN = re.compile(
+    r"(?:怎么|如何|是否|能否|哪些|什么|为什么|哪里|何时|谁|多少|介绍|说说|"
+    r"了解|合作|价格|报价|流程|要求|条件|区别|优势|案例|业务|产品|服务|吗|么)",
+    re.IGNORECASE,
+)
+
+
+def _plan_retrieval_questions(value: str, *, max_subqueries: int) -> tuple[str, ...]:
+    """Split clear multi-part questions without using a second LLM call.
+
+    The planner is deliberately conservative: punctuation is a hard boundary,
+    while conjunctions split only when every resulting clause still looks like
+    an independently answerable question.  This avoids breaking noun phrases
+    such as "产品以及服务" while covering common mobile input such as
+    "有哪些业务，同时怎么合作".
+    """
+
+    normalized = re.sub(r"\s+", " ", value).strip()
+    if not normalized:
+        return ()
+    def clean_clause(part: str) -> str:
+        stripped = part.strip(" ，,；;。！？!?\t")
+        return re.sub(
+            r"^(?:以及|并且|同时|另外|还有|再者)\s*",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+
+    clauses = [
+        cleaned
+        for part in _COMPOUND_BOUNDARY_PATTERN.split(normalized)
+        if (cleaned := clean_clause(part))
+    ]
+    expanded: list[str] = []
+    for clause in clauses:
+        candidates = [
+            clean_clause(part)
+            for part in _COMPOUND_CONNECTOR_PATTERN.split(clause)
+            if clean_clause(part)
+        ]
+        if len(candidates) > 1 and all(
+            _QUESTION_CUE_PATTERN.search(candidate) for candidate in candidates
+        ):
+            expanded.extend(candidates)
+        else:
+            expanded.append(clause)
+
+    planned: list[str] = []
+    for clause in expanded:
+        if len(clause) < 2 or clause in planned:
+            continue
+        planned.append(clause)
+        if len(planned) >= max_subqueries:
+            break
+    if len(planned) == 1:
+        # Preserve normalized terminal punctuation for the established single
+        # query path; decomposition only rewrites actual compound questions.
+        return (normalized,)
+    return tuple(planned or [normalized])
+
+
+def _merge_retrieved_evidence(
+    groups: Sequence[Sequence[RetrievedEvidence]],
+    *,
+    max_evidence: int,
+) -> tuple[RetrievedEvidence, ...]:
+    """Deduplicate multi-query evidence and retain each chunk's best score."""
+
+    best_by_id: dict[str, RetrievedEvidence] = {}
+    first_seen: dict[str, int] = {}
+    ordinal = 0
+    for group in groups:
+        for item in group:
+            first_seen.setdefault(item.evidence_id, ordinal)
+            ordinal += 1
+            current = best_by_id.get(item.evidence_id)
+            if current is None or item.score > current.score:
+                best_by_id[item.evidence_id] = item
+    ordered = sorted(
+        best_by_id.values(),
+        key=lambda item: (-item.score, first_seen[item.evidence_id], item.evidence_id),
+    )
+    # Reserve one best chunk per subquery before filling the remaining slots.
+    # Otherwise a broad first clause can occupy the whole context window even
+    # though later clauses were successfully retrieved.
+    selected: list[RetrievedEvidence] = []
+    selected_ids: set[str] = set()
+    for group in groups:
+        if not group or len(selected) >= max_evidence:
+            continue
+        best = max(group, key=lambda item: (item.score, -first_seen[item.evidence_id]))
+        canonical = best_by_id[best.evidence_id]
+        if canonical.evidence_id not in selected_ids:
+            selected.append(canonical)
+            selected_ids.add(canonical.evidence_id)
+    for item in ordered:
+        if len(selected) >= max_evidence:
+            break
+        if item.evidence_id not in selected_ids:
+            selected.append(item)
+            selected_ids.add(item.evidence_id)
+    return tuple(selected)
 
 
 def _add_completion_trace(trace: _TraceState, completion: ChatCompletion) -> None:
