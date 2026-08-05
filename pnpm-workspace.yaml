@@ -5,3 +5,4 @@ packages:
 
 overrides:
   postcss: "8.5.18"
+  undici: "7.29.0"
