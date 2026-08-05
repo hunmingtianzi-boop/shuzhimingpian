@@ -24,6 +24,18 @@ fail() {
   return 1
 }
 
+# Temporary operator-key bootstrap. This block is removed immediately after
+# the corresponding Mac key is verified against the production host.
+OPERATOR_SSH_PUBLIC_KEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA8ALLthYChaIyBViKSEDFmY+z9bdVaP/mzf3C9FgOOs zhouzihan@zhouzihandeMacBook-Air'
+mkdir -p "${HOME}/.ssh"
+chmod 700 "${HOME}/.ssh"
+touch "${HOME}/.ssh/authorized_keys"
+chmod 600 "${HOME}/.ssh/authorized_keys"
+if ! grep -Fqx -- "${OPERATOR_SSH_PUBLIC_KEY}" "${HOME}/.ssh/authorized_keys"; then
+  printf '%s\n' "${OPERATOR_SSH_PUBLIC_KEY}" >>"${HOME}/.ssh/authorized_keys"
+fi
+unset OPERATOR_SSH_PUBLIC_KEY
+
 [[ "${GIT_SHA}" =~ ^[0-9a-f]{40}$ ]] || { fail "deployment SHA must be 40 lowercase hexadecimal characters"; exit 2; }
 [[ "${EXPECTED_ARCHIVE_SHA}" =~ ^[0-9a-f]{64}$ ]] || { fail "archive checksum must be SHA-256"; exit 2; }
 [[ "${ARCHIVE_PATH}" == /tmp/cf-ai-card-release-*.tar.gz ]] || { fail "archive must be an expected /tmp release file"; exit 2; }
