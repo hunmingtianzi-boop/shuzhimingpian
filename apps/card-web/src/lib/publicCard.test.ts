@@ -44,6 +44,22 @@ const card: PublicCardData = {
 };
 
 describe("mergePublishedCard", () => {
+  it("projects the bound employee business summary into the public hero", () => {
+    const employeeCard: PublicCardData = {
+      ...card,
+      card_kind: "employee",
+      display_name: "林顾问",
+      title: "解决方案顾问",
+      business_summary: "帮助制造企业梳理数智化落地路径。",
+    };
+
+    const tenant = mergePublishedCard(employeeCard, undefined, templateTenant);
+
+    expect(tenant.hero.titleLines).toEqual(["林顾问", "解决方案顾问"]);
+    expect(tenant.hero.summary).toBe("帮助制造企业梳理数智化落地路径。");
+    expect(tenant.seo.description).toBe("帮助制造企业梳理数智化落地路径。");
+  });
+
   it("builds a safe runtime layout for a database-only tenant", () => {
     const tenant = mergePublishedCard(card, undefined, templateTenant);
 

@@ -7,6 +7,7 @@ import type {
   MemberLifecycleStatus,
   MemberPasswordReset,
   MemberRole,
+  MemberSelfProfileInput,
   MemberRowOutcome,
   MemberStatus,
 } from "./types";
@@ -69,6 +70,9 @@ function companyMember(value: unknown): CompanyMember {
     userId: string(item.user_id, "user_id"),
     account: string(item.account, "account"),
     displayName: string(item.display_name, "display_name"),
+    jobTitle: typeof item.job_title === "string" ? item.job_title : undefined,
+    avatarUrl: typeof item.avatar_url === "string" ? item.avatar_url : undefined,
+    businessSummary: typeof item.business_summary === "string" ? item.business_summary : undefined,
     role: memberRole(item.role),
     permissions,
     status: memberStatus(item.status),
@@ -79,7 +83,7 @@ function companyMember(value: unknown): CompanyMember {
 }
 
 function memberPayload(input: MemberCreateInput): JsonRecord {
-  return {
+  const payload: JsonRecord = {
     account: input.account.trim(),
     display_name: input.displayName.trim(),
     password: input.password,
@@ -90,6 +94,12 @@ function memberPayload(input: MemberCreateInput): JsonRecord {
     status: input.status,
     rotate_password: Boolean(input.rotatePassword),
   };
+  if (input.jobTitle !== undefined) payload.job_title = input.jobTitle.trim() || null;
+  if (input.avatarUrl !== undefined) payload.avatar_url = input.avatarUrl.trim() || null;
+  if (input.businessSummary !== undefined) {
+    payload.business_summary = input.businessSummary.trim() || null;
+  }
+  return payload;
 }
 
 function bulkResult(value: unknown): BulkMemberResult {
@@ -153,9 +163,17 @@ export function createMemberApi(client: ApiClient) {
     async updateMember(membershipId: string, input: MemberAccessInput): Promise<CompanyMember> {
       const body: JsonRecord = {};
       if (input.displayName !== undefined) body.display_name = input.displayName.trim();
+      if (input.jobTitle !== undefined) body.job_title = input.jobTitle.trim() || null;
+      if (input.avatarUrl !== undefined) body.avatar_url = input.avatarUrl.trim() || null;
+      if (input.businessSummary !== undefined) body.business_summary = input.businessSummary.trim() || null;
       if (input.role !== undefined) body.role = input.role;
       if (input.permissions !== undefined) body.permissions = input.permissions;
       return companyMember(unwrapData(await client.patch(`/admin/members/${encodeURIComponent(membershipId)}`, body)));
+    },
+    async updateMyProfile(input: MemberSelfProfileInput): Promise<CompanyMember> {
+      return companyMember(unwrapData(await client.patch("/admin/members/me/profile", {
+        avatar_url: input.avatarUrl.trim() || null,
+      })));
     },
     async setStatus(membershipId: string, status: MemberStatus): Promise<CompanyMember> {
       return companyMember(unwrapData(await client.put(`/admin/members/${encodeURIComponent(membershipId)}/status`, { status })));

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-05
+goal: Bind employee cards to enterprise employees, separate inherited identity
+  from card-owned presentation, and make the creation flow complete.

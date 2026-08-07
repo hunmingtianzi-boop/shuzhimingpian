@@ -13,17 +13,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.catalog_schemas import (
+    CardComposerDefaultRecord,
     CaseStudyRecord,
     CreateCardRequest,
     CreateCaseStudyRequest,
     CreateForbiddenTopicRequest,
     CreateProductRequest,
+    EnterpriseTemplateDocument,
+    EnterpriseTemplateRecord,
     ForbiddenTopicRecord,
     ManagedCardRecord,
     ProductRecord,
     PublicCaseStudyRecord,
     PublicProductRecord,
     UpdateCaseStudyRequest,
+    UpdateEnterpriseTemplateRequest,
     UpdateForbiddenTopicRequest,
     UpdateManagedCardRequest,
     UpdateProductRequest,
@@ -32,14 +36,20 @@ from app.api.catalog_schemas import (
 from app.api.errors import ApiError
 from app.db.models import (
     Card,
+    CardContactField,
     CardKind,
     CaseStudy,
+    Company,
     ContentStatus,
     ForbiddenTopic,
+    KnowledgeChunk,
+    KnowledgeDocument,
     LifecycleStatus,
     Membership,
     Product,
+    User,
     Visibility,
+    WeComCardContactWay,
 )
 from app.db.session import resolve_public_card_scope, set_rls_context
 from app.services.audit import append_audit
@@ -58,6 +68,14 @@ class CatalogScope:
     @property
     def is_card_owner(self) -> bool:
         return self.role == "card_owner"
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeIdentityProjection:
+    display_name: str
+    job_title: str | None
+    avatar_url: str | None
+    business_summary: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +141,32 @@ def public_content_filters(
         model.visibility == Visibility.PUBLIC,
         model.published_at.is_not(None),
         model.published_at <= func.now(),
+    )
+
+
+def eligible_faq_document_statement(
+    scope: CatalogScope,
+    document_ids: set[uuid.UUID],
+) -> Any:
+    """Select selectable FAQ ids while pinning every tenant/public boundary."""
+
+    return (
+        select(KnowledgeDocument.id)
+        .join(KnowledgeChunk, KnowledgeChunk.document_id == KnowledgeDocument.id)
+        .where(
+            KnowledgeDocument.id.in_(document_ids),
+            KnowledgeDocument.tenant_id == scope.tenant_id,
+            KnowledgeDocument.company_id == scope.company_id,
+            KnowledgeDocument.source_type == "faq",
+            KnowledgeDocument.status == ContentStatus.PUBLISHED,
+            KnowledgeDocument.current_version_id.is_not(None),
+            KnowledgeChunk.tenant_id == scope.tenant_id,
+            KnowledgeChunk.company_id == scope.company_id,
+            KnowledgeChunk.version_id == KnowledgeDocument.current_version_id,
+            KnowledgeChunk.is_active.is_(True),
+            KnowledgeChunk.visibility == Visibility.PUBLIC,
+        )
+        .distinct()
     )
 
 
@@ -766,12 +810,36 @@ class CatalogStore:
                     .offset(offset)
                 )
             ).all()
-            return [self._managed_card_record(row) for row in rows], total
+            records: list[ManagedCardRecord] = []
+            for row in rows:
+                identity = (
+                    await self._employee_identity(
+                        session,
+                        scope,
+                        row.owner_user_id,
+                        require_active=False,
+                    )
+                    if row.card_kind == CardKind.EMPLOYEE
+                    else None
+                )
+                records.append(self._managed_card_record(row, employee_identity=identity))
+            return records, total
 
     async def get_card(self, *, scope: CatalogScope, card_id: uuid.UUID) -> ManagedCardRecord:
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
-            return self._managed_card_record(await self._card(session, scope, card_id))
+            card = await self._card(session, scope, card_id)
+            identity = (
+                await self._employee_identity(
+                    session,
+                    scope,
+                    card.owner_user_id,
+                    require_active=False,
+                )
+                if card.card_kind == CardKind.EMPLOYEE
+                else None
+            )
+            return self._managed_card_record(card, employee_identity=identity)
 
     async def create_card(
         self,
@@ -786,6 +854,8 @@ class CatalogStore:
             owner_user_id = None
             responsible_user_id = scope.actor_user_id
         else:
+            if body.owner_user_id is None and not scope.is_card_owner:
+                raise ApiError(422, "EMPLOYEE_SELECTION_REQUIRED", "请选择要绑定的企业员工")
             owner_user_id = body.owner_user_id or scope.actor_user_id
             responsible_user_id = owner_user_id
             if scope.is_card_owner and owner_user_id != scope.actor_user_id:
@@ -819,7 +889,32 @@ class CatalogStore:
     ) -> ManagedCardRecord:
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
-            await self._validate_owner(session, scope, responsible_user_id)
+            employee_identity: EmployeeIdentityProjection | None = None
+            if body.card_kind == "employee":
+                employee_identity = await self._employee_identity(
+                    session,
+                    scope,
+                    owner_user_id,
+                    require_active=True,
+                    for_update=True,
+                )
+                await self._ensure_employee_card_available(
+                    session,
+                    scope=scope,
+                    owner_user_id=owner_user_id,
+                )
+                display_name = employee_identity.display_name
+                settings = _employee_card_expression_settings(body)
+            else:
+                await self._validate_owner(session, scope, responsible_user_id)
+                display_name = body.display_name
+                settings = _card_settings(body)
+            template = await self._resolve_create_template(
+                session,
+                scope=scope,
+                body=body,
+            )
+            settings["enterprise_template_draft"] = template.model_dump(mode="json")
             card = Card(
                 id=uuid.uuid4(),
                 tenant_id=scope.tenant_id,
@@ -828,9 +923,9 @@ class CatalogStore:
                 owner_user_id=owner_user_id,
                 responsible_user_id=responsible_user_id,
                 slug=slug,
-                display_name=body.display_name,
+                display_name=display_name,
                 status=ContentStatus.DRAFT,
-                settings=_card_settings(body),
+                settings=settings,
                 version=1,
             )
             session.add(card)
@@ -850,7 +945,7 @@ class CatalogStore:
             )
             await session.flush()
             await session.refresh(card)
-            return self._managed_card_record(card)
+            return self._managed_card_record(card, employee_identity=employee_identity)
 
     async def update_card(
         self,
@@ -872,12 +967,30 @@ class CatalogStore:
                     raise ApiError(422, "INVALID_CARD_OWNER", "员工名片必须绑定有效员工")
                 if scope.is_card_owner and body.owner_user_id != scope.actor_user_id:
                     raise ApiError(403, "FORBIDDEN", "名片所有者不能转移给其他账号")
+                employee_identity = await self._employee_identity(
+                    session,
+                    scope,
+                    body.owner_user_id,
+                    require_active=True,
+                )
                 if body.owner_user_id != card.owner_user_id:
-                    await self._validate_owner(session, scope, body.owner_user_id)
+                    await self._ensure_employee_card_available(
+                        session,
+                        scope=scope,
+                        owner_user_id=body.owner_user_id,
+                        exclude_card_id=card.id,
+                    )
                 card.owner_user_id = body.owner_user_id
                 card.responsible_user_id = body.owner_user_id
-            card.display_name = body.display_name
-            card.settings = _card_settings(body)
+                card.display_name = employee_identity.display_name
+                card.settings = {
+                    **_without_employee_identity(card.settings),
+                    **_employee_card_expression_settings(body),
+                }
+            else:
+                employee_identity = None
+                card.display_name = body.display_name
+                card.settings = {**_template_settings(card.settings), **_card_settings(body)}
             card.version += 1
             await self._audit(
                 session,
@@ -895,7 +1008,7 @@ class CatalogStore:
             )
             await session.flush()
             await session.refresh(card)
-            return self._managed_card_record(card)
+            return self._managed_card_record(card, employee_identity=employee_identity)
 
     async def publish_card(
         self,
@@ -909,8 +1022,36 @@ class CatalogStore:
             await self._set_scope(session, scope)
             card = await self._card(session, scope, card_id, for_update=True)
             require_version(card.version, expected_version)
-            _ensure_card_publishable(card)
-            _publish_resource(card, label="名片")
+            employee_identity: EmployeeIdentityProjection | None = None
+            settings = _template_settings(card.settings)
+            draft = EnterpriseTemplateDocument.model_validate(settings["enterprise_template_draft"])
+            published = await self._validate_enterprise_template_resources(
+                session,
+                scope=scope,
+                document=draft,
+                require_public_cases=True,
+            )
+            _require_complete_template_blocks(published)
+            settings["enterprise_template_published"] = published.model_dump(mode="json")
+            if card.card_kind == CardKind.ENTERPRISE:
+                await self._ensure_enterprise_publishable(
+                    session,
+                    scope=scope,
+                    card=card,
+                    document=published,
+                )
+            else:
+                employee_identity = await self._employee_identity(
+                    session,
+                    scope,
+                    card.owner_user_id,
+                    require_active=True,
+                )
+                card.display_name = employee_identity.display_name
+                settings = _without_employee_identity(settings)
+            card.settings = settings
+            _ensure_card_publishable(card, employee_identity=employee_identity)
+            _publish_card_snapshot(card)
             await self._audit(
                 session,
                 scope=scope,
@@ -922,7 +1063,373 @@ class CatalogStore:
             )
             await session.flush()
             await session.refresh(card)
-            return self._managed_card_record(card)
+            return self._managed_card_record(card, employee_identity=employee_identity)
+
+    async def get_enterprise_template(
+        self, *, scope: CatalogScope, card_id: uuid.UUID
+    ) -> EnterpriseTemplateRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            card = await self._card(session, scope, card_id)
+            record = _enterprise_template_record(card)
+            draft = await self._validate_enterprise_template_resources(
+                session,
+                scope=scope,
+                document=record.draft,
+                require_public_cases=False,
+            )
+            return record.model_copy(update={"draft": draft})
+
+    async def update_enterprise_template(
+        self,
+        *,
+        scope: CatalogScope,
+        card_id: uuid.UUID,
+        expected_version: int,
+        body: UpdateEnterpriseTemplateRequest,
+        trace_id: str | None = None,
+    ) -> EnterpriseTemplateRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            card = await self._card(session, scope, card_id, for_update=True)
+            require_version(card.version, expected_version)
+            await self._validate_enterprise_template_resources(
+                session,
+                scope=scope,
+                document=body,
+                require_public_cases=False,
+            )
+            settings = _template_settings(card.settings)
+            settings["enterprise_template_draft"] = body.model_dump(mode="json")
+            card.settings = settings
+            card.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="card.composer_template.update",
+                resource_type="card",
+                resource_id=card.id,
+                trace_id=trace_id,
+                event_data={"version": card.version, "block_count": len(body.blocks)},
+            )
+            await session.flush()
+            await session.refresh(card)
+            return _enterprise_template_record(card)
+
+    async def get_card_composer_default(
+        self, *, scope: CatalogScope, card_kind: str
+    ) -> CardComposerDefaultRecord:
+        kind = _card_kind_value(card_kind)
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company_for_composer(session, scope)
+            document = _company_card_composer_default(company.settings, kind)
+            return CardComposerDefaultRecord(
+                card_kind=kind,
+                version=company.version,
+                document=document,
+            )
+
+    async def update_card_composer_default(
+        self,
+        *,
+        scope: CatalogScope,
+        card_kind: str,
+        expected_version: int,
+        body: UpdateEnterpriseTemplateRequest,
+        trace_id: str | None = None,
+    ) -> CardComposerDefaultRecord:
+        kind = _card_kind_value(card_kind)
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company_for_composer(session, scope, for_update=True)
+            require_version(company.version, expected_version)
+            await self._validate_enterprise_template_resources(
+                session, scope=scope, document=body, require_public_cases=False
+            )
+            # Persist only canonical references and editor-owned presentation
+            # fields. Product/case projections are response-only snapshots.
+            document = EnterpriseTemplateDocument.model_validate(body.model_dump(mode="json"))
+            settings = _dict_value(company.settings)
+            defaults = _dict_value(settings.get("card_composer_defaults"))
+            defaults[kind] = document.model_dump(mode="json")
+            settings["card_composer_defaults"] = defaults
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.card_composer_default.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={"card_kind": kind, "block_count": len(document.blocks)},
+            )
+            await session.flush()
+            await session.refresh(company)
+            return CardComposerDefaultRecord(
+                card_kind=kind, version=company.version, document=document
+            )
+
+    async def _resolve_card_composer_template(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        card_kind: str,
+        source_card_id: uuid.UUID | None,
+    ) -> EnterpriseTemplateDocument:
+        kind = _card_kind_value(card_kind)
+        if source_card_id is not None:
+            source = await self._card(session, scope, source_card_id)
+            if source.card_kind.value != kind:
+                raise ApiError(422, "TEMPLATE_SOURCE_KIND_MISMATCH", "只能复制同类名片的内容配置")
+            document = EnterpriseTemplateDocument.model_validate(
+                _template_settings(source.settings)["enterprise_template_draft"]
+            )
+            await self._validate_enterprise_template_resources(
+                session,
+                scope=scope,
+                document=document,
+                require_public_cases=False,
+            )
+            return document
+        company = await self._company_for_composer(session, scope)
+        return _company_card_composer_default(company.settings, kind)
+
+    async def _resolve_create_template(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        body: CreateCardRequest,
+    ) -> EnterpriseTemplateDocument:
+        if body.template_document is not None:
+            await self._validate_enterprise_template_resources(
+                session,
+                scope=scope,
+                document=body.template_document,
+                require_public_cases=False,
+            )
+            # Store the canonical editor document, not the response-only
+            # product/case projections returned by resource validation.
+            return body.template_document
+        return await self._resolve_card_composer_template(
+            session,
+            scope=scope,
+            card_kind=body.card_kind,
+            source_card_id=body.template_source_card_id,
+        )
+
+    async def _company_for_composer(
+        self, session: AsyncSession, scope: CatalogScope, *, for_update: bool = False
+    ) -> Company:
+        statement = select(Company).where(
+            Company.id == scope.company_id,
+            Company.tenant_id == scope.tenant_id,
+            Company.deleted_at.is_(None),
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        company = await session.scalar(statement)
+        if company is None:
+            raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在或不在当前作用域")
+        return company
+
+    async def _validate_enterprise_template_resources(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        document: EnterpriseTemplateDocument,
+        require_public_cases: bool,
+    ) -> EnterpriseTemplateDocument:
+        for block in document.blocks:
+            if block.case_items or block.product_items:
+                raise ApiError(
+                    422,
+                    "TEMPLATE_SERVER_FIELDS_FORBIDDEN",
+                    "产品与案例展示数据由服务端生成",
+                )
+            for image_url in [*block.image_urls, block.video_cover_url]:
+                if image_url and not card_asset_belongs_to_company(image_url, scope.company_id):
+                    raise ApiError(
+                        422,
+                        "TEMPLATE_ASSET_OUT_OF_SCOPE",
+                        "模板图片必须来自当前企业的名片素材库",
+                    )
+
+        product_ids = {
+            product_id
+            for block in document.blocks
+            if block.type == "business_collection"
+            for product_id in block.product_ids
+        }
+        products: dict[uuid.UUID, Product] = {}
+        if product_ids:
+            filters = [
+                Product.id.in_(product_ids),
+                Product.tenant_id == scope.tenant_id,
+                Product.company_id == scope.company_id,
+                Product.deleted_at.is_(None),
+            ]
+            if require_public_cases:
+                filters.extend(
+                    [
+                        Product.status == ContentStatus.PUBLISHED,
+                        Product.visibility == Visibility.PUBLIC,
+                        Product.published_at.is_not(None),
+                    ]
+                )
+            rows = (await session.scalars(select(Product).where(*filters))).all()
+            products = {row.id: row for row in rows}
+            if set(products) != product_ids:
+                raise ApiError(
+                    422,
+                    "TEMPLATE_PRODUCT_OUT_OF_SCOPE",
+                    "模板产品必须属于当前企业并满足公开状态要求",
+                )
+
+        case_ids = {
+            case_id
+            for block in document.blocks
+            if block.type == "case_collection"
+            for case_id in block.case_ids
+        }
+        cases: dict[uuid.UUID, CaseStudy] = {}
+        if case_ids:
+            filters = [
+                CaseStudy.id.in_(case_ids),
+                CaseStudy.tenant_id == scope.tenant_id,
+                CaseStudy.company_id == scope.company_id,
+                CaseStudy.deleted_at.is_(None),
+            ]
+            if require_public_cases:
+                filters.extend(
+                    [
+                        CaseStudy.status == ContentStatus.PUBLISHED,
+                        CaseStudy.visibility == Visibility.PUBLIC,
+                        CaseStudy.published_at.is_not(None),
+                    ]
+                )
+            rows = (await session.scalars(select(CaseStudy).where(*filters))).all()
+            cases = {row.id: row for row in rows}
+            if set(cases) != case_ids:
+                raise ApiError(
+                    422,
+                    "TEMPLATE_CASE_OUT_OF_SCOPE",
+                    "模板案例必须属于当前企业并满足公开状态要求",
+                )
+
+        faq_document_ids = {
+            document_id
+            for block in document.blocks
+            if block.type == "faq" and block.faq_mode == "selected"
+            for document_id in block.faq_document_ids
+        }
+        if faq_document_ids:
+            valid_faq_ids = set(
+                (
+                    await session.scalars(
+                        eligible_faq_document_statement(scope, faq_document_ids)
+                    )
+                ).all()
+            )
+            if valid_faq_ids != faq_document_ids:
+                raise ApiError(
+                    422,
+                    "TEMPLATE_FAQ_OUT_OF_SCOPE",
+                    "模板问答必须是当前企业已发布且公开的 FAQ",
+                )
+
+        projected_blocks = []
+        for block in document.blocks:
+            product_items = [
+                {
+                    "id": str(product.id),
+                    "slug": product.slug,
+                    "name": product.name,
+                    "category": product.category,
+                    "summary": product.summary,
+                    "image_url": product.image_url,
+                }
+                for product_id in block.product_ids
+                if (product := products.get(product_id)) is not None
+            ]
+            case_items = [
+                {
+                    "id": str(case.id),
+                    "slug": case.slug,
+                    "title": case.title,
+                    "industry": case.industry,
+                    "summary": case.result,
+                    "image_url": case.image_url,
+                }
+                for case_id in block.case_ids
+                if (case := cases.get(case_id)) is not None
+            ]
+            projected_blocks.append(
+                block.model_copy(update={"product_items": product_items, "case_items": case_items})
+            )
+        return document.model_copy(update={"blocks": projected_blocks})
+
+    async def _ensure_enterprise_publishable(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        card: Card,
+        document: EnterpriseTemplateDocument,
+    ) -> None:
+        company = await session.get(Company, scope.company_id)
+        company_settings = _dict_value(company.settings if company is not None else {})
+        settings = _dict_value(card.settings)
+        missing: list[str] = []
+        if company is None or not company.name.strip():
+            missing.append("company_name")
+        if not (_string_value(settings.get("title")) or "").strip():
+            missing.append("business_positioning")
+        brand_asset = _string_value(settings.get("avatar_url")) or _string_value(
+            company_settings.get("logo_url")
+        )
+        if not brand_asset:
+            missing.append("brand_identity")
+        website = _string_value(company_settings.get("website"))
+        contact_field = await session.scalar(
+            select(CardContactField.id)
+            .where(
+                CardContactField.tenant_id == scope.tenant_id,
+                CardContactField.company_id == scope.company_id,
+                CardContactField.card_id == card.id,
+                CardContactField.is_active.is_(True),
+                CardContactField.visibility == Visibility.PUBLIC,
+            )
+            .limit(1)
+        )
+        wecom_contact = await session.scalar(
+            select(WeComCardContactWay.id)
+            .where(
+                WeComCardContactWay.tenant_id == scope.tenant_id,
+                WeComCardContactWay.company_id == scope.company_id,
+                WeComCardContactWay.card_id == card.id,
+                WeComCardContactWay.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        template_contact = any(
+            block.visible
+            and ((block.type == "cta" and bool(block.cta_url)) or block.type == "ai_assistant")
+            for block in document.blocks
+        )
+        if not website and contact_field is None and wecom_contact is None and not template_contact:
+            missing.append("contact_route")
+        if missing:
+            raise ApiError(
+                422,
+                "ENTERPRISE_TEMPLATE_NOT_PUBLISHABLE",
+                "企业名片发布检查未通过",
+                details={"fields": missing},
+            )
 
     async def deactivate_card(
         self,
@@ -948,7 +1455,17 @@ class CatalogStore:
             )
             await session.flush()
             await session.refresh(card)
-            return self._managed_card_record(card)
+            employee_identity = (
+                await self._employee_identity(
+                    session,
+                    scope,
+                    card.owner_user_id,
+                    require_active=False,
+                )
+                if card.card_kind == CardKind.EMPLOYEE
+                else None
+            )
+            return self._managed_card_record(card, employee_identity=employee_identity)
 
     async def list_public_products(
         self,
@@ -1205,6 +1722,75 @@ class CatalogStore:
         if membership_id is None:
             raise ApiError(422, "INVALID_CARD_OWNER", "名片所有者不是当前企业的有效成员")
 
+    async def _employee_identity(
+        self,
+        session: AsyncSession,
+        scope: CatalogScope,
+        owner_user_id: uuid.UUID | None,
+        *,
+        require_active: bool,
+        for_update: bool = False,
+    ) -> EmployeeIdentityProjection:
+        if owner_user_id is None:
+            raise ApiError(422, "INVALID_CARD_OWNER", "员工名片必须绑定有效员工")
+        statement = (
+            select(
+                User.display_name.label("display_name"),
+                User.status.label("user_status"),
+                User.deleted_at.label("user_deleted_at"),
+                Membership.job_title.label("job_title"),
+                Membership.avatar_url.label("avatar_url"),
+                Membership.business_summary.label("business_summary"),
+                Membership.status.label("membership_status"),
+            )
+            .join(Membership, Membership.user_id == User.id)
+            .where(
+                User.id == owner_user_id,
+                Membership.tenant_id == scope.tenant_id,
+                Membership.company_id == scope.company_id,
+            )
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = (await session.execute(statement)).mappings().one_or_none()
+        if row is None or row["user_deleted_at"] is not None:
+            raise ApiError(422, "INVALID_CARD_OWNER", "员工身份资料不存在或不在当前企业")
+        if require_active and (
+            row["user_status"] != LifecycleStatus.ACTIVE
+            or row["membership_status"] != LifecycleStatus.ACTIVE
+        ):
+            raise ApiError(422, "INVALID_CARD_OWNER", "员工身份已停用，无法修改或发布名片")
+        return EmployeeIdentityProjection(
+            display_name=str(row["display_name"]),
+            job_title=_string_value(row["job_title"]),
+            avatar_url=_string_value(row["avatar_url"]),
+            business_summary=_string_value(row["business_summary"]),
+        )
+
+    async def _ensure_employee_card_available(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        owner_user_id: uuid.UUID,
+        exclude_card_id: uuid.UUID | None = None,
+    ) -> None:
+        statement = select(Card.id).where(
+            Card.tenant_id == scope.tenant_id,
+            Card.company_id == scope.company_id,
+            Card.card_kind == CardKind.EMPLOYEE,
+            Card.owner_user_id == owner_user_id,
+            Card.deleted_at.is_(None),
+        )
+        if exclude_card_id is not None:
+            statement = statement.where(Card.id != exclude_card_id)
+        if await session.scalar(statement.limit(1)) is not None:
+            raise ApiError(
+                409,
+                "EMPLOYEE_CARD_EXISTS",
+                "该企业员工已经拥有员工名片，请直接编辑已有名片",
+            )
+
     async def _audit(
         self,
         session: AsyncSession,
@@ -1228,21 +1814,40 @@ class CatalogStore:
             event_data=event_data,
         )
 
-    def _managed_card_record(self, card: Card) -> ManagedCardRecord:
+    def _managed_card_record(
+        self,
+        card: Card,
+        *,
+        employee_identity: EmployeeIdentityProjection | None = None,
+    ) -> ManagedCardRecord:
         settings = _dict_value(card.settings)
         share_url = f"{self._public_card_base_url}/c/{card.slug}"
+        display_name = (
+            employee_identity.display_name if employee_identity is not None else card.display_name
+        )
+        title = (
+            employee_identity.job_title
+            if employee_identity is not None
+            else _string_value(settings.get("title"))
+        )
+        avatar_url = (
+            employee_identity.avatar_url
+            if employee_identity is not None
+            else _string_value(settings.get("avatar_url"))
+        )
         return ManagedCardRecord(
             id=card.id,
             card_kind=card.card_kind.value,
             owner_user_id=card.owner_user_id,
             slug=card.slug,
-            display_name=card.display_name,
-            title=_string_value(settings.get("title")) or card.display_name,
-            avatar_url=_string_value(settings.get("avatar_url")),
+            display_name=display_name,
+            title=title or display_name,
+            avatar_url=avatar_url,
             assistant_name=_string_value(settings.get("assistant_name")),
             welcome_message=_string_value(settings.get("welcome_message")),
             suggested_questions=_string_list(settings.get("suggested_questions"), limit=6),
             policy_versions=_string_dict(settings.get("policy_versions")),
+            employee_contact_visibility=_employee_contact_visibility(settings),
             status=card.status.value,
             published_at=card.published_at,
             version=card.version,
@@ -1296,6 +1901,261 @@ def _card_settings(body: CreateCardRequest | UpdateManagedCardRequest) -> dict[s
         "suggested_questions": list(body.suggested_questions),
         "policy_versions": dict(body.policy_versions),
     }
+
+
+def _employee_card_expression_settings(
+    body: CreateCardRequest | UpdateManagedCardRequest,
+) -> dict[str, Any]:
+    """Persist employee-card expression only; identity belongs to the membership."""
+
+    return {
+        "assistant_name": body.assistant_name,
+        "welcome_message": body.welcome_message,
+        "suggested_questions": list(body.suggested_questions),
+        "policy_versions": dict(body.policy_versions),
+        "employee_contact_visibility": list(body.employee_contact_visibility),
+    }
+
+
+def _without_employee_identity(value: object) -> dict[str, Any]:
+    settings = _dict_value(value)
+    for key in ("title", "avatar_url", "business_summary"):
+        settings.pop(key, None)
+    return settings
+
+
+def _employee_contact_visibility(value: object) -> list[str]:
+    settings = _dict_value(value)
+    raw = settings.get("employee_contact_visibility")
+    # Existing employee cards predate explicit consent controls. Keep their
+    # public contract stable until an administrator saves an explicit choice.
+    if raw is None:
+        return ["mobile", "email"]
+    if not isinstance(raw, list):
+        return []
+    return [field for field in ("mobile", "email") if field in raw]
+
+
+def _default_enterprise_template() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "theme_key": "brand",
+        "blocks": [
+            {
+                "id": "identity",
+                "type": "identity",
+                "visible": True,
+                "directory_enabled": False,
+                "sort_order": 0,
+                "title": "基础名片",
+            },
+            {
+                "id": "overview",
+                "type": "rich_text",
+                "visible": True,
+                "sort_order": 1,
+                "title": "概览",
+            },
+            {
+                "id": "intro",
+                "type": "rich_text",
+                "visible": True,
+                "sort_order": 2,
+                "title": "企业介绍",
+            },
+            {
+                "id": "business",
+                "type": "business_collection",
+                "visible": True,
+                "sort_order": 3,
+                "title": "核心业务",
+            },
+            {
+                "id": "cases",
+                "type": "case_collection",
+                "visible": True,
+                "sort_order": 4,
+                "title": "代表案例",
+            },
+            {
+                "id": "trust",
+                "type": "trust_panel",
+                "visible": True,
+                "sort_order": 5,
+                "title": "企业资料",
+            },
+            {"id": "faq", "type": "faq", "visible": True, "sort_order": 6, "title": "常见问题"},
+            {
+                "id": "ai",
+                "type": "ai_assistant",
+                "visible": True,
+                "sort_order": 7,
+                "title": "企业 AI 助手",
+            },
+        ],
+    }
+
+
+def _merge_default_template_blocks(blocks: list[object]) -> list[object]:
+    indexed = [(index, block) for index, block in enumerate(blocks) if isinstance(block, dict)]
+    merged = [
+        block
+        for _, block in sorted(
+            indexed,
+            key=lambda item: (
+                item[1].get("sort_order")
+                if isinstance(item[1].get("sort_order"), int)
+                else item[0],
+                item[0],
+            ),
+        )
+    ]
+    defaults = _default_enterprise_template()["blocks"]
+    matched_default_ids: set[str] = set()
+
+    def matches_default(block: dict[str, Any], default_block: dict[str, Any]) -> bool:
+        return bool(
+            block.get("id") == default_block["id"]
+            or (default_block["type"] != "rich_text" and block.get("type") == default_block["type"])
+            or (
+                default_block["type"] == "rich_text"
+                and block.get("type") == "rich_text"
+                and block.get("title") == default_block.get("title")
+            )
+        )
+
+    for index, block in enumerate(merged):
+        match = next(
+            (
+                default_block
+                for default_block in defaults
+                if default_block["id"] not in matched_default_ids
+                and matches_default(block, default_block)
+            ),
+            None,
+        )
+        if match is None:
+            continue
+        matched_default_ids.add(match["id"])
+        if match["type"] == "identity":
+            merged[index] = {
+                **block,
+                "visible": True,
+                "directory_enabled": block.get(
+                    "directory_enabled", match["directory_enabled"]
+                ),
+            }
+
+    for default_block in defaults:
+        if default_block["id"] in matched_default_ids:
+            continue
+        insert_at = min(int(default_block["sort_order"]), len(merged))
+        merged.insert(insert_at, default_block)
+    return [{**block, "sort_order": index} for index, block in enumerate(merged)]
+
+
+def _require_complete_template_blocks(document: EnterpriseTemplateDocument) -> None:
+    incomplete: list[str] = []
+    for block in document.blocks:
+        if not block.visible:
+            continue
+        if block.type == "image_gallery" and not block.image_urls:
+            incomplete.append(block.id)
+        elif block.type == "video_link" and (not block.video_url or not block.video_cover_url):
+            incomplete.append(block.id)
+        elif (
+            block.type == "business_collection" and block.id != "business" and not block.product_ids
+        ):
+            incomplete.append(block.id)
+        elif block.type == "case_collection" and block.id != "cases" and not block.case_ids:
+            incomplete.append(block.id)
+        elif block.type == "faq" and block.faq_mode == "selected" and not block.faq_document_ids:
+            incomplete.append(block.id)
+        elif block.type == "cta" and (not block.cta_label or not block.cta_url):
+            incomplete.append(block.id)
+    if incomplete:
+        raise ApiError(
+            422,
+            "TEMPLATE_BLOCK_INCOMPLETE",
+            "公开名片不能包含未完成的自由模块",
+            details={"block_ids": incomplete},
+        )
+
+
+def _card_kind_value(value: str) -> str:
+    if value not in {"enterprise", "employee"}:
+        raise ApiError(422, "INVALID_CARD_KIND", "名片类型必须是 enterprise 或 employee")
+    return value
+
+
+def _company_card_composer_default(value: object, card_kind: str) -> EnterpriseTemplateDocument:
+    settings = _dict_value(value)
+    defaults = _dict_value(settings.get("card_composer_defaults"))
+    candidate = defaults.get(card_kind)
+    if isinstance(candidate, dict):
+        try:
+            return EnterpriseTemplateDocument.model_validate(
+                {**candidate, "blocks": _merge_default_template_blocks(candidate.get("blocks", []))}
+            )
+        except ValueError:
+            pass
+    return EnterpriseTemplateDocument.model_validate(_default_enterprise_template())
+
+
+def card_asset_belongs_to_company(value: str, company_id: uuid.UUID) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        public_index = parts.index("public")
+    except ValueError:
+        return False
+    suffix = parts[public_index:]
+    if len(suffix) != 4 or suffix[:2] != ["public", "card-assets"]:
+        return False
+    if suffix[2] != str(company_id):
+        return False
+    filename = suffix[3]
+    if not filename.endswith(".webp"):
+        return False
+    try:
+        uuid.UUID(filename.removesuffix(".webp"))
+    except ValueError:
+        return False
+    return True
+
+
+def _template_settings(value: object) -> dict[str, Any]:
+    settings = _dict_value(value)
+    for key in ("enterprise_template_draft", "enterprise_template_published"):
+        document = settings.get(key)
+        if key == "enterprise_template_draft" and not isinstance(document, dict):
+            settings[key] = _default_enterprise_template()
+            continue
+        if not isinstance(document, dict):
+            continue
+        blocks = document.get("blocks")
+        if isinstance(blocks, list):
+            settings[key] = {
+                **document,
+                "blocks": _merge_default_template_blocks(blocks),
+            }
+    return settings
+
+
+def _enterprise_template_record(card: Card) -> EnterpriseTemplateRecord:
+    settings = _template_settings(card.settings)
+    return EnterpriseTemplateRecord(
+        card_id=card.id,
+        version=card.version,
+        draft=EnterpriseTemplateDocument.model_validate(settings["enterprise_template_draft"]),
+        published=(
+            EnterpriseTemplateDocument.model_validate(settings["enterprise_template_published"])
+            if isinstance(settings.get("enterprise_template_published"), dict)
+            else None
+        ),
+    )
 
 
 def _product_record(product: Product) -> ProductRecord:
@@ -1441,15 +2301,32 @@ def _ensure_case_study_publishable(case_study: CaseStudy) -> None:
         )
 
 
-def _ensure_card_publishable(card: Card) -> None:
+def _ensure_card_publishable(
+    card: Card,
+    *,
+    employee_identity: EmployeeIdentityProjection | None = None,
+) -> None:
     settings = _dict_value(card.settings)
     missing: list[str] = []
-    if not card.display_name.strip():
+    display_name = (
+        employee_identity.display_name if employee_identity is not None else card.display_name
+    )
+    title = (
+        employee_identity.job_title
+        if employee_identity is not None
+        else _string_value(settings.get("title"))
+    )
+    avatar_url = (
+        employee_identity.avatar_url
+        if employee_identity is not None
+        else _string_value(settings.get("avatar_url"))
+    )
+    if not display_name.strip():
         missing.append("display_name")
-    if not (_string_value(settings.get("title")) or "").strip():
+    if not (title or "").strip():
         missing.append("title")
     _ensure_publishable_asset(
-        _string_value(settings.get("avatar_url")),
+        avatar_url,
         missing=missing,
         field_name="avatar_url",
     )
@@ -1480,6 +2357,15 @@ def _publish_resource(resource: Any, *, label: str) -> None:
     resource.status = ContentStatus.PUBLISHED
     resource.published_at = datetime.now(UTC)
     resource.version += 1
+
+
+def _publish_card_snapshot(card: Card) -> None:
+    """Publish a draft card or replace the public snapshot of a live card."""
+    if card.status == ContentStatus.PUBLISHED:
+        card.published_at = datetime.now(UTC)
+        card.version += 1
+        return
+    _publish_resource(card, label="名片")
 
 
 def _archive_resource(resource: Any, *, label: str) -> None:

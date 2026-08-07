@@ -4,6 +4,11 @@ param(
     [int]$CardPort = 4318,
     [int]$AdminPort = 4319,
     [int]$ApiPort = 8030,
+    [int]$DatabasePort = 0,
+    [int]$RedisPort = 0,
+    [int]$ObjectStoragePort = 0,
+    [string]$DatabaseContainer = "",
+    [string]$ObjectStorageContainer = "",
     [string]$BackendEnvironmentFile = ""
 )
 
@@ -70,19 +75,94 @@ function Restore-Environment([hashtable]$Saved) {
     }
 }
 
+function Get-ContainerEnvironment([string]$ContainerName) {
+    $json = & docker inspect $ContainerName --format '{{json .Config.Env}}'
+    if ($LASTEXITCODE -ne 0 -or -not $json) {
+        throw "Unable to inspect runtime container: $ContainerName"
+    }
+    $values = @{}
+    foreach ($entry in ($json | ConvertFrom-Json)) {
+        if ($entry -notmatch "^([^=]+)=(.*)$") { continue }
+        $values[$Matches[1]] = $Matches[2]
+    }
+    return $values
+}
+
 function Start-Api([string]$EnvironmentFile) {
     if ($null -ne (Get-Listener $ApiPort)) { return }
     if (-not (Test-Path -LiteralPath $ApiPython)) {
         throw "Isolated API runtime is missing: $ApiPython"
     }
     $saved = Import-EnvironmentFile $EnvironmentFile
-    $extraNames = @("CORS_ALLOWED_ORIGINS", "PUBLIC_CARD_BASE_URL")
+    $extraNames = @(
+        "CORS_ALLOWED_ORIGINS",
+        "PUBLIC_CARD_BASE_URL",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY"
+    )
     foreach ($name in $extraNames) {
         if (-not $saved.ContainsKey($name)) {
             $saved[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
         }
     }
     try {
+        # Optional host-port overrides let an isolated UI/API process reuse a
+        # repository-owned Compose data stack without writing secrets to an
+        # environment file or accidentally connecting to another project's
+        # services on the default ports.
+        if ($DatabasePort -gt 0) {
+            $databaseName = "cf_ai_card"
+            $databaseUser = "cf_ai_card_app"
+            $databasePassword = "change-me-app-local-only"
+            if ($DatabaseContainer) {
+                $databaseEnvironment = Get-ContainerEnvironment $DatabaseContainer
+                if (
+                    -not $databaseEnvironment.ContainsKey("POSTGRES_USER") -or
+                    -not $databaseEnvironment.ContainsKey("POSTGRES_PASSWORD")
+                ) {
+                    throw "Runtime database container is missing Postgres credentials."
+                }
+                # Existing local volumes can predate the current APP_DB_PASSWORD
+                # value. The container owner credentials remain authoritative for
+                # the repository-owned development database and avoid mutating
+                # shared role passwords just to start an isolated API process.
+                $databaseUser = $databaseEnvironment["POSTGRES_USER"]
+                $databasePassword = $databaseEnvironment["POSTGRES_PASSWORD"]
+                if ($databaseEnvironment.ContainsKey("POSTGRES_DB")) {
+                    $databaseName = $databaseEnvironment["POSTGRES_DB"]
+                }
+            }
+            $encodedDatabaseUser = [Uri]::EscapeDataString($databaseUser)
+            $encodedDatabasePassword = [Uri]::EscapeDataString($databasePassword)
+            $env:DATABASE_URL = (
+                "postgresql+asyncpg://${encodedDatabaseUser}:${encodedDatabasePassword}" +
+                "@127.0.0.1:$DatabasePort/$databaseName"
+            )
+        }
+        if ($RedisPort -gt 0) {
+            $env:REDIS_URL = "redis://127.0.0.1:$RedisPort/0"
+        }
+        if ($ObjectStoragePort -gt 0) {
+            $objectStorageAccessKey = "minioadmin"
+            $objectStorageSecretKey = "change-me-local-only"
+            if ($ObjectStorageContainer) {
+                $objectStorageEnvironment = Get-ContainerEnvironment $ObjectStorageContainer
+                if (
+                    -not $objectStorageEnvironment.ContainsKey("MINIO_ROOT_USER") -or
+                    -not $objectStorageEnvironment.ContainsKey("MINIO_ROOT_PASSWORD")
+                ) {
+                    throw "Runtime object-storage container is missing MinIO credentials."
+                }
+                $objectStorageAccessKey = $objectStorageEnvironment["MINIO_ROOT_USER"]
+                $objectStorageSecretKey = $objectStorageEnvironment["MINIO_ROOT_PASSWORD"]
+            }
+            $env:OBJECT_STORAGE_ENDPOINT = "http://127.0.0.1:$ObjectStoragePort"
+            $env:OBJECT_STORAGE_ACCESS_KEY = $objectStorageAccessKey
+            $env:OBJECT_STORAGE_SECRET_KEY = $objectStorageSecretKey
+        }
         $env:CORS_ALLOWED_ORIGINS = "[`"http://127.0.0.1:$CardPort`",`"http://127.0.0.1:$AdminPort`",`"http://localhost:$CardPort`",`"http://localhost:$AdminPort`"]"
         $env:PUBLIC_CARD_BASE_URL = "http://127.0.0.1:$CardPort"
         Start-Process -FilePath $ApiPython `

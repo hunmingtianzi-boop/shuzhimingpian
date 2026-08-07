@@ -32,10 +32,13 @@ import { useState } from "react";
 
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
-import type { ManagedCard } from "../api/types";
+import { memberApi } from "../api/memberApi";
+import type { EnterpriseTemplate, ManagedCard, ManagedCardInput } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { CardEditor } from "../components/CardEditor";
+import type { CardCreationDraft } from "../components/CardEditor";
+import { EnterpriseTemplateEditor } from "../components/EnterpriseTemplateEditor";
 import { CardContentOverridesDialog } from "../components/CardContentOverridesDialog";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
@@ -69,6 +72,7 @@ type CardTableProps = {
   kind: ManagedCard["cardKind"];
   onCreate?: () => void;
   onEdit: (card: ManagedCard) => void;
+  onTemplate: (card: ManagedCard) => void;
   onShare: (card: ManagedCard) => void;
   onOverride: (card: ManagedCard) => void;
   onWeCom: (card: ManagedCard) => void;
@@ -80,6 +84,7 @@ function CardTable({
   kind,
   onCreate,
   onEdit,
+  onTemplate,
   onShare,
   onOverride,
   onWeCom,
@@ -141,6 +146,11 @@ function CardTable({
                   >
                     编辑
                   </Button>
+                  {true && (
+                    <Button appearance="subtle" size="small" onClick={() => onTemplate(card)}>
+                      编辑内容
+                    </Button>
+                  )}
                   {!enterprise && (
                     <Button
                       appearance="subtle"
@@ -216,6 +226,10 @@ export function CardsPage() {
   const resource = useResource(() => adminApi.listManagedCards());
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedCard>();
+  const [creationDraft, setCreationDraft] = useState<CardCreationDraft>();
+  const [creatingFromComposer, setCreatingFromComposer] = useState(false);
+  const [templateTarget, setTemplateTarget] = useState<ManagedCard>();
+  const [defaultTemplateKind, setDefaultTemplateKind] = useState<ManagedCard["cardKind"]>();
   const [createKind, setCreateKind] = useState<ManagedCard["cardKind"]>("enterprise");
   const [shareTarget, setShareTarget] = useState<ManagedCard>();
   const [overrideTarget, setOverrideTarget] = useState<ManagedCard>();
@@ -231,13 +245,76 @@ export function CardsPage() {
     setCreateKind(kind);
     setEditing(undefined);
     setEditorOpen(true);
+    setCreationDraft(undefined);
     setNotice(undefined);
+    setActionError(undefined);
   };
 
   const saved = () => {
     setEditorOpen(false);
     setNotice(editing ? "名片已由服务端确认保存。" : "名片已创建，安全链接已由服务端生成。");
     resource.reload();
+  };
+
+  const openCreationComposer = (draft: CardCreationDraft) => {
+    setEditorOpen(false);
+    setCreationDraft(draft);
+    setActionError(undefined);
+    setNotice(undefined);
+  };
+
+  const createFromComposer = async (document: EnterpriseTemplate["draft"]) => {
+    if (!creationDraft || creatingFromComposer) return;
+    setCreatingFromComposer(true);
+    setActionError(undefined);
+    try {
+      const uploaded = creationDraft.imageFile
+        ? await adminApi.uploadCardAsset(creationDraft.imageFile)
+        : undefined;
+      const canonicalAvatarUrl = uploaded?.url ?? creationDraft.canonicalAvatarUrl;
+      if (
+        creationDraft.input.cardKind === "employee"
+        && creationDraft.avatarChanged
+        && creationDraft.employeeMembershipId
+      ) {
+        if (
+          auth.user?.role !== "company_admin"
+          && creationDraft.employeeUserId !== auth.user?.id
+        ) {
+          throw new ApiError("只能修改自己的员工头像。", {
+            code: "EMPLOYEE_AVATAR_PERMISSION_DENIED",
+          });
+        }
+        if (auth.user?.role === "company_admin") {
+          await memberApi.updateMember(creationDraft.employeeMembershipId, {
+            avatarUrl: canonicalAvatarUrl,
+          });
+        } else {
+          await memberApi.updateMyProfile({ avatarUrl: canonicalAvatarUrl });
+        }
+      }
+      const input: ManagedCardInput = {
+        ...creationDraft.input,
+        avatarUrl: creationDraft.input.cardKind === "employee" ? "" : canonicalAvatarUrl,
+        templateSourceCardId: undefined,
+        composerMode: "default",
+        templateDocument: document,
+      };
+      await adminApi.createManagedCard(input);
+      setCreationDraft(undefined);
+      setNotice("名片已按当前页面设计创建，安全链接已由服务端生成。");
+      resource.reload();
+    } catch (caught) {
+      const apiError = caught instanceof ApiError
+        ? caught
+        : new ApiError("按当前页面设计创建名片时发生未知错误。", {
+            code: "UNKNOWN_ERROR",
+          });
+      setActionError(apiError);
+      throw apiError;
+    } finally {
+      setCreatingFromComposer(false);
+    }
   };
 
   const requestAction = (type: CardAction["type"], target: ManagedCard) => {
@@ -360,6 +437,14 @@ export function CardsPage() {
               >
                 新建员工名片
               </Button>
+              <Button appearance="secondary" onClick={() => setDefaultTemplateKind("employee")}>
+                员工默认配置
+              </Button>
+              {canManageEnterpriseCards && (
+                <Button appearance="secondary" onClick={() => setDefaultTemplateKind("enterprise")}>
+                  企业默认配置
+                </Button>
+              )}
             </div>
           )
         }
@@ -433,6 +518,7 @@ export function CardsPage() {
               kind="enterprise"
               onCreate={canManageEnterpriseCards ? () => openCreate("enterprise") : undefined}
               onEdit={edit}
+              onTemplate={setTemplateTarget}
               onShare={share}
               onOverride={setOverrideTarget}
               onWeCom={provisionWeCom}
@@ -455,6 +541,7 @@ export function CardsPage() {
               kind="employee"
               onCreate={() => openCreate("employee")}
               onEdit={edit}
+              onTemplate={setTemplateTarget}
               onShare={share}
               onOverride={setOverrideTarget}
               onWeCom={provisionWeCom}
@@ -470,6 +557,38 @@ export function CardsPage() {
         createKind={createKind}
         onClose={() => setEditorOpen(false)}
         onSaved={saved}
+        onCustomize={openCreationComposer}
+      />
+      <EnterpriseTemplateEditor
+        card={templateTarget}
+        defaultKind={defaultTemplateKind}
+        creationDraft={creationDraft ? {
+          cardKind: creationDraft.input.cardKind,
+          identityPreview: creationDraft.identityPreview,
+        } : undefined}
+        open={Boolean(templateTarget || defaultTemplateKind || creationDraft)}
+        onClose={() => {
+          if (creatingFromComposer) return;
+          setTemplateTarget(undefined);
+          setDefaultTemplateKind(undefined);
+          setCreationDraft(undefined);
+        }}
+        onDraftConfirm={createFromComposer}
+        onEditBasicSettings={(card) => {
+          setTemplateTarget(undefined);
+          setDefaultTemplateKind(undefined);
+          edit(card);
+        }}
+        onRequestPublish={(card) => {
+          setTemplateTarget(undefined);
+          setDefaultTemplateKind(undefined);
+          requestAction("publish", card);
+        }}
+        onSaved={(card) => {
+          if (card) setTemplateTarget(card);
+          setNotice(card ? "名片内容草稿已保存；公开页仍保持上一次发布内容。" : "默认配置已保存；之后新建的同类名片会自动使用它。");
+          resource.reload();
+        }}
       />
       <CardContentOverridesDialog
         card={overrideTarget}
@@ -495,6 +614,13 @@ export function CardsPage() {
             <div className="publish-target">
               <strong>{action.target.displayName || "未命名名片"}</strong>
               <span>当前版本：{action.target.version}</span>
+              {action.type === "publish" && action.target.cardKind === "enterprise" ? (
+                <ul className="publish-checklist-summary">
+                  <li>企业名称、业务定位和 Logo 已复核</li>
+                  <li>模板草稿中的区块、图片、视频和案例将冻结为公开快照</li>
+                  <li>公开页不会读取后续未发布草稿</li>
+                </ul>
+              ) : null}
             </div>
           ) : undefined
         }

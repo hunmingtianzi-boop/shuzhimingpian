@@ -21,6 +21,7 @@ from app.api.member_schemas import (
     MemberRowError,
     PasswordResetRecord,
     UpdateMemberAccessRequest,
+    UpdateSelfProfileRequest,
 )
 from app.core.config import Settings
 from app.core.pii import PiiCipher
@@ -35,6 +36,7 @@ from app.db.models import (
 )
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
+from app.services.catalog_store import card_asset_belongs_to_company
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +285,13 @@ class MemberStore:
             filters = (
                 Membership.tenant_id == scope.tenant_id,
                 Membership.company_id == scope.company_id,
+                # This endpoint is the enterprise employee directory. Platform
+                # operators can hold a scoped membership for access control, but
+                # they are not employees and the public response contract must
+                # never project platform_admin as a company member.
+                Membership.role.in_(
+                    (MembershipRole.COMPANY_ADMIN, MembershipRole.CARD_OWNER)
+                ),
             )
             total = int(
                 await session.scalar(select(func.count(Membership.id)).where(*filters)) or 0
@@ -317,6 +326,79 @@ class MemberStore:
             )
             return _member_record(membership, user, credential)
 
+    async def update_self_profile(
+        self,
+        *,
+        scope: MemberScope,
+        membership_id: uuid.UUID,
+        body: UpdateSelfProfileRequest,
+        trace_id: str | None,
+    ) -> MemberRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            membership, user, credential = await self._member_row(
+                session,
+                scope=scope,
+                membership_id=membership_id,
+                for_update=True,
+            )
+            self._authorize_self_profile_target(
+                scope,
+                membership=membership,
+                user=user,
+                credential=credential,
+            )
+            self._validate_self_avatar(scope, body.avatar_url)
+            previous_avatar = membership.avatar_url
+            membership.avatar_url = body.avatar_url or None
+            await session.flush()
+            await _refresh_member_timestamps(session, membership, user, credential)
+            member = _member_record(membership, user, credential)
+            await append_audit(
+                session,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+                actor_user_id=scope.actor_user_id,
+                action="company.member.self_profile_update",
+                resource_type="membership",
+                resource_id=membership.id,
+                trace_id=trace_id,
+                event_data={"avatar_changed": previous_avatar != member.avatar_url},
+            )
+            return member
+
+    @staticmethod
+    def _authorize_self_profile_target(
+        scope: MemberScope,
+        *,
+        membership: Membership,
+        user: User,
+        credential: StaffCredential,
+    ) -> None:
+        if (
+            membership.user_id != scope.actor_user_id
+            or membership.status != LifecycleStatus.ACTIVE
+            or user.status != LifecycleStatus.ACTIVE
+            or user.deleted_at is not None
+            or not credential.is_enabled
+        ):
+            raise ApiError(
+                403,
+                "SELF_PROFILE_UNAVAILABLE",
+                "The current active company membership is required.",
+            )
+
+    @staticmethod
+    def _validate_self_avatar(scope: MemberScope, avatar_url: str | None) -> None:
+        if avatar_url is None:
+            return
+        if not card_asset_belongs_to_company(avatar_url, scope.company_id):
+            raise ApiError(
+                422,
+                "SELF_AVATAR_ASSET_OUT_OF_SCOPE",
+                "头像必须来自当前企业的名片素材库",
+            )
+
     async def update_access(
         self,
         *,
@@ -336,6 +418,9 @@ class MemberStore:
             )
             before = {
                 "display_name": user.display_name,
+                "job_title": membership.job_title,
+                "avatar_url": membership.avatar_url,
+                "business_summary": membership.business_summary,
                 "role": membership.role.value,
                 "permissions": list(membership.permissions),
             }
@@ -362,6 +447,12 @@ class MemberStore:
             )
             if body.display_name is not None:
                 user.display_name = body.display_name
+            if "job_title" in body.model_fields_set:
+                membership.job_title = body.job_title or None
+            if "avatar_url" in body.model_fields_set:
+                membership.avatar_url = body.avatar_url or None
+            if "business_summary" in body.model_fields_set:
+                membership.business_summary = body.business_summary or None
             if body.role is not None:
                 membership.role = desired_role
             if body.permissions is not None:
@@ -384,6 +475,10 @@ class MemberStore:
                     "after_role": member.role,
                     "after_permissions": member.permissions,
                     "display_name_changed": before["display_name"] != member.display_name,
+                    "identity_profile_changed": any(
+                        before[field] != getattr(member, field)
+                        for field in ("job_title", "avatar_url", "business_summary")
+                    ),
                 },
             )
             return member
@@ -655,6 +750,9 @@ class MemberStore:
             company_id=scope.company_id,
             role=role,
             permissions=_permissions(row, role),
+            job_title=row.job_title,
+            avatar_url=row.avatar_url,
+            business_summary=row.business_summary,
             status=desired_status,
         )
         credential = StaffCredential(
@@ -710,7 +808,7 @@ class MemberStore:
         desired_enabled = desired_status == LifecycleStatus.ACTIVE
         changed = False
 
-        for current, desired, setter in (
+        updates = [
             (
                 user.display_name,
                 row.display_name,
@@ -732,7 +830,23 @@ class MemberStore:
                 desired_enabled,
                 lambda value: setattr(credential, "is_enabled", value),
             ),
-        ):
+        ]
+        identity_updates = (
+            ("job_title", row.job_title),
+            ("avatar_url", row.avatar_url),
+            ("business_summary", row.business_summary),
+        )
+        for field, desired in identity_updates:
+            if field in row.model_fields_set:
+                updates.append(
+                    (
+                        getattr(membership, field, None),
+                        desired,
+                        lambda value, field=field: setattr(membership, field, value),
+                    )
+                )
+
+        for current, desired, setter in updates:
             if current != desired:
                 setter(desired)
                 changed = True
@@ -1016,6 +1130,9 @@ def _member_record(
         user_id=user.id,
         account=credential.account_normalized,
         display_name=user.display_name,
+        job_title=membership.job_title,
+        avatar_url=membership.avatar_url,
+        business_summary=membership.business_summary,
         role=membership.role.value,
         permissions=list(membership.permissions),
         status=membership.status.value,

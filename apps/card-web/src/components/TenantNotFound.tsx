@@ -1,6 +1,6 @@
 import { Buildings, ShieldCheck } from "@phosphor-icons/react";
 
-export type TenantErrorKind = "missing" | "invalid" | "runtime";
+export type TenantErrorKind = "missing" | "invalid" | "runtime" | "load";
 
 const messages: Record<TenantErrorKind, { title: string; description: string }> = {
   missing: {
@@ -14,6 +14,10 @@ const messages: Record<TenantErrorKind, { title: string; description: string }> 
   runtime: {
     title: "页面暂时无法显示",
     description: "加载企业名片时发生异常。你可以重新加载页面，若问题持续出现，请联系平台维护人员。",
+  },
+  load: {
+    title: "名片暂时无法加载",
+    description: "公开名片服务暂时不可用。请重新加载页面，若问题持续出现，请稍后再试。",
   },
 };
 

@@ -20,19 +20,23 @@ from app.api.admin_schemas import (
     UpdateCompanyProfileRequest,
 )
 from app.api.catalog_schemas import (
+    CardComposerDefaultEnvelope,
     CaseStudyEnvelope,
     CaseStudyListEnvelope,
     CreateCardRequest,
     CreateCaseStudyRequest,
     CreateForbiddenTopicRequest,
     CreateProductRequest,
+    EnterpriseTemplateEnvelope,
     ForbiddenTopicEnvelope,
     ForbiddenTopicListEnvelope,
     ManagedCardEnvelope,
     ManagedCardListEnvelope,
     ProductEnvelope,
     ProductListEnvelope,
+    UpdateCardComposerDefaultRequest,
     UpdateCaseStudyRequest,
+    UpdateEnterpriseTemplateRequest,
     UpdateForbiddenTopicRequest,
     UpdateManagedCardRequest,
     UpdateProductRequest,
@@ -351,11 +355,13 @@ async def list_knowledge_documents(
     request: Request,
     principal: StaffDependency,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    selectable_faq: bool = False,
 ) -> KnowledgeDocumentListEnvelope:
     _require_permission(principal, "knowledge.read")
     records, total = await _store(request).list_documents(
         scope=_scope(principal),
         limit=limit,
+        selectable_faq=selectable_faq,
     )
     return KnowledgeDocumentListEnvelope(data=records, total=total)
 
@@ -1325,6 +1331,90 @@ async def update_managed_card(
     )
     _set_etag(response, record.version)
     return ManagedCardEnvelope(data=record)
+
+
+@router.get(
+    "/cards/{card_id}/enterprise-template",
+    response_model=EnterpriseTemplateEnvelope,
+    operation_id="getAdminEnterpriseCardTemplate",
+)
+async def get_enterprise_card_template(
+    card_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseTemplateEnvelope:
+    _require_permission(principal, "card.read")
+    record = await _catalog_store(request).get_enterprise_template(
+        scope=_catalog_scope(principal), card_id=card_id
+    )
+    return EnterpriseTemplateEnvelope(data=record)
+
+
+@router.put(
+    "/cards/{card_id}/enterprise-template",
+    response_model=EnterpriseTemplateEnvelope,
+    operation_id="updateAdminEnterpriseCardTemplate",
+)
+async def update_enterprise_card_template(
+    card_id: uuid.UUID,
+    body: UpdateEnterpriseTemplateRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> EnterpriseTemplateEnvelope:
+    _require_permission(principal, "card.write")
+    record = await _catalog_store(request).update_enterprise_template(
+        scope=_catalog_scope(principal),
+        card_id=card_id,
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return EnterpriseTemplateEnvelope(data=record)
+
+
+@router.get(
+    "/card-composer/defaults/{card_kind}",
+    response_model=CardComposerDefaultEnvelope,
+    operation_id="getAdminCardComposerDefault",
+)
+async def get_card_composer_default(
+    card_kind: str,
+    request: Request,
+    principal: StaffDependency,
+) -> CardComposerDefaultEnvelope:
+    _require_permission(principal, "card.read")
+    record = await _catalog_store(request).get_card_composer_default(
+        scope=_catalog_scope(principal), card_kind=card_kind
+    )
+    return CardComposerDefaultEnvelope(data=record)
+
+
+@router.put(
+    "/card-composer/defaults/{card_kind}",
+    response_model=CardComposerDefaultEnvelope,
+    operation_id="updateAdminCardComposerDefault",
+)
+async def update_card_composer_default(
+    card_kind: str,
+    body: UpdateCardComposerDefaultRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CardComposerDefaultEnvelope:
+    _require_permission(principal, "card.write")
+    record = await _catalog_store(request).update_card_composer_default(
+        scope=_catalog_scope(principal),
+        card_kind=card_kind,
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return CardComposerDefaultEnvelope(data=record)
 
 
 @router.post(

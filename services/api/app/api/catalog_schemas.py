@@ -272,6 +272,10 @@ class CardWriteFields(CatalogStrictModel):
     welcome_message: str | None = Field(default=None, max_length=2_000)
     suggested_questions: list[str] = Field(default_factory=list, max_length=6)
     policy_versions: dict[str, str] = Field(default_factory=dict)
+    employee_contact_visibility: list[Literal["mobile", "email"]] = Field(
+        default_factory=list,
+        max_length=2,
+    )
 
     _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
 
@@ -297,16 +301,13 @@ class CardWriteFields(CatalogStrictModel):
             raise ValueError("policy versions must contain 1-64 characters")
         return {key: value.strip() for key, value in values.items()}
 
-
-class CreateCardRequest(CardWriteFields):
-    card_kind: CardKindValue = "employee"
-    owner_user_id: uuid.UUID | None = None
-
-    @model_validator(mode="after")
-    def validate_card_identity(self) -> Self:
-        if self.card_kind == "enterprise" and self.owner_user_id is not None:
-            raise ValueError("enterprise cards must not have an employee owner")
-        return self
+    @field_validator("employee_contact_visibility")
+    @classmethod
+    def validate_employee_contact_visibility(
+        cls,
+        values: list[Literal["mobile", "email"]],
+    ) -> list[Literal["mobile", "email"]]:
+        return list(dict.fromkeys(values))
 
 
 class UpdateManagedCardRequest(CardWriteFields):
@@ -320,6 +321,166 @@ class UpdateManagedCardRequest(CardWriteFields):
         if self.card_kind == "employee" and self.owner_user_id is None:
             raise ValueError("employee cards require an owner")
         return self
+
+
+EnterpriseTemplateBlockType = Literal[
+    "identity",
+    "rich_text",
+    "business_collection",
+    "image_gallery",
+    "video_link",
+    "case_collection",
+    "trust_panel",
+    "faq",
+    "cta",
+    "ai_assistant",
+]
+
+
+class EnterpriseTemplateCaseItem(CatalogStrictModel):
+    id: uuid.UUID
+    slug: str = Field(min_length=3, max_length=96)
+    title: str = Field(min_length=1, max_length=200)
+    industry: str | None = Field(default=None, max_length=120)
+    summary: str | None = Field(default=None, max_length=5_000)
+    image_url: str | None = Field(default=None, max_length=2_048)
+
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
+
+
+class EnterpriseTemplateProductItem(CatalogStrictModel):
+    id: uuid.UUID
+    slug: str = Field(min_length=3, max_length=96)
+    name: str = Field(min_length=1, max_length=200)
+    category: str | None = Field(default=None, max_length=120)
+    summary: str | None = Field(default=None, max_length=5_000)
+    image_url: str | None = Field(default=None, max_length=2_048)
+
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
+
+
+class EnterpriseTemplateBlock(CatalogStrictModel):
+    """A deliberately small, safe block contract for public enterprise cards."""
+
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    type: EnterpriseTemplateBlockType
+    visible: bool = True
+    directory_enabled: bool = True
+    sort_order: int = Field(default=0, ge=0, le=10_000)
+    title: str | None = Field(default=None, max_length=160)
+    body: str | None = Field(default=None, max_length=8_000)
+    image_urls: list[str] = Field(default_factory=list, max_length=12)
+    video_url: str | None = Field(default=None, max_length=2_048)
+    video_cover_url: str | None = Field(default=None, max_length=2_048)
+    product_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
+    product_items: list[EnterpriseTemplateProductItem] = Field(default_factory=list, max_length=12)
+    case_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
+    case_items: list[EnterpriseTemplateCaseItem] = Field(default_factory=list, max_length=12)
+    faq_mode: Literal["all_published", "selected"] | None = None
+    faq_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
+    cta_label: str | None = Field(default=None, max_length=80)
+    cta_url: str | None = Field(default=None, max_length=2_048)
+
+    _validate_images = field_validator("image_urls")(
+        lambda values: [validate_safe_asset_url(value) for value in values]
+    )
+    _validate_cover = field_validator("video_cover_url")(validate_safe_asset_url)
+
+    @field_validator("video_url", "cta_url")
+    @classmethod
+    def validate_https_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        parsed = urlsplit(value.strip())
+        if parsed.scheme.casefold() != "https" or not parsed.hostname:
+            raise ValueError("external links must use HTTPS")
+        return validate_safe_asset_url(value.strip())
+
+    @model_validator(mode="after")
+    def validate_block_shape(self) -> Self:
+        # Draft documents intentionally allow an empty media/case/CTA block.
+        # The editor can then persist a newly added module immediately instead
+        # of losing it while the user is still choosing assets or content.
+        # Publishing performs the stricter completeness check.
+        if len(set(self.faq_document_ids)) != len(self.faq_document_ids):
+            raise ValueError("faq document ids must be unique")
+        if self.type == "faq":
+            self.faq_mode = self.faq_mode or "all_published"
+            # Legacy editor versions stored a manual answer here. FAQ is now
+            # data-bound, so parsing a compatible document deliberately drops
+            # that duplicate copy instead of exposing stale content.
+            self.body = None
+            if self.faq_mode == "all_published":
+                self.faq_document_ids = []
+        elif self.faq_mode is not None or self.faq_document_ids:
+            raise ValueError("faq selection fields are only valid for faq blocks")
+        return self
+
+
+class EnterpriseTemplateDocument(CatalogStrictModel):
+    schema_version: Literal[1] = 1
+    theme_key: Literal["brand", "clean", "warm"] = "brand"
+    blocks: list[EnterpriseTemplateBlock] = Field(default_factory=list, max_length=24)
+
+    @model_validator(mode="after")
+    def validate_unique_block_ids(self) -> Self:
+        if len({block.id for block in self.blocks}) != len(self.blocks):
+            raise ValueError("enterprise template block ids must be unique")
+        if len({block.sort_order for block in self.blocks}) != len(self.blocks):
+            raise ValueError("enterprise template block sort orders must be unique")
+        identity_blocks = [block for block in self.blocks if block.type == "identity"]
+        if len(identity_blocks) != 1:
+            raise ValueError("enterprise template must contain exactly one identity block")
+        if not identity_blocks[0].visible:
+            raise ValueError("identity block must remain visible")
+        self.blocks.sort(key=lambda block: block.sort_order)
+        return self
+
+
+class CreateCardRequest(CardWriteFields):
+    card_kind: CardKindValue = "employee"
+    owner_user_id: uuid.UUID | None = None
+    template_source_card_id: uuid.UUID | None = None
+    template_document: EnterpriseTemplateDocument | None = None
+
+    @model_validator(mode="after")
+    def validate_card_identity(self) -> Self:
+        if self.card_kind == "enterprise" and self.owner_user_id is not None:
+            raise ValueError("enterprise cards must not have an employee owner")
+        if self.template_source_card_id is not None and self.template_document is not None:
+            raise ValueError("template source card and template document are mutually exclusive")
+        return self
+
+
+class EnterpriseTemplateRecord(CatalogStrictModel):
+    card_id: uuid.UUID
+    version: int = Field(ge=1)
+    draft: EnterpriseTemplateDocument
+    published: EnterpriseTemplateDocument | None = None
+
+
+class EnterpriseTemplateEnvelope(CatalogStrictModel):
+    data: EnterpriseTemplateRecord
+
+
+class UpdateEnterpriseTemplateRequest(EnterpriseTemplateDocument):
+    pass
+
+
+class CardComposerDefaultRecord(CatalogStrictModel):
+    """Company-owned default free-module configuration for one card kind."""
+
+    card_kind: CardKindValue
+    version: int = Field(ge=1)
+    document: EnterpriseTemplateDocument
+
+
+class CardComposerDefaultEnvelope(CatalogStrictModel):
+    data: CardComposerDefaultRecord
+
+
+class UpdateCardComposerDefaultRequest(EnterpriseTemplateDocument):
+    pass
 
 
 class ManagedCardRecord(CardWriteFields):
@@ -361,6 +522,10 @@ __all__ = [
     "ManagedCardEnvelope",
     "ManagedCardListEnvelope",
     "ManagedCardRecord",
+    "EnterpriseTemplateDocument",
+    "EnterpriseTemplateCaseItem",
+    "EnterpriseTemplateEnvelope",
+    "EnterpriseTemplateRecord",
     "ProductEnvelope",
     "ProductListEnvelope",
     "ProductRecord",
@@ -373,6 +538,7 @@ __all__ = [
     "UpdateCaseStudyRequest",
     "UpdateForbiddenTopicRequest",
     "UpdateManagedCardRequest",
+    "UpdateEnterpriseTemplateRequest",
     "UpdateProductRequest",
     "validate_safe_asset_url",
 ]

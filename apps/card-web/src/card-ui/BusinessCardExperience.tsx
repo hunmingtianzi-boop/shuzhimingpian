@@ -34,6 +34,7 @@ import type {
   ResponsiveMediaAsset,
 } from "../domain/card";
 import type { PublicCardData } from "../lib/publicCardApi";
+import { resolvePublicResourceUrl } from "../lib/publicResourceUrl";
 import {
   fetchPublicCatalog,
   fetchPublicRecommendations,
@@ -310,7 +311,7 @@ function EnterprisePage({
   const companyName = card?.company.name || tenant.brand.name;
   const logo: ResponsiveMediaAsset = {
     ...tenant.brand.logo,
-    src: card?.company.logo_url || tenant.brand.logo.src,
+    src: resolvePublicResourceUrl(card?.company.logo_url) || tenant.brand.logo.src,
     alt: `${companyName}品牌标识`,
   };
   const metrics = tenant.hero.metrics.slice(0, 3);
@@ -475,11 +476,11 @@ function PersonalPage({
   const ownerName = hasRealOwner ? card!.display_name : owner.name;
   const ownerRole = hasRealOwner && card?.title ? card.title : owner.role;
   const portrait = card?.avatar_url
-    ? { ...owner.portrait, src: card.avatar_url, srcSet: undefined, alt: `${ownerName}头像` }
+    ? { ...owner.portrait, src: resolvePublicResourceUrl(card.avatar_url) || card.avatar_url, srcSet: undefined, alt: `${ownerName}头像` }
     : owner.portrait;
   const logo: ResponsiveMediaAsset = {
     ...tenant.brand.logo,
-    src: card?.company.logo_url || tenant.brand.logo.src,
+    src: resolvePublicResourceUrl(card?.company.logo_url) || tenant.brand.logo.src,
     alt: `${companyName}品牌标识`,
   };
   const capabilityIcons = [Path, Target, Handshake];

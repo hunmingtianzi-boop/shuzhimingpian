@@ -101,7 +101,7 @@ describe("BusinessCardPrototypeApp", () => {
       },
     };
 
-    render(
+    const { container } = render(
       <BusinessCardPrototypeApp
         tenant={templateTenant}
         card={standaloneEmployeeCard}
@@ -114,15 +114,95 @@ describe("BusinessCardPrototypeApp", () => {
     );
 
     expect(screen.queryByRole("navigation", { name: "名片导航" })).not.toBeInTheDocument();
+    expect(container.querySelector("[data-card-page-experience]")).toBeInTheDocument();
+    expect(container.querySelector(".bp-person-head")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "员工名片内容导航" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "切换到企业名片" })).toHaveAttribute(
       "href",
       "/c/tuotu?mock-card=enterprise&from_employee=xusongbo",
     );
-    expect(screen.getByRole("link", { name: /示例企业/ })).toHaveAttribute(
-      "href",
-      "/c/tuotu?mock-card=enterprise&from_employee=xusongbo",
-    );
+    expect(screen.getByText("示例企业")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发起合作" })).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      kind: "employee" as const,
+      route: "/c/xusongbo?mock-card=employee",
+      directoryLabel: "员工名片内容导航",
+      contentLabel: "员工名片内容",
+      identityName: "示例顾问",
+      identityKind: "员工名片",
+    },
+    {
+      kind: "enterprise" as const,
+      route: "/c/tuotu?mock-card=enterprise",
+      directoryLabel: "企业名片内容导航",
+      contentLabel: "企业名片内容",
+      identityName: "示例企业",
+      identityKind: "企业名片",
+    },
+  ])("uses the shared composed template for a standalone $kind card", ({
+    kind,
+    route,
+    directoryLabel,
+    contentLabel,
+    identityName,
+    identityKind,
+  }) => {
+    window.history.replaceState({}, "", route);
+    const composedCard: PublicCardData = {
+      ...publishedCard,
+      slug: kind === "employee" ? "xusongbo" : "tuotu",
+      card_kind: kind,
+      display_name: kind === "employee" ? "示例顾问" : "示例企业",
+      title: kind === "employee" ? "解决方案顾问" : "企业官方名片",
+      business_summary: "负责企业解决方案与合作对接。",
+      enterprise_template: {
+        schema_version: 1,
+        theme_key: "brand",
+        blocks: [
+          {
+            id: "story",
+            type: "rich_text",
+            title: "内容模块",
+            body: "这是由默认配置生成、可以继续拖动调整的内容。",
+            sort_order: 10,
+          },
+          {
+            id: "identity",
+            type: "identity",
+            title: "基础名片",
+            visible: false,
+            sort_order: 20,
+          },
+        ],
+      },
+    };
+
+    const { container } = render(
+      <BusinessCardPrototypeApp
+        tenant={templateTenant}
+        card={composedCard}
+        onAssistant={vi.fn()}
+        onLead={vi.fn()}
+        onPrivacy={vi.fn()}
+        onProfile={vi.fn()}
+        onShare={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("navigation", { name: directoryLabel })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: contentLabel })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: identityName })).toBeInTheDocument();
+    expect(screen.getByText(identityKind)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "内容模块" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "业务介绍" })).not.toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll("[data-card-page-block]"), (block) =>
+        block.getAttribute("data-card-page-block"),
+      ),
+    ).toEqual(["story", "identity"]);
   });
 
   it("renders a standalone enterprise card as its own page without employee routing", () => {
@@ -154,14 +234,16 @@ describe("BusinessCardPrototypeApp", () => {
     expect(screen.queryByText("可以为你对接的人")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "名片导航" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
+    expect(enterpriseRender.container.querySelector("[data-card-page-experience]")).toBeInTheDocument();
+    expect(enterpriseRender.container.querySelector(".bp-company-head")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "切换到员工名片" })).toHaveAttribute(
       "href",
       "/c/xusongbo?mock-card=employee",
     );
     expect(screen.getByRole("navigation", { name: "企业名片内容导航" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "概览" })).toHaveAttribute("aria-current", "location");
-    fireEvent.click(screen.getByRole("button", { name: "介绍" }));
-    expect(screen.getByRole("button", { name: "介绍" })).toHaveAttribute("aria-current", "location");
+    for (const label of ["概览", "介绍", "业务", "案例", "资料", "问答", "AI"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
     expect(screen.getByRole("button", { name: "提交合作需求" })).toBeInTheDocument();
 
     enterpriseRender.unmount();
@@ -179,6 +261,70 @@ describe("BusinessCardPrototypeApp", () => {
     );
     expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "切换到员工名片" })).not.toBeInTheDocument();
+  });
+
+  it("completes the tuotu legacy fixture with new default blocks instead of old UI", () => {
+    window.history.replaceState({}, "", "/c/tuotu?mock-card=enterprise");
+    const templatedEnterpriseCard: PublicCardData = {
+      ...publishedCard,
+      slug: "tuotu",
+      card_kind: "enterprise",
+      display_name: "示例企业",
+      title: "企业官方名片",
+      faq_items: [{ id: "faq-1", question: "如何合作？", answer: "提交需求后由企业联系。", source_label: "企业公开资料" }],
+      enterprise_template: {
+        schema_version: 1,
+        theme_key: "brand",
+        blocks: [{
+          id: "custom-story",
+          type: "rich_text",
+          title: "我们的故事",
+          body: "这是一段自由编排的企业内容。",
+          sort_order: 1,
+        }],
+      },
+    };
+
+    const { container } = render(
+      <BusinessCardPrototypeApp
+        tenant={templateTenant}
+        card={templatedEnterpriseCard}
+        onAssistant={vi.fn()}
+        onLead={vi.fn()}
+        onPrivacy={vi.fn()}
+        onProfile={vi.fn()}
+        onShare={vi.fn()}
+      />,
+    );
+
+    const directory = screen.getByRole("navigation", { name: "企业名片内容导航" });
+    expect(directory).toBeInTheDocument();
+    for (const label of ["我们的故事", "概览", "介绍", "业务", "案例", "资料", "问答", "AI"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    expect(container.querySelector("[data-card-page-experience]")).toBeInTheDocument();
+    expect(container.querySelector(".bp-company-head")).not.toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll("[data-card-page-block]"), (block) =>
+        block.getAttribute("data-card-page-block"),
+      ),
+    ).toEqual([
+      "default-enterprise-identity",
+      "custom-story",
+      "default-enterprise-overview",
+      "default-enterprise-intro",
+      "default-enterprise-business",
+      "default-enterprise-cases",
+      "default-enterprise-trust",
+      "default-enterprise-faq",
+      "default-enterprise-ai",
+    ]);
+    expect(screen.getByRole("heading", { name: "我们的故事" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "企业介绍" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "核心业务" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "企业资料" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "常见问题" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提交合作需求" })).toBeInTheDocument();
   });
 
   it("renders reusable product, case and FAQ showcase layouts from variable content", async () => {
@@ -252,12 +398,12 @@ describe("BusinessCardPrototypeApp", () => {
     );
 
     await screen.findByText("数据服务");
-    expect(container.querySelectorAll(".bp-product-showcase-item")).toHaveLength(2);
-    expect(container.querySelectorAll(".bp-case-showcase-item")).toHaveLength(2);
-    expect(container.querySelectorAll(".bp-faq-showcase article")).toHaveLength(2);
-    expect(screen.getByText("客户需要统一经营数据。")).toBeInTheDocument();
+    expect(container.querySelectorAll(".cpr-product-item")).toHaveLength(2);
+    expect(container.querySelectorAll(".cpr-case-item")).toHaveLength(2);
+    expect(container.querySelectorAll(".cpr-faq-list details")).toHaveLength(2);
+    expect(screen.getByText("关键决策效率得到提升。")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /如何开始合作/ }));
+    fireEvent.click(screen.getByText("如何开始合作？"));
     expect(screen.getByText("先提交业务需求，再确认范围与交付方式。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /数据服务/ }));

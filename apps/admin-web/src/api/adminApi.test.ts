@@ -32,6 +32,68 @@ function tokenResponse() {
 }
 
 describe("adminApi real contract", () => {
+  it("normalizes and updates a versioned enterprise template envelope", async () => {
+    const rawTemplate = {
+      card_id: "card-enterprise",
+      version: 7,
+      draft: {
+        schema_version: 1,
+        theme_key: "warm",
+        blocks: [{
+          id: "gallery-1",
+          type: "image_gallery",
+          visible: false,
+          sort_order: 4,
+          title: "企业相册",
+          image_urls: ["/api/v1/public/card-assets/company-1/a.webp"],
+          case_items: [{ id: "server-only" }],
+        }],
+      },
+      published: null,
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({ data: rawTemplate }))
+      .mockResolvedValueOnce(jsonResponse({ data: { ...rawTemplate, version: 8 } }));
+    const api = await authenticatedApi(fetcher);
+
+    const loaded = await api.getEnterpriseTemplate("card-enterprise");
+    expect(loaded).toMatchObject({
+      cardId: "card-enterprise",
+      version: 7,
+      draft: {
+        themeKey: "warm",
+        blocks: [{ visible: false, sortOrder: 4, imageUrls: ["/api/v1/public/card-assets/company-1/a.webp"] }],
+      },
+    });
+    await api.updateEnterpriseTemplate("card-enterprise", 7, "clean", [
+      { ...loaded.draft.blocks[0], sortOrder: 99 },
+      {
+        id: "ai-1",
+        type: "ai_assistant",
+        visible: true,
+        sortOrder: 99,
+        title: "在线咨询",
+      },
+    ]);
+
+    expect(fetcher.mock.calls[2][0]).toBe(
+      "https://api.example.test/api/v1/admin/cards/card-enterprise/enterprise-template",
+    );
+    expect((fetcher.mock.calls[2][1]?.headers as Headers).get("If-Match")).toBe("7");
+    const body = JSON.parse(String(fetcher.mock.calls[2][1]?.body));
+    expect(body).toMatchObject({
+      schema_version: 1,
+      theme_key: "clean",
+      blocks: [
+        { id: "gallery-1", visible: false, sort_order: 0 },
+        { id: "ai-1", visible: true, sort_order: 1 },
+      ],
+    });
+    expect(body.blocks[0]).not.toHaveProperty("case_items");
+  });
+
   it("uploads a card image as multipart and normalizes the stored asset", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
@@ -62,6 +124,96 @@ describe("adminApi real contract", () => {
     expect(request?.body).toBeInstanceOf(FormData);
     expect((request?.body as FormData).get("file")).toBe(file);
     expect((request?.headers as Headers).has("Content-Type")).toBe(false);
+  });
+
+  it("loads only selectable published FAQ projections", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "交付周期是多久？",
+          answer: "标准项目通常需要四周。",
+          status: "published",
+          visibility: "public",
+        }],
+        total: 1,
+      }));
+    const api = await authenticatedApi(fetcher);
+
+    await expect(api.listSelectableFaqDocuments()).resolves.toEqual([{
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "交付周期是多久？",
+      answer: "标准项目通常需要四周。",
+      status: "published",
+      visibility: "public",
+    }]);
+    expect(fetcher.mock.calls[1][0]).toBe(
+      "https://api.example.test/api/v1/admin/knowledge/documents?selectable_faq=true",
+    );
+  });
+
+  it("submits a local template document only when creation is confirmed", async () => {
+    const card = {
+      id: "card-enterprise",
+      card_kind: "enterprise",
+      slug: "c-enterprise",
+      display_name: "示例企业",
+      title: "企业名片",
+      status: "draft",
+      version: 1,
+      share_url: "https://cards.example.test/c/c-enterprise",
+      qr_url: "https://cards.example.test/c/c-enterprise",
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({ data: card }, 201));
+    const api = await authenticatedApi(fetcher);
+
+    await api.createManagedCard({
+      cardKind: "enterprise",
+      displayName: "示例企业",
+      title: "企业名片",
+      avatarUrl: "",
+      assistantName: "企业助手",
+      welcomeMessage: "欢迎咨询",
+      suggestedQuestions: [],
+      policyVersions: { privacy: "privacy-v1", chatNotice: "chat-v1", leadConsent: "lead-v1" },
+      employeeContactVisibility: [],
+      templateSourceCardId: "must-not-be-sent",
+      templateDocument: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [
+          { id: "identity", type: "identity", visible: true, sortOrder: 0 },
+          {
+            id: "faq",
+            type: "faq",
+            visible: true,
+            sortOrder: 1,
+            faqMode: "selected",
+            faqDocumentIds: ["11111111-1111-4111-8111-111111111111"],
+          },
+        ],
+      },
+    });
+
+    const body = JSON.parse(String(fetcher.mock.calls[1][1]?.body));
+    expect(body).not.toHaveProperty("template_source_card_id");
+    expect(body.template_document).toMatchObject({
+      schema_version: 1,
+      blocks: [
+        { id: "identity", sort_order: 0 },
+        {
+          id: "faq",
+          faq_mode: "selected",
+          faq_document_ids: ["11111111-1111-4111-8111-111111111111"],
+          sort_order: 1,
+        },
+      ],
+    });
   });
 
   it("reads the nested current-user contract", async () => {
