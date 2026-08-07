@@ -257,6 +257,38 @@ describe("workflowApi production contracts", () => {
           limit: 20,
           offset: 0,
         }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            id: "visit-1",
+            card_id: "card-1",
+            card_display_name: "林顾问",
+            visitor_id: "visitor-1",
+            source: "wechat",
+            started_at: "2026-07-11T01:00:00Z",
+            ended_at: "2026-07-11T01:03:00Z",
+            duration_seconds: 180,
+            conversation_count: 1,
+            event_count: 4,
+            page_durations: [{
+              page_key: "detail:product:product-a",
+              page_title: "产品 A",
+              object_type: "product",
+              object_id: "product-a",
+              duration_seconds: 12.5,
+              view_count: 1,
+              last_viewed_at: "2026-07-11T01:02:00Z",
+            }],
+            questions: [{
+              message_id: "message-1",
+              conversation_id: "conversation-1",
+              question: "这个产品多少钱？",
+              asked_at: "2026-07-11T01:02:10Z",
+              answer_status: "completed",
+            }],
+          },
+        }),
       );
     const api = await authenticatedApi(fetcher);
 
@@ -270,11 +302,19 @@ describe("workflowApi production contracts", () => {
       total: 1,
       items: [{ id: "visit-1", durationSeconds: 180 }],
     });
+    await expect(api.getVisit("visit-1")).resolves.toMatchObject({
+      eventCount: 4,
+      pageDurations: [{ pageTitle: "产品 A", durationSeconds: 12.5 }],
+      questions: [{ question: "这个产品多少钱？", answerStatus: "completed" }],
+    });
     expect(fetcher.mock.calls[1][0]).toBe(
       "https://api.example.test/api/v1/admin/dashboard?period_days=30",
     );
     expect(fetcher.mock.calls[2][0]).toBe(
       "https://api.example.test/api/v1/admin/visits?limit=20&offset=0&card_id=card-1",
+    );
+    expect(fetcher.mock.calls[3][0]).toBe(
+      "https://api.example.test/api/v1/admin/visits/visit-1",
     );
   });
 

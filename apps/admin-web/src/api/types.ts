@@ -782,6 +782,30 @@ export type Visit = {
   conversationCount: number;
 };
 
+export type VisitPageDuration = {
+  pageKey: string;
+  pageTitle: string;
+  objectType?: string;
+  objectId?: string;
+  durationSeconds: number;
+  viewCount: number;
+  lastViewedAt: string;
+};
+
+export type VisitQuestion = {
+  messageId: string;
+  conversationId: string;
+  question: string;
+  askedAt: string;
+  answerStatus?: string;
+};
+
+export type VisitDetail = Visit & {
+  eventCount: number;
+  pageDurations: VisitPageDuration[];
+  questions: VisitQuestion[];
+};
+
 export type ConversationStatus = "active" | "closed" | "expired" | "blocked";
 
 export type Conversation = {

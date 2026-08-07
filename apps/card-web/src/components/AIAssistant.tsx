@@ -64,6 +64,7 @@ type AIAssistantProps = {
   onLeadPrompt?: () => void;
   relatedSections?: AssistantRelatedSection[];
   onOpenRelatedSection?: (targetId: string) => void;
+  onOpenChange?: (open: boolean) => void;
 };
 
 function requestErrorMessage(error: unknown) {
@@ -92,6 +93,7 @@ export const AIAssistant = forwardRef<
     onLeadPrompt,
     relatedSections = [],
     onOpenRelatedSection,
+    onOpenChange,
   }: AIAssistantProps,
   ref,
 ) {
@@ -118,6 +120,10 @@ export const AIAssistant = forwardRef<
   const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
   const shouldReduceMotion = useReducedMotion();
   const nextId = useRef(2);
+
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);

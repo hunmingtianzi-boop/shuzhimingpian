@@ -37,9 +37,10 @@ export const DeferredAIAssistant = forwardRef<
     onLeadPrompt?: () => void;
     relatedSections?: AssistantRelatedSection[];
     onOpenRelatedSection?: (targetId: string) => void;
+    onOpenChange?: (open: boolean) => void;
   }
 >(function DeferredAIAssistant(
-  { config, cardSlug, onLeadPrompt, relatedSections, onOpenRelatedSection },
+  { config, cardSlug, onLeadPrompt, relatedSections, onOpenRelatedSection, onOpenChange },
   ref,
 ) {
   const [Component, setComponent] = useState<AssistantComponent | null>(null);
@@ -115,6 +116,7 @@ export const DeferredAIAssistant = forwardRef<
         onLeadPrompt={onLeadPrompt}
         relatedSections={relatedSections}
         onOpenRelatedSection={onOpenRelatedSection}
+        onOpenChange={onOpenChange}
       />
     );
   }

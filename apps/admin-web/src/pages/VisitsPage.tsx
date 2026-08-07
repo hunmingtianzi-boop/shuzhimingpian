@@ -28,16 +28,94 @@ const PAGE_SIZE = 20;
 
 function formatDuration(seconds?: number): string {
   if (seconds === undefined) return "访问中";
-  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} 秒`;
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`;
+}
+
+function answerStatusLabel(status?: string) {
+  if (status === "completed") return "已回答";
+  if (status === "refused") return "已安全拒答";
+  if (status === "failed") return "回答失败";
+  if (status === "pending") return "回答中";
+  return "暂无回答";
+}
+
+function VisitDetailPanel({ visitId, onClose }: { visitId: string; onClose: () => void }) {
+  const resource = useResource(() => workflowApi.getVisit(visitId), visitId);
+  return (
+    <section className="content-panel data-panel" aria-label="访问行为明细">
+      <PageHeader
+        title="访问行为明细"
+        description="按同一次访问汇总页面停留与访客提问。"
+        actions={<Button appearance="subtle" icon={<Dismiss24Regular />} onClick={onClose}>关闭</Button>}
+      />
+      {resource.status === "ready" && resource.data ? (
+        <div className="page-stack compact-stack">
+          <div className="table-scroll">
+            <Table aria-label="页面停留明细">
+              <TableHeader><TableRow>
+                <TableHeaderCell>页面</TableHeaderCell>
+                <TableHeaderCell>进入次数</TableHeaderCell>
+                <TableHeaderCell>累计停留</TableHeaderCell>
+                <TableHeaderCell>最后浏览</TableHeaderCell>
+              </TableRow></TableHeader>
+              <TableBody>
+                {resource.data.pageDurations.map((page) => (
+                  <TableRow key={page.pageKey}>
+                    <TableCell><strong>{page.pageTitle}</strong><br /><code>{page.pageKey}</code></TableCell>
+                    <TableCell>{page.viewCount}</TableCell>
+                    <TableCell>{formatDuration(page.durationSeconds)}</TableCell>
+                    <TableCell>{formatTimestamp(page.lastViewedAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {resource.data.pageDurations.length === 0 && (
+            <ResourceState status="empty" title="尚无页面停留事件" description="新版本上线后的访问会自动记录。" />
+          )}
+          <div className="table-scroll">
+            <Table aria-label="本次访问提问明细">
+              <TableHeader><TableRow>
+                <TableHeaderCell>提问时间</TableHeaderCell>
+                <TableHeaderCell>访客问题</TableHeaderCell>
+                <TableHeaderCell>回答状态</TableHeaderCell>
+              </TableRow></TableHeader>
+              <TableBody>
+                {resource.data.questions.map((question) => (
+                  <TableRow key={question.messageId}>
+                    <TableCell>{formatTimestamp(question.askedAt)}</TableCell>
+                    <TableCell>{question.question}</TableCell>
+                    <TableCell>{answerStatusLabel(question.answerStatus)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {resource.data.questions.length === 0 && (
+            <ResourceState status="empty" title="本次访问尚未提问" />
+          )}
+        </div>
+      ) : (
+        <ResourceState
+          status={resource.status === "ready" ? "empty" : resource.status}
+          description={resource.error?.message}
+          errorCode={resource.error?.code}
+          requestId={resource.error?.requestId}
+          onRetry={resource.status === "error" ? resource.reload : undefined}
+        />
+      )}
+    </section>
+  );
 }
 
 export function VisitsPage() {
   const [offset, setOffset] = useState(0);
   const [cardDraft, setCardDraft] = useState("");
   const [cardId, setCardId] = useState("");
+  const [selectedVisitId, setSelectedVisitId] = useState<string>();
   const resource = useResource(
     () =>
       workflowApi.listVisits({
@@ -116,6 +194,7 @@ export function VisitsPage() {
                       <TableHeaderCell>开始时间</TableHeaderCell>
                       <TableHeaderCell>停留时长</TableHeaderCell>
                       <TableHeaderCell>对话数</TableHeaderCell>
+                      <TableHeaderCell>明细</TableHeaderCell>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -133,6 +212,11 @@ export function VisitsPage() {
                         </TableCell>
                         <TableCell>{formatDuration(visit.durationSeconds)}</TableCell>
                         <TableCell>{visit.conversationCount}</TableCell>
+                        <TableCell>
+                          <Button appearance="subtle" onClick={() => setSelectedVisitId(visit.id)}>
+                            查看
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -165,6 +249,9 @@ export function VisitsPage() {
           />
         )}
       </section>
+      {selectedVisitId && (
+        <VisitDetailPanel visitId={selectedVisitId} onClose={() => setSelectedVisitId(undefined)} />
+      )}
     </main>
   );
 }

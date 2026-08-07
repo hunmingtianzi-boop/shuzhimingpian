@@ -32,6 +32,7 @@ export type PublicPolicyVersions = {
 
 export type VisitorSession = {
   token: string;
+  visitId: string;
   expiresAt: string;
   privacyVersion: string;
   chatNoticeVersion: string;
@@ -52,6 +53,7 @@ type StreamAssistantMessageOptions = {
 
 const SESSION_PREFIX = "cf-card-assistant-session:";
 const EXPIRY_SAFETY_WINDOW_MS = 30_000;
+const visitorSessionPromises = new Map<string, Promise<VisitorSession>>();
 const assistantSessionPromises = new Map<string, Promise<VisitorSession>>();
 
 export class AssistantApiError extends Error {
@@ -163,12 +165,14 @@ function readSession(cardSlug: string): VisitorSession | undefined {
     if (!isRecord(parsed)) throw new Error("Invalid session");
 
     const token = parsed.token;
+    const visitId = parsed.visitId;
     const expiresAt = parsed.expiresAt;
     const privacyVersion = parsed.privacyVersion;
     const chatNoticeVersion = parsed.chatNoticeVersion;
     const conversationId = parsed.conversationId;
     if (
       typeof token !== "string" ||
+      typeof visitId !== "string" ||
       typeof expiresAt !== "string" ||
       typeof privacyVersion !== "string" ||
       typeof chatNoticeVersion !== "string" ||
@@ -183,7 +187,7 @@ function readSession(cardSlug: string): VisitorSession | undefined {
       return undefined;
     }
 
-    return { token, expiresAt, privacyVersion, chatNoticeVersion, conversationId };
+    return { token, visitId, expiresAt, privacyVersion, chatNoticeVersion, conversationId };
   } catch {
     clearAssistantSession(cardSlug);
     return undefined;
@@ -202,6 +206,7 @@ function writeSession(cardSlug: string, session: VisitorSession) {
 }
 
 export function clearAssistantSession(cardSlug: string) {
+  visitorSessionPromises.delete(cardSlug.trim());
   assistantSessionPromises.delete(cardSlug.trim());
   try {
     getSessionStorage()?.removeItem(getAssistantSessionStorageKey(cardSlug));
@@ -365,8 +370,115 @@ async function createVisit(
   }
   return {
     token: requireString(data.visitor_session_token, "visitor session token"),
+    visitId: requireString(data.visit_id, "visit id"),
     expiresAt: requireString(data.expires_at, "visitor session expiry"),
   };
+}
+
+async function ensureBaseVisitorSession(
+  baseUrl: string,
+  cardSlug: string,
+  signal?: AbortSignal,
+  knownContext?: {
+    policyVersions: PublicPolicyVersions;
+    companyId?: string;
+  },
+) {
+  const saved = readSession(cardSlug);
+  if (saved) return saved;
+
+  const pending = visitorSessionPromises.get(cardSlug);
+  if (pending) return pending;
+  const creation = (async () => {
+    const resumed = readSession(cardSlug);
+    if (resumed) return resumed;
+    const context = knownContext ?? await getPublicCardContext(baseUrl, cardSlug, signal);
+    const visit = await createVisit(
+      baseUrl,
+      cardSlug,
+      context.policyVersions.privacy,
+      context.companyId,
+      signal,
+    );
+    const session: VisitorSession = {
+      ...visit,
+      privacyVersion: context.policyVersions.privacy,
+      chatNoticeVersion: context.policyVersions.chatNotice,
+    };
+    writeSession(cardSlug, session);
+    return session;
+  })();
+  visitorSessionPromises.set(cardSlug, creation);
+  try {
+    return await creation;
+  } finally {
+    if (visitorSessionPromises.get(cardSlug) === creation) {
+      visitorSessionPromises.delete(cardSlug);
+    }
+  }
+}
+
+export async function ensureVisitSession({
+  cardSlug,
+  policyVersions,
+  companyId,
+  signal,
+}: {
+  cardSlug: string;
+  policyVersions: PublicPolicyVersions;
+  companyId?: string;
+  signal?: AbortSignal;
+}) {
+  const baseUrl = getPublicApiBaseUrl();
+  const normalizedSlug = cardSlug.trim();
+  if (!baseUrl || !normalizedSlug) {
+    throw new AssistantApiError("公开服务 API 尚未配置。", {
+      code: "API_NOT_CONFIGURED",
+    });
+  }
+  return ensureBaseVisitorSession(
+    baseUrl,
+    normalizedSlug,
+    signal,
+    { policyVersions, companyId },
+  );
+}
+
+export async function recordVisitEvent({
+  cardSlug,
+  session,
+  eventType,
+  objectType,
+  objectId,
+  metadata = {},
+  keepalive = false,
+}: {
+  cardSlug: string;
+  session: VisitorSession;
+  eventType: "page_view" | "content_view" | "heartbeat" | "leave" | "cta_click" | "share";
+  objectType?: "card" | "product" | "case" | "faq" | "contact" | "ai";
+  objectId?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  keepalive?: boolean;
+}) {
+  const baseUrl = getPublicApiBaseUrl();
+  if (!baseUrl) return;
+  const response = await request(
+    `${baseUrl}/public/cards/${encodeURIComponent(cardSlug)}/visits/${encodeURIComponent(session.visitId)}/events`,
+    {
+      method: "POST",
+      headers: jsonHeaders(session.token),
+      body: JSON.stringify({
+        event_id: createAssistantIdempotencyKey(),
+        event_type: eventType,
+        object_type: objectType,
+        object_id: objectId,
+        metadata,
+      }),
+      keepalive,
+    },
+  );
+  if (!response.ok) throw await responseError(response);
 }
 
 async function recordChatConsent(
@@ -433,24 +545,12 @@ async function ensureAssistantSession(
     const resumed = readSession(cardSlug);
     if (resumed?.conversationId) return resumed;
 
-    let session = resumed;
-    if (!session) {
-      const context = knownContext ?? await getPublicCardContext(baseUrl, cardSlug, signal);
-      const versions = context.policyVersions;
-      const visit = await createVisit(
-        baseUrl,
-        cardSlug,
-        versions.privacy,
-        context.companyId,
-        signal,
-      );
-      session = {
-        ...visit,
-        privacyVersion: versions.privacy,
-        chatNoticeVersion: versions.chatNotice,
-      };
-      writeSession(cardSlug, session);
-    }
+    const session = await ensureBaseVisitorSession(
+      baseUrl,
+      cardSlug,
+      signal,
+      knownContext,
+    );
 
     await recordChatConsent(
       baseUrl,
@@ -524,25 +624,15 @@ export async function ensurePublicVisitorSession({
 
   const saved = readSession(normalizedSlug);
   if (saved) return saved;
-
   const context = policyVersions
     ? { policyVersions, companyId }
     : await getPublicCardContext(baseUrl, normalizedSlug, signal);
-  const versions = policyVersions ?? context.policyVersions;
-  const visit = await createVisit(
+  return ensureBaseVisitorSession(
     baseUrl,
     normalizedSlug,
-    versions.privacy,
-    companyId ?? context.companyId,
     signal,
+    context,
   );
-  const session: VisitorSession = {
-    ...visit,
-    privacyVersion: versions.privacy,
-    chatNoticeVersion: versions.chatNotice,
-  };
-  writeSession(normalizedSlug, session);
-  return session;
 }
 
 function parseEventBlock(block: string) {

@@ -124,6 +124,34 @@ class VisitListEnvelope(WorkflowModel):
     offset: int = Field(ge=0)
 
 
+class VisitPageDuration(WorkflowModel):
+    page_key: str
+    page_title: str
+    object_type: str | None = None
+    object_id: str | None = None
+    duration_seconds: float = Field(ge=0)
+    view_count: int = Field(ge=0)
+    last_viewed_at: datetime
+
+
+class VisitQuestion(WorkflowModel):
+    message_id: uuid.UUID
+    conversation_id: uuid.UUID
+    question: str
+    asked_at: datetime
+    answer_status: str | None = None
+
+
+class VisitDetail(VisitItem):
+    event_count: int = Field(ge=0)
+    page_durations: list[VisitPageDuration] = Field(default_factory=list)
+    questions: list[VisitQuestion] = Field(default_factory=list)
+
+
+class VisitDetailEnvelope(WorkflowModel):
+    data: VisitDetail
+
+
 class VisitorProfileSignalPreview(WorkflowModel):
     label: str
     strength: float = Field(ge=0, le=1)

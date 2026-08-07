@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import exists, func, or_, select, text, update
+from sqlalchemy import case, exists, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,9 +25,12 @@ from app.api.workflow_schemas import (
     OpportunityCandidateView,
     SummaryDraft,
     SummaryView,
+    VisitDetail,
     VisitEventRequest,
     VisitEventView,
     VisitItem,
+    VisitPageDuration,
+    VisitQuestion,
 )
 from app.core.config import Settings
 from app.core.pii import PiiCipher
@@ -684,6 +687,160 @@ class WorkflowStore:
                 for visit, display_name, count in rows
             ]
             return records, total
+
+    async def get_visit_detail(
+        self,
+        *,
+        scope: WorkflowScope,
+        visit_id: uuid.UUID,
+    ) -> VisitDetail:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            visit_row = (
+                await session.execute(
+                    select(Visit, Card.display_name)
+                    .join(Card, Card.id == Visit.card_id)
+                    .where(
+                        Visit.id == visit_id,
+                        Visit.tenant_id == scope.tenant_id,
+                        Visit.company_id == scope.company_id,
+                        *self._card_filters(scope),
+                    )
+                )
+            ).one_or_none()
+            if visit_row is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "访问记录不存在")
+            visit, card_display_name = visit_row
+
+            events = list(
+                await session.scalars(
+                    select(VisitEvent)
+                    .where(
+                        VisitEvent.visit_id == visit.id,
+                        VisitEvent.tenant_id == scope.tenant_id,
+                        VisitEvent.company_id == scope.company_id,
+                    )
+                    .order_by(VisitEvent.occurred_at, VisitEvent.id)
+                )
+            )
+            page_totals: dict[str, dict[str, object]] = {}
+            for event in events:
+                metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
+                page_key = str(
+                    metadata.get("page_key")
+                    or event.object_id
+                    or event.object_type
+                    or "card"
+                )[:160]
+                if event.event_type not in {"page_view", "heartbeat", "leave"}:
+                    continue
+                current = page_totals.setdefault(
+                    page_key,
+                    {
+                        "page_title": str(metadata.get("page_title") or page_key)[:160],
+                        "object_type": event.object_type,
+                        "object_id": event.object_id,
+                        "duration_ms": 0.0,
+                        "view_count": 0,
+                        "last_viewed_at": event.occurred_at,
+                    },
+                )
+                if event.event_type == "page_view":
+                    current["view_count"] = int(current["view_count"]) + 1
+                duration_ms = metadata.get("duration_ms")
+                if event.event_type in {"heartbeat", "leave"} and isinstance(
+                    duration_ms, (int, float)
+                ):
+                    current["duration_ms"] = float(current["duration_ms"]) + max(
+                        0.0, min(float(duration_ms), 86_400_000.0)
+                    )
+                current["last_viewed_at"] = max(
+                    current["last_viewed_at"], event.occurred_at
+                )
+
+            message_rows = (
+                await session.execute(
+                    select(Message, Conversation.id)
+                    .join(
+                        Conversation,
+                        Conversation.id == Message.conversation_id,
+                    )
+                    .where(
+                        Conversation.visit_id == visit.id,
+                        Conversation.tenant_id == scope.tenant_id,
+                        Conversation.company_id == scope.company_id,
+                    )
+                    .order_by(
+                        Message.created_at,
+                        case((Message.role == MessageRole.USER, 0), else_=1),
+                        Message.id,
+                    )
+                )
+            ).all()
+            questions: list[dict[str, object]] = []
+            pending_by_conversation: dict[uuid.UUID, int] = {}
+            conversation_ids: set[uuid.UUID] = set()
+            for message, conversation_id in message_rows:
+                conversation_ids.add(conversation_id)
+                if message.role == MessageRole.USER:
+                    questions.append(
+                        {
+                            "message_id": message.id,
+                            "conversation_id": conversation_id,
+                            "question": message.content,
+                            "asked_at": message.created_at,
+                            "answer_status": None,
+                        }
+                    )
+                    pending_by_conversation[conversation_id] = len(questions) - 1
+                elif message.role == MessageRole.ASSISTANT:
+                    question_index = pending_by_conversation.pop(conversation_id, None)
+                    if question_index is not None:
+                        questions[question_index]["answer_status"] = str(
+                            getattr(message.status, "value", message.status)
+                        )
+
+            return VisitDetail(
+                id=visit.id,
+                card_id=visit.card_id,
+                card_display_name=card_display_name,
+                visitor_id=visit.visitor_id,
+                source=visit.source,
+                started_at=visit.started_at,
+                ended_at=visit.ended_at,
+                duration_seconds=(
+                    max(0, int((visit.ended_at - visit.started_at).total_seconds()))
+                    if visit.ended_at
+                    else None
+                ),
+                conversation_count=len(conversation_ids),
+                event_count=len(events),
+                page_durations=[
+                    VisitPageDuration(
+                        page_key=page_key,
+                        page_title=str(values["page_title"]),
+                        object_type=(
+                            str(values["object_type"])
+                            if values["object_type"] is not None
+                            else None
+                        ),
+                        object_id=(
+                            str(values["object_id"])
+                            if values["object_id"] is not None
+                            else None
+                        ),
+                        duration_seconds=round(float(values["duration_ms"]) / 1_000, 1),
+                        view_count=int(values["view_count"]),
+                        last_viewed_at=values["last_viewed_at"],
+                    )
+                    for page_key, values in sorted(
+                        page_totals.items(),
+                        key=lambda item: item[1]["last_viewed_at"],
+                        reverse=True,
+                    )
+                ],
+                questions=[VisitQuestion(**question) for question in questions],
+            )
 
     async def list_conversations(
         self,
@@ -1393,7 +1550,7 @@ class WorkflowStore:
                 metadata_json=request.metadata,
             )
             session.add(event)
-            if request.event_type == "leave" and visit.ended_at is None:
+            if request.event_type == "leave":
                 visit.ended_at = datetime.now(UTC)
             await session.execute(
                 update(Visitor)

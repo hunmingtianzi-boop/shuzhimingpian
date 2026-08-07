@@ -29,6 +29,7 @@ import type {
   TopicAnalysis,
   TopicAnalysisItem,
   Visit,
+  VisitDetail,
 } from "./types";
 
 type JsonRecord = Record<string, unknown>;
@@ -222,6 +223,40 @@ function normalizeVisit(value: unknown): Visit {
     durationSeconds:
       typeof raw.duration_seconds === "number" ? raw.duration_seconds : undefined,
     conversationCount: numberValue(raw.conversation_count),
+  };
+}
+
+function normalizeVisitDetail(payload: unknown): VisitDetail {
+  const raw = dataRecord(payload, "访问明细");
+  return {
+    ...normalizeVisit(raw),
+    eventCount: numberValue(raw.event_count),
+    pageDurations: Array.isArray(raw.page_durations)
+      ? raw.page_durations.map((value) => {
+          const item = isRecord(value) ? value : invalid("页面停留记录");
+          return {
+            pageKey: requiredString(item.page_key, "页面标识"),
+            pageTitle: requiredString(item.page_title, "页面名称"),
+            objectType: optionalString(item.object_type),
+            objectId: optionalString(item.object_id),
+            durationSeconds: numberValue(item.duration_seconds),
+            viewCount: numberValue(item.view_count),
+            lastViewedAt: requiredString(item.last_viewed_at, "最后浏览时间"),
+          };
+        })
+      : [],
+    questions: Array.isArray(raw.questions)
+      ? raw.questions.map((value) => {
+          const item = isRecord(value) ? value : invalid("访客问题记录");
+          return {
+            messageId: requiredString(item.message_id, "问题消息 id"),
+            conversationId: requiredString(item.conversation_id, "问题对话 id"),
+            question: requiredString(item.question, "访客问题"),
+            askedAt: requiredString(item.asked_at, "提问时间"),
+            answerStatus: optionalString(item.answer_status),
+          };
+        })
+      : [],
   };
 }
 
@@ -498,6 +533,12 @@ export function createWorkflowApi(client: ApiClient) {
         ),
         "访问记录列表",
         normalizeVisit,
+      );
+    },
+
+    async getVisit(id: string): Promise<VisitDetail> {
+      return normalizeVisitDetail(
+        await client.get(`/admin/visits/${encodeURIComponent(id)}`),
       );
     },
 

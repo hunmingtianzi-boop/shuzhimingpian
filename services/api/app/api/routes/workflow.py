@@ -22,6 +22,7 @@ from app.api.workflow_schemas import (
     SummaryEnvelope,
     TopicAnalysisEnvelope,
     UpdateKnowledgeGapRequest,
+    VisitDetailEnvelope,
     VisitEventEnvelope,
     VisitEventRequest,
     VisitListEnvelope,
@@ -235,6 +236,24 @@ async def list_visits(
         card_id=card_id,
     )
     return VisitListEnvelope(data=records, total=total, limit=limit, offset=offset)
+
+
+@router.get(
+    "/admin/visits/{visit_id}",
+    response_model=VisitDetailEnvelope,
+    operation_id="getAdminVisitDetail",
+)
+async def get_visit_detail(
+    visit_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> VisitDetailEnvelope:
+    _require_access(principal, "visits.read", "conversations.read", allow_card_owner=True)
+    record = await _store(request).get_visit_detail(
+        scope=_scope(principal),
+        visit_id=visit_id,
+    )
+    return VisitDetailEnvelope(data=record)
 
 
 @router.get(

@@ -27,6 +27,7 @@ import {
 import type { EnterpriseCardConfig } from "../domain/card";
 import { AssistantApiError } from "../lib/assistantApi";
 import type { AssistantRelatedSection } from "../lib/assistantRelatedSections";
+import type { AnalyticsPage } from "../lib/visitAnalytics";
 import { copyText } from "../lib/clipboard";
 import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import { EnterpriseTemplateBlocks } from "../components/EnterpriseTemplateBlocks";
@@ -75,6 +76,15 @@ type CardSwitchTarget = {
 };
 
 type CompanySectionId = "overview" | "intro" | "business" | "cases" | "trust" | "faq" | "ai";
+const companySectionAnalyticsLabels: Record<CompanySectionId, string> = {
+  overview: "企业概览",
+  intro: "企业介绍",
+  business: "业务与产品",
+  cases: "案例",
+  trust: "信任信息",
+  faq: "常见问题",
+  ai: "AI 接待入口",
+};
 
 export type BusinessCardPrototypeAppHandle = {
   openAssistantTarget: (targetId: string) => void;
@@ -85,6 +95,7 @@ type BusinessCardPrototypeAppProps = {
   card?: PublicCardData;
   onAssistant: (question?: string) => void;
   onAssistantRelatedSectionsChange?: (sections: AssistantRelatedSection[]) => void;
+  onAnalyticsPageChange?: (page: AnalyticsPage) => void;
   onLead: () => void;
   onPrivacy: () => void;
   onProfile: () => void;
@@ -555,6 +566,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   card,
   onAssistant,
   onAssistantRelatedSectionsChange,
+  onAnalyticsPageChange,
   onLead,
   onPrivacy,
   onProfile,
@@ -1025,6 +1037,54 @@ export const BusinessCardPrototypeApp = forwardRef<
   const templateFaqBlocks = visibleTemplateBlocks.filter((block) => block.type === "faq");
   const templateCtaBlocks = visibleTemplateBlocks.filter((block) => block.type === "cta");
   const companyNavigationKey = companyNavigationItems.map(({ id }) => id).join(",");
+
+  useEffect(() => {
+    if (!onAnalyticsPageChange) return;
+    if (view === "detail") {
+      const route = detail
+        ? { kind: detail.kind, slug: detail.item.slug, title: detail.kind === "product" ? detail.item.name : detail.item.title }
+        : requestedDetail
+          ? { ...requestedDetail, title: requestedDetail.slug }
+          : undefined;
+      if (route) {
+        onAnalyticsPageChange({
+          key: `detail:${route.kind}:${route.slug}`,
+          title: route.title,
+          objectType: route.kind,
+          objectId: route.slug,
+        });
+        return;
+      }
+    }
+    if (view === "company") {
+      onAnalyticsPageChange({
+        key: `company:${activeCompanySection}`,
+        title: `企业页·${companySectionAnalyticsLabels[activeCompanySection]}`,
+        objectType: "card",
+        objectId: `company:${activeCompanySection}`,
+      });
+      return;
+    }
+    const labels: Record<BaseView, string> = {
+      card: "个人名片",
+      company: "企业主页",
+      square: "业务广场",
+      me: "访客中心",
+    };
+    onAnalyticsPageChange({
+      key: view,
+      title: labels[view as BaseView] ?? view,
+      objectType: "card",
+      objectId: view,
+    });
+  }, [
+    activeCompanySection,
+    detail,
+    onAnalyticsPageChange,
+    requestedDetail?.kind,
+    requestedDetail?.slug,
+    view,
+  ]);
   const composedIdentity: CardPageIdentity = isStandaloneEmployee
     ? {
         kind: "employee",

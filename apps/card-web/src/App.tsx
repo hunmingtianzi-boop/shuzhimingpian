@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import "./styles.css";
 
@@ -15,6 +15,10 @@ import type { AssistantRelatedSection } from "./lib/assistantRelatedSections";
 import { copyText } from "./lib/clipboard";
 import { createMockPublicCard, resolveMockCardKind } from "./lib/mockPublicCard";
 import type { PublicCardData } from "./lib/publicCardApi";
+import {
+  type AnalyticsPage,
+  useVisitAnalytics,
+} from "./lib/visitAnalytics";
 import { canonicalShareUrl } from "./lib/publicExperienceApi";
 import {
   BusinessCardPrototypeApp,
@@ -35,6 +39,8 @@ export default function App({
   const [assistantRelatedSections, setAssistantRelatedSections] = useState<
     AssistantRelatedSection[]
   >([]);
+  const [cardAnalyticsPage, setCardAnalyticsPage] = useState<AnalyticsPage>();
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const mockEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_CARD_MOCK === "true";
   const mockCardKind = mockEnabled
@@ -50,6 +56,34 @@ export default function App({
     !mockCard &&
     !isUnconfiguredTemplate &&
     (publishedCard?.ai_assistant.available ?? true);
+  const visitPolicyVersions = useMemo(
+    () => publishedCard ? {
+      privacy: publishedCard.policy_versions.privacy,
+      chatNotice: publishedCard.policy_versions.chat_notice,
+      leadConsent: publishedCard.policy_versions.lead_consent,
+      profilePersonalization: publishedCard.policy_versions.profile_personalization,
+    } : undefined,
+    [publishedCard],
+  );
+  const { trackPage, trackAction } = useVisitAnalytics({
+    enabled: Boolean(publishedCard),
+    cardSlug: publishedCard?.slug ?? tenant.id,
+    companyId: publishedCard?.company.id,
+    policyVersions: visitPolicyVersions,
+  });
+
+  useEffect(() => {
+    if (assistantOpen) {
+      trackPage({
+        key: "assistant",
+        title: "企业 AI 接待",
+        objectType: "ai",
+        objectId: "assistant",
+      });
+    } else if (cardAnalyticsPage) {
+      trackPage(cardAnalyticsPage);
+    }
+  }, [assistantOpen, cardAnalyticsPage, trackPage]);
 
   const openAssistant = (question?: string) => {
     if (mockCard) {
@@ -65,7 +99,10 @@ export default function App({
       setShareNotice("模拟合作需求表单已打开");
       return;
     }
-    if (publishedCard) publicExperienceRef.current?.openLead();
+    if (publishedCard) {
+      trackAction("cta_click", "contact", "lead_form");
+      publicExperienceRef.current?.openLead();
+    }
     else openAssistant("我想提交合作需求，请告诉我如何联系");
   };
 
@@ -88,7 +125,10 @@ export default function App({
   };
 
   const openShare = () => {
-    if (renderedCard) publicExperienceRef.current?.openShare();
+    if (renderedCard) {
+      trackAction("share", "card", "share_dialog");
+      publicExperienceRef.current?.openShare();
+    }
     else void shareFallback();
   };
 
@@ -100,14 +140,21 @@ export default function App({
         card={renderedCard}
         onAssistant={openAssistant}
         onAssistantRelatedSectionsChange={setAssistantRelatedSections}
+        onAnalyticsPageChange={setCardAnalyticsPage}
         onLead={openLead}
         onPrivacy={() => {
           if (mockCard) setShareNotice("模拟隐私与个人信息入口");
-          else publicExperienceRef.current?.openPrivacy();
+          else {
+            trackAction("content_view", "contact", "privacy");
+            publicExperienceRef.current?.openPrivacy();
+          }
         }}
         onProfile={() => {
           if (mockCard) setShareNotice("模拟访客画像授权入口");
-          else publicExperienceRef.current?.openProfile();
+          else {
+            trackAction("content_view", "contact", "profile");
+            publicExperienceRef.current?.openProfile();
+          }
         }}
         onShare={openShare}
       />
@@ -139,6 +186,7 @@ export default function App({
           onOpenRelatedSection={(targetId) => {
             prototypeRef.current?.openAssistantTarget(targetId);
           }}
+          onOpenChange={setAssistantOpen}
         />
       )}
     </>
