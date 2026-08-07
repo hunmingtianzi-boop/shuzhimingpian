@@ -779,6 +779,12 @@ export type Visit = {
   startedAt: string;
   endedAt?: string;
   durationSeconds?: number;
+  activityStatus: "active" | "ended" | "estimated" | "unknown";
+  lastActivityAt?: string;
+  durationEstimated: boolean;
+  visitorChannel: "web" | "wechat" | "wecom";
+  visitorIdentityType: "anonymous" | "wecom_member" | "wechat_openid" | "wecom_external";
+  visitorIdentityLabel: string;
   conversationCount: number;
 };
 

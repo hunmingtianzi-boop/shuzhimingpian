@@ -114,6 +114,14 @@ class VisitItem(WorkflowModel):
     started_at: datetime
     ended_at: datetime | None = None
     duration_seconds: int | None = Field(default=None, ge=0)
+    activity_status: Literal["active", "ended", "estimated", "unknown"] = "unknown"
+    last_activity_at: datetime | None = None
+    duration_estimated: bool = False
+    visitor_channel: Literal["web", "wechat", "wecom"] = "web"
+    visitor_identity_type: Literal[
+        "anonymous", "wecom_member", "wechat_openid", "wecom_external"
+    ] = "anonymous"
+    visitor_identity_label: str = "匿名网页访客"
     conversation_count: int = Field(ge=0)
 
 
@@ -586,9 +594,7 @@ class LeadFollowupEnvelope(WorkflowModel):
 class PrivacyRequestCreate(WorkflowModel):
     request_type: Literal["access", "correction", "deletion", "withdraw_consent"]
     note: str | None = Field(default=None, max_length=4_000)
-    consent_scope: Literal[
-        "chat_notice", "lead_contact", "profile_personalization"
-    ] | None = None
+    consent_scope: Literal["chat_notice", "lead_contact", "profile_personalization"] | None = None
 
     @model_validator(mode="after")
     def validate_withdrawal_scope(self) -> "PrivacyRequestCreate":

@@ -26,12 +26,29 @@ import { formatTimestamp } from "../utils/format";
 
 const PAGE_SIZE = 20;
 
-function formatDuration(seconds?: number): string {
-  if (seconds === undefined) return "访问中";
+function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} 秒`;
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`;
+}
+
+function formatVisitDuration(visit: {
+  activityStatus: "active" | "ended" | "estimated" | "unknown";
+  durationSeconds?: number;
+}): string {
+  if (visit.activityStatus === "active") return "访问中";
+  if (visit.activityStatus === "unknown" || visit.durationSeconds === undefined) {
+    return "时长未知";
+  }
+  const duration = formatDuration(visit.durationSeconds);
+  return visit.activityStatus === "estimated" ? `${duration}（估算）` : duration;
+}
+
+function visitorChannelLabel(channel: "web" | "wechat" | "wecom") {
+  if (channel === "wecom") return "企业微信";
+  if (channel === "wechat") return "微信";
+  return "网页";
 }
 
 function answerStatusLabel(status?: string) {
@@ -190,6 +207,7 @@ export function VisitsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHeaderCell>名片</TableHeaderCell>
+                      <TableHeaderCell>访客</TableHeaderCell>
                       <TableHeaderCell>来源</TableHeaderCell>
                       <TableHeaderCell>开始时间</TableHeaderCell>
                       <TableHeaderCell>停留时长</TableHeaderCell>
@@ -203,14 +221,19 @@ export function VisitsPage() {
                         <TableCell>
                           <div className="entity-title-cell compact-cell">
                             <strong>{visit.cardDisplayName}</strong>
-                            <code>{visit.visitorId}</code>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="entity-title-cell compact-cell">
+                            <strong>{visit.visitorIdentityLabel}</strong>
+                            <span>{visitorChannelLabel(visit.visitorChannel)} · {visit.visitorId.slice(0, 8)}</span>
                           </div>
                         </TableCell>
                         <TableCell>{visit.source || "直接访问"}</TableCell>
                         <TableCell className="updated-column">
                           {formatTimestamp(visit.startedAt)}
                         </TableCell>
-                        <TableCell>{formatDuration(visit.durationSeconds)}</TableCell>
+                        <TableCell>{formatVisitDuration(visit)}</TableCell>
                         <TableCell>{visit.conversationCount}</TableCell>
                         <TableCell>
                           <Button appearance="subtle" onClick={() => setSelectedVisitId(visit.id)}>

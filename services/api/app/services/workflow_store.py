@@ -92,6 +92,14 @@ _OPPORTUNITY_TERMS = (
     "budget",
     "demo",
 )
+_VISIT_ACTIVE_WINDOW = timedelta(minutes=5)
+_VISITOR_CHANNELS = {"web", "wechat", "wecom"}
+_VISITOR_IDENTITY_TYPES = {
+    "anonymous",
+    "wecom_member",
+    "wechat_openid",
+    "wecom_external",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +131,88 @@ class GapDocument:
     id: uuid.UUID
     status: ContentStatus
     current_version_id: uuid.UUID | None
+
+
+@dataclass(frozen=True, slots=True)
+class VisitPresentation:
+    activity_status: str
+    last_activity_at: datetime | None
+    duration_seconds: int | None
+    duration_estimated: bool
+    visitor_channel: str
+    visitor_identity_type: str
+    visitor_identity_label: str
+
+
+def _visit_presentation(
+    visit: Visit,
+    *,
+    last_event_at: datetime | None,
+    event_count: int,
+    now: datetime,
+) -> VisitPresentation:
+    context = visit.context if isinstance(visit.context, dict) else {}
+    channel_value = context.get("visitor_channel")
+    visitor_channel = channel_value if channel_value in _VISITOR_CHANNELS else "web"
+    identity_value = context.get("visitor_identity_type")
+    identity_type = identity_value if identity_value in _VISITOR_IDENTITY_TYPES else "anonymous"
+    identity_label_value = context.get("visitor_identity_label")
+    identity_label = (
+        identity_label_value.strip()[:120]
+        if isinstance(identity_label_value, str) and identity_label_value.strip()
+        else {
+            "wecom_member": "企业微信成员",
+            "wechat_openid": "微信授权访客",
+            "wecom_external": "企业微信客户",
+            "anonymous": {
+                "wecom": "企业微信访客（未识别）",
+                "wechat": "微信访客（未识别）",
+                "web": "匿名网页访客",
+            }[visitor_channel],
+        }[identity_type]
+    )
+    if visit.ended_at is not None:
+        last_activity_at = max(
+            value for value in (visit.ended_at, last_event_at) if value is not None
+        )
+        return VisitPresentation(
+            activity_status="ended",
+            last_activity_at=last_activity_at,
+            duration_seconds=max(0, int((visit.ended_at - visit.started_at).total_seconds())),
+            duration_estimated=False,
+            visitor_channel=visitor_channel,
+            visitor_identity_type=identity_type,
+            visitor_identity_label=identity_label,
+        )
+    if event_count <= 0 or last_event_at is None:
+        return VisitPresentation(
+            activity_status="unknown",
+            last_activity_at=None,
+            duration_seconds=None,
+            duration_estimated=False,
+            visitor_channel=visitor_channel,
+            visitor_identity_type=identity_type,
+            visitor_identity_label=identity_label,
+        )
+    if last_event_at >= now - _VISIT_ACTIVE_WINDOW:
+        return VisitPresentation(
+            activity_status="active",
+            last_activity_at=last_event_at,
+            duration_seconds=None,
+            duration_estimated=False,
+            visitor_channel=visitor_channel,
+            visitor_identity_type=identity_type,
+            visitor_identity_label=identity_label,
+        )
+    return VisitPresentation(
+        activity_status="estimated",
+        last_activity_at=last_event_at,
+        duration_seconds=max(0, int((last_event_at - visit.started_at).total_seconds())),
+        duration_estimated=True,
+        visitor_channel=visitor_channel,
+        visitor_identity_type=identity_type,
+        visitor_identity_label=identity_label,
+    )
 
 
 class WorkflowStore:
@@ -398,9 +488,7 @@ class WorkflowStore:
             conversation_rate = func.coalesce(
                 conversation_count * 1.0 / func.nullif(visit_count, 0), 0.0
             )
-            lead_rate = func.coalesce(
-                lead_count * 1.0 / func.nullif(conversation_count, 0), 0.0
-            )
+            lead_rate = func.coalesce(lead_count * 1.0 / func.nullif(conversation_count, 0), 0.0)
             last_activity = func.greatest(
                 visits.c.last_visit_at,
                 conversations.c.last_conversation_at,
@@ -437,9 +525,10 @@ class WorkflowStore:
             )
             total = int(
                 await session.scalar(
-                    select(func.count()).select_from(Membership).join(
-                        User, User.id == Membership.user_id
-                    ).where(*filters)
+                    select(func.count())
+                    .select_from(Membership)
+                    .join(User, User.id == Membership.user_id)
+                    .where(*filters)
                 )
                 or 0
             )
@@ -612,14 +701,10 @@ class WorkflowStore:
             conversations=total_conversations,
             total_leads=total_leads,
             conversation_rate=(
-                min(1.0, round(total_conversations / total_visits, 4))
-                if total_visits
-                else 0
+                min(1.0, round(total_conversations / total_visits, 4)) if total_visits else 0
             ),
             lead_rate=(
-                min(1.0, round(total_leads / total_conversations, 4))
-                if total_conversations
-                else 0
+                min(1.0, round(total_leads / total_conversations, 4)) if total_conversations else 0
             ),
             last_activity_at=latest_activity,
         )
@@ -658,9 +743,35 @@ class WorkflowStore:
                 .correlate(Visit)
                 .scalar_subquery()
             )
+            visit_event_count = (
+                select(func.count(VisitEvent.id))
+                .where(
+                    VisitEvent.tenant_id == Visit.tenant_id,
+                    VisitEvent.company_id == Visit.company_id,
+                    VisitEvent.visit_id == Visit.id,
+                )
+                .correlate(Visit)
+                .scalar_subquery()
+            )
+            last_event_at = (
+                select(func.max(VisitEvent.occurred_at))
+                .where(
+                    VisitEvent.tenant_id == Visit.tenant_id,
+                    VisitEvent.company_id == Visit.company_id,
+                    VisitEvent.visit_id == Visit.id,
+                )
+                .correlate(Visit)
+                .scalar_subquery()
+            )
             rows = (
                 await session.execute(
-                    select(Visit, Card.display_name, conversation_count)
+                    select(
+                        Visit,
+                        Card.display_name,
+                        conversation_count,
+                        visit_event_count,
+                        last_event_at,
+                    )
                     .join(Card, Card.id == Visit.card_id)
                     .where(*filters)
                     .order_by(Visit.started_at.desc(), Visit.id.desc())
@@ -668,24 +779,34 @@ class WorkflowStore:
                     .limit(limit)
                 )
             ).all()
-            records = [
-                VisitItem(
-                    id=visit.id,
-                    card_id=visit.card_id,
-                    card_display_name=display_name,
-                    visitor_id=visit.visitor_id,
-                    source=visit.source,
-                    started_at=visit.started_at,
-                    ended_at=visit.ended_at,
-                    duration_seconds=(
-                        max(0, int((visit.ended_at - visit.started_at).total_seconds()))
-                        if visit.ended_at
-                        else None
-                    ),
-                    conversation_count=int(count or 0),
+            now = datetime.now(UTC)
+            records: list[VisitItem] = []
+            for visit, display_name, count, event_count, latest_event_at in rows:
+                presentation = _visit_presentation(
+                    visit,
+                    last_event_at=latest_event_at,
+                    event_count=int(event_count or 0),
+                    now=now,
                 )
-                for visit, display_name, count in rows
-            ]
+                records.append(
+                    VisitItem(
+                        id=visit.id,
+                        card_id=visit.card_id,
+                        card_display_name=display_name,
+                        visitor_id=visit.visitor_id,
+                        source=visit.source,
+                        started_at=visit.started_at,
+                        ended_at=visit.ended_at,
+                        duration_seconds=presentation.duration_seconds,
+                        activity_status=presentation.activity_status,
+                        last_activity_at=presentation.last_activity_at,
+                        duration_estimated=presentation.duration_estimated,
+                        visitor_channel=presentation.visitor_channel,
+                        visitor_identity_type=presentation.visitor_identity_type,
+                        visitor_identity_label=presentation.visitor_identity_label,
+                        conversation_count=int(count or 0),
+                    )
+                )
             return records, total
 
     async def get_visit_detail(
@@ -727,10 +848,7 @@ class WorkflowStore:
             for event in events:
                 metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
                 page_key = str(
-                    metadata.get("page_key")
-                    or event.object_id
-                    or event.object_type
-                    or "card"
+                    metadata.get("page_key") or event.object_id or event.object_type or "card"
                 )[:160]
                 if event.event_type not in {"page_view", "heartbeat", "leave"}:
                     continue
@@ -754,9 +872,7 @@ class WorkflowStore:
                     current["duration_ms"] = float(current["duration_ms"]) + max(
                         0.0, min(float(duration_ms), 86_400_000.0)
                     )
-                current["last_viewed_at"] = max(
-                    current["last_viewed_at"], event.occurred_at
-                )
+                current["last_viewed_at"] = max(current["last_viewed_at"], event.occurred_at)
 
             message_rows = (
                 await session.execute(
@@ -800,6 +916,13 @@ class WorkflowStore:
                             getattr(message.status, "value", message.status)
                         )
 
+            presentation = _visit_presentation(
+                visit,
+                last_event_at=events[-1].occurred_at if events else None,
+                event_count=len(events),
+                now=datetime.now(UTC),
+            )
+
             return VisitDetail(
                 id=visit.id,
                 card_id=visit.card_id,
@@ -808,11 +931,13 @@ class WorkflowStore:
                 source=visit.source,
                 started_at=visit.started_at,
                 ended_at=visit.ended_at,
-                duration_seconds=(
-                    max(0, int((visit.ended_at - visit.started_at).total_seconds()))
-                    if visit.ended_at
-                    else None
-                ),
+                duration_seconds=presentation.duration_seconds,
+                activity_status=presentation.activity_status,
+                last_activity_at=presentation.last_activity_at,
+                duration_estimated=presentation.duration_estimated,
+                visitor_channel=presentation.visitor_channel,
+                visitor_identity_type=presentation.visitor_identity_type,
+                visitor_identity_label=presentation.visitor_identity_label,
                 conversation_count=len(conversation_ids),
                 event_count=len(events),
                 page_durations=[
@@ -825,9 +950,7 @@ class WorkflowStore:
                             else None
                         ),
                         object_id=(
-                            str(values["object_id"])
-                            if values["object_id"] is not None
-                            else None
+                            str(values["object_id"]) if values["object_id"] is not None else None
                         ),
                         duration_seconds=round(float(values["duration_ms"]) / 1_000, 1),
                         view_count=int(values["view_count"]),
@@ -1826,9 +1949,7 @@ class WorkflowStore:
             (VisitorProfileSignalKind.INTEREST, label) for label in interest_labels
         ]
         if conversation.primary_intent:
-            signal_labels.append(
-                (VisitorProfileSignalKind.INTENT, conversation.primary_intent)
-            )
+            signal_labels.append((VisitorProfileSignalKind.INTENT, conversation.primary_intent))
         if not signal_labels or not summary.source_message_ids:
             return
         valid_source_ids = set(
@@ -1920,9 +2041,7 @@ class WorkflowStore:
                 signal.strength = max(signal.strength, strength)
                 signal.confidence = min(1.0, max(signal.confidence, strength))
                 signal.last_seen_at = max(signal.last_seen_at, observed_at)
-                signal.retention_expires_at = max(
-                    signal.retention_expires_at, retention_expires_at
-                )
+                signal.retention_expires_at = max(signal.retention_expires_at, retention_expires_at)
 
     async def _summary_prompt(
         self, session: AsyncSession, *, scope: WorkflowScope

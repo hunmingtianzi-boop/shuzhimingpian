@@ -326,6 +326,7 @@ class PublicStore:
         slug: str,
         request: CreateVisitRequest,
         idempotency_key: str,
+        visitor_channel: str = "web",
     ) -> VisitSession:
         async with self._sessions() as session, session.begin():
             scope = await self._resolve_public_card(session, slug)
@@ -398,6 +399,12 @@ class PublicStore:
                     context={
                         "campaign": request.campaign,
                         "privacy_notice_version": request.privacy_notice_version,
+                        "visitor_channel": (
+                            visitor_channel
+                            if visitor_channel in {"web", "wechat", "wecom"}
+                            else "web"
+                        ),
+                        "visitor_identity_type": "anonymous",
                     },
                 )
                 # These models intentionally do not expose ORM relationships.
@@ -1878,9 +1885,7 @@ async def _public_enterprise_template(
             merged[index] = {
                 **block,
                 "visible": True,
-                "directory_enabled": block.get(
-                    "directory_enabled", match["directory_enabled"]
-                ),
+                "directory_enabled": block.get("directory_enabled", match["directory_enabled"]),
             }
 
     for default_block in default_blocks:

@@ -52,6 +52,15 @@ def _store(request: Request) -> PublicStore:
     return PublicStore(request.app.state.session_factory, request.app.state.settings)
 
 
+def _visitor_channel(request: Request) -> str:
+    user_agent = request.headers.get("user-agent", "").casefold()
+    if "wxwork" in user_agent:
+        return "wecom"
+    if "micromessenger" in user_agent:
+        return "wechat"
+    return "web"
+
+
 @router.get(
     "/public/cards/{slug}",
     response_model=PublicCardEnvelope,
@@ -122,6 +131,7 @@ async def create_visit(
         slug=slug,
         request=body,
         idempotency_key=idempotency_key,
+        visitor_channel=_visitor_channel(request),
     )
     return VisitEnvelope(data=visit)
 
@@ -344,6 +354,7 @@ async def _generate_and_persist(
         orchestrator = getattr(request.app.state, "rag_orchestrator", None)
         if orchestrator is None:
             orchestrator = runtime.orchestrator
+
         async def emit_text_delta(text: str) -> None:
             if delta_queue is not None and text:
                 delta_queue.put_nowait(text)
@@ -386,16 +397,10 @@ async def _generate_and_persist(
                 retrieval_count=trace.retrieval_count,
                 citation_count=trace.citation_count,
                 refusal_code=result.refusal.code.value if result.refusal else None,
-                query_complexity=str(
-                    trace.extra.get("query_complexity", "not_applicable")
-                ),
-                confidence_band=str(
-                    trace.extra.get("confidence_band", "not_applicable")
-                ),
+                query_complexity=str(trace.extra.get("query_complexity", "not_applicable")),
+                confidence_band=str(trace.extra.get("confidence_band", "not_applicable")),
                 subquery_count=int(trace.extra.get("subquery_count", 0)),
-                coverage_ratio=float(
-                    trace.extra.get("retrieval_coverage_ratio", 1.0)
-                ),
+                coverage_ratio=float(trace.extra.get("retrieval_coverage_ratio", 1.0)),
             )
         return stored_answer
     except TimeoutError as exc:

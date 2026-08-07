@@ -212,6 +212,23 @@ function normalizeEmployeeAnalyticsPage(payload: unknown): EmployeeAnalyticsPage
 
 function normalizeVisit(value: unknown): Visit {
   const raw = isRecord(value) ? value : invalid("访问记录");
+  const endedAt = optionalString(raw.ended_at);
+  const activityStatusValue = stringValue(raw.activity_status);
+  const activityStatus = ["active", "ended", "estimated", "unknown"].includes(
+    activityStatusValue,
+  )
+    ? activityStatusValue as Visit["activityStatus"]
+    : endedAt ? "ended" : "unknown";
+  const visitorChannelValue = stringValue(raw.visitor_channel, "web");
+  const visitorChannel = ["web", "wechat", "wecom"].includes(visitorChannelValue)
+    ? visitorChannelValue as Visit["visitorChannel"]
+    : "web";
+  const visitorIdentityTypeValue = stringValue(raw.visitor_identity_type, "anonymous");
+  const visitorIdentityType = [
+    "anonymous", "wecom_member", "wechat_openid", "wecom_external",
+  ].includes(visitorIdentityTypeValue)
+    ? visitorIdentityTypeValue as Visit["visitorIdentityType"]
+    : "anonymous";
   return {
     id: requiredString(raw.id, "访问记录 id"),
     cardId: requiredString(raw.card_id, "访问记录 card_id"),
@@ -219,9 +236,22 @@ function normalizeVisit(value: unknown): Visit {
     visitorId: requiredString(raw.visitor_id, "访问记录 visitor_id"),
     source: optionalString(raw.source),
     startedAt: requiredString(raw.started_at, "访问开始时间"),
-    endedAt: optionalString(raw.ended_at),
+    endedAt,
     durationSeconds:
       typeof raw.duration_seconds === "number" ? raw.duration_seconds : undefined,
+    activityStatus,
+    lastActivityAt: optionalString(raw.last_activity_at),
+    durationEstimated: raw.duration_estimated === true,
+    visitorChannel,
+    visitorIdentityType,
+    visitorIdentityLabel: stringValue(
+      raw.visitor_identity_label,
+      visitorChannel === "wecom"
+        ? "企业微信访客（未识别）"
+        : visitorChannel === "wechat"
+          ? "微信访客（未识别）"
+          : "匿名网页访客",
+    ),
     conversationCount: numberValue(raw.conversation_count),
   };
 }
