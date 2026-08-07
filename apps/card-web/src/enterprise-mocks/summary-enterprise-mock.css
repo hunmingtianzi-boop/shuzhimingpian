@@ -1,0 +1,757 @@
+.summary-mock {
+  --summary-green: #0d6555;
+  --summary-green-deep: #123e37;
+  --summary-green-wash: #e8f1ed;
+  --summary-paper: #f8faf8;
+  --summary-ink: #10241f;
+  --summary-soft: #52645f;
+  --summary-rule: rgba(16, 36, 31, 0.16);
+  width: min(100%, 1180px);
+  margin-inline: auto;
+  padding: 0 clamp(18px, 4vw, 56px) 132px;
+  color: var(--summary-ink);
+  background: var(--summary-paper);
+  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+}
+
+.summary-mock *,
+.summary-mock *::before,
+.summary-mock *::after {
+  box-sizing: border-box;
+}
+
+.summary-mock button,
+.summary-mock a,
+.summary-mock summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.summary-mock button:focus-visible,
+.summary-mock a:focus-visible,
+.summary-mock summary:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--summary-green) 58%, white);
+  outline-offset: 3px;
+}
+
+.summary-mock__header {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--summary-rule);
+}
+
+.summary-mock__brand {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.summary-mock__logo-shell {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--summary-rule);
+  border-radius: 50%;
+  background: #eef4f1;
+}
+
+.summary-mock__logo-shell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.summary-mock__brand > span:last-child {
+  display: grid;
+}
+
+.summary-mock__brand strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.summary-mock__brand small {
+  color: var(--summary-soft);
+  font-size: 11px;
+}
+
+.summary-mock__verified {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--summary-green);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.summary-mock__verified svg {
+  width: 18px;
+  height: 18px;
+}
+
+.summary-mock__hero {
+  min-height: min(680px, calc(100svh - 80px));
+  display: grid;
+  align-items: center;
+  gap: 52px;
+  padding-block: clamp(64px, 11vw, 128px);
+}
+
+.summary-mock__hero-copy {
+  max-width: 830px;
+}
+
+.summary-mock__eyebrow,
+.summary-mock__kicker {
+  margin: 0 0 14px;
+  color: var(--summary-green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.summary-mock__hero h1 {
+  max-width: 880px;
+  margin: 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(2.45rem, 6.6vw, 5.8rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.summary-mock__intro {
+  max-width: 680px;
+  margin: clamp(24px, 4vw, 42px) 0 0;
+  color: var(--summary-soft);
+  font-size: clamp(1rem, 1.8vw, 1.16rem);
+  line-height: 1.85;
+}
+
+.summary-mock__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 34px;
+}
+
+.summary-mock .em-primary-action,
+.summary-mock .em-secondary-action {
+  min-height: 50px;
+}
+
+.summary-mock .em-primary-action {
+  background: var(--summary-green-deep);
+  color: #f7fbf9;
+}
+
+.summary-mock .em-secondary-action {
+  border-color: var(--summary-rule);
+  color: var(--summary-ink);
+}
+
+.summary-mock__proof {
+  max-width: 610px;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 18px;
+  align-items: start;
+  padding-top: 24px;
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__proof-mark {
+  width: 48px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--summary-green);
+  color: #f7fbf9;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.summary-mock__proof > div {
+  display: grid;
+  gap: 3px;
+}
+
+.summary-mock__proof-label,
+.summary-mock__proof p {
+  color: var(--summary-soft);
+  font-size: 12px;
+}
+
+.summary-mock__proof p {
+  margin: 5px 0 0;
+  line-height: 1.6;
+}
+
+.summary-mock__section {
+  padding-block: clamp(72px, 10vw, 116px);
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__section-heading {
+  margin-bottom: clamp(28px, 5vw, 54px);
+}
+
+.summary-mock__section-heading--row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.summary-mock__section-heading h2 {
+  margin: 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(2rem, 4.4vw, 3.8rem);
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.summary-mock__section-note {
+  max-width: 190px;
+  color: var(--summary-soft);
+  font-size: 13px;
+  text-align: right;
+}
+
+.summary-mock__intent-list {
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__intent {
+  width: 100%;
+  min-height: 130px;
+  display: grid;
+  grid-template-columns: 48px 48px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--summary-rule);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.summary-mock__intent-index {
+  align-self: start;
+  padding-top: 3px;
+  color: var(--summary-soft);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.summary-mock__intent-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--summary-green-wash);
+  color: var(--summary-green);
+}
+
+.summary-mock__intent-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.summary-mock__intent-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.summary-mock__intent-copy small {
+  color: var(--summary-green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.summary-mock__intent-copy strong {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(1.25rem, 2vw, 1.62rem);
+}
+
+.summary-mock__intent-copy > span {
+  color: var(--summary-soft);
+  line-height: 1.65;
+}
+
+.summary-mock__intent-arrow {
+  width: 22px;
+  height: 22px;
+  transition: transform 180ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.summary-mock__business-list {
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__business-item {
+  border-bottom: 1px solid var(--summary-rule);
+}
+
+.summary-mock__business-item summary {
+  min-height: 136px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 22px;
+  padding: 24px 8px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.summary-mock__business-item summary::-webkit-details-marker,
+.summary-mock__faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-mock__business-number {
+  align-self: start;
+  padding-top: 3px;
+  color: var(--summary-soft);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.summary-mock__business-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.summary-mock__business-copy small {
+  color: var(--summary-green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.summary-mock__business-copy strong {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(1.25rem, 2.2vw, 1.72rem);
+}
+
+.summary-mock__business-copy > span {
+  max-width: 650px;
+  color: var(--summary-soft);
+  line-height: 1.7;
+}
+
+.summary-mock__detail-trigger {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--summary-green);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.summary-mock__detail-trigger svg {
+  transition: transform 180ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.summary-mock__business-item[open] .summary-mock__detail-trigger svg,
+.summary-mock__faq-item[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.summary-mock__business-detail {
+  display: grid;
+  gap: 13px;
+  margin: 0 8px 24px 78px;
+  padding: clamp(20px, 3vw, 30px);
+  background: var(--summary-green-wash);
+}
+
+.summary-mock__business-detail p {
+  margin: 0;
+  line-height: 1.75;
+}
+
+.summary-mock__business-detail > span {
+  color: var(--summary-soft);
+  font-size: 13px;
+}
+
+.summary-mock__business-detail button,
+.summary-mock__text-action {
+  width: fit-content;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--summary-green);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.summary-mock__case {
+  margin-inline: clamp(-18px, -4vw, -56px);
+  padding: clamp(72px, 10vw, 116px) clamp(18px, 4vw, 56px);
+  background: var(--summary-green-deep);
+  color: #f4f8f5;
+}
+
+.summary-mock__case .summary-mock__kicker {
+  color: #9ec8bc;
+}
+
+.summary-mock__case-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: clamp(36px, 6vw, 72px);
+}
+
+.summary-mock__case-meta p {
+  margin: 0;
+}
+
+.summary-mock__case-meta span {
+  color: #a9c1bb;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.summary-mock__case-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(42px, 8vw, 104px);
+}
+
+.summary-mock__case h2 {
+  margin: 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(2.15rem, 5vw, 4.6rem);
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+.summary-mock__case-story > p {
+  margin: 0 0 38px;
+  color: #c8d9d4;
+  font-size: clamp(1rem, 1.7vw, 1.16rem);
+  line-height: 1.8;
+}
+
+.summary-mock__case-story > div {
+  display: grid;
+  gap: 8px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(244, 248, 245, 0.2);
+}
+
+.summary-mock__case-story small {
+  color: #9ec8bc;
+}
+
+.summary-mock__case-story strong {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(1.25rem, 2.1vw, 1.7rem);
+  line-height: 1.45;
+}
+
+.summary-mock__faq-list {
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__faq-item {
+  border-bottom: 1px solid var(--summary-rule);
+}
+
+.summary-mock__faq-item summary {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 8px;
+  list-style: none;
+  cursor: pointer;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+  font-weight: 700;
+}
+
+.summary-mock__faq-item summary svg {
+  flex: 0 0 auto;
+  transition: transform 180ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.summary-mock__faq-answer {
+  max-width: 720px;
+  padding: 0 48px 28px 8px;
+}
+
+.summary-mock__faq-answer p {
+  margin: 0 0 11px;
+  color: var(--summary-soft);
+  line-height: 1.8;
+}
+
+.summary-mock__faq-answer small {
+  color: var(--summary-green);
+  font-weight: 700;
+}
+
+.summary-mock__footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: center;
+  padding: 44px 0 28px;
+  border-top: 1px solid var(--summary-rule);
+}
+
+.summary-mock__footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.summary-mock__footer-monogram {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--summary-green-deep);
+  color: #f7fbf9;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.summary-mock__footer-brand > div {
+  display: grid;
+  gap: 2px;
+}
+
+.summary-mock__footer-brand span:last-child {
+  color: var(--summary-soft);
+  font-size: 12px;
+}
+
+.summary-mock__footer > a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--summary-green);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.summary-mock__footer > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--summary-soft);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.summary-mock__mobile-action {
+  display: none;
+}
+
+@media (hover: hover) {
+  .summary-mock__intent:hover {
+    background: var(--summary-green-wash);
+  }
+
+  .summary-mock__intent:hover .summary-mock__intent-arrow {
+    transform: translate(3px, -3px);
+  }
+}
+
+@media (min-width: 840px) {
+  .summary-mock__hero {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .summary-mock__proof {
+    align-self: end;
+    margin-bottom: 34px;
+  }
+}
+
+@media (max-width: 639px) {
+  .summary-mock {
+    padding-inline: 18px;
+    padding-bottom: 110px;
+    background: var(--summary-paper);
+  }
+
+  .summary-mock__header {
+    min-height: 70px;
+  }
+
+  .summary-mock__hero {
+    min-height: auto;
+    gap: 42px;
+    padding-block: 58px 72px;
+  }
+
+  .summary-mock__hero h1 {
+    font-size: clamp(2.3rem, 11.2vw, 3rem);
+    line-height: 1.1;
+  }
+
+  .summary-mock__intro {
+    font-size: 15px;
+  }
+
+  .summary-mock__actions .em-primary-action,
+  .summary-mock__actions .em-secondary-action {
+    width: 100%;
+  }
+
+  .summary-mock__section-heading--row {
+    display: block;
+  }
+
+  .summary-mock__section-note {
+    display: block;
+    margin-top: 9px;
+    text-align: left;
+  }
+
+  .summary-mock__intent {
+    min-height: 136px;
+    grid-template-columns: 36px minmax(0, 1fr) 24px;
+    gap: 12px;
+    padding-inline: 4px;
+  }
+
+  .summary-mock__intent-icon {
+    display: none;
+  }
+
+  .summary-mock__intent-copy > span {
+    font-size: 14px;
+  }
+
+  .summary-mock__business-item summary {
+    min-height: 148px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    padding-inline: 4px;
+  }
+
+  .summary-mock__business-copy > span {
+    font-size: 14px;
+  }
+
+  .summary-mock__detail-trigger {
+    grid-column: 2;
+    justify-self: start;
+    min-height: 32px;
+  }
+
+  .summary-mock__business-detail {
+    margin: 0 0 22px 44px;
+    padding: 18px;
+    font-size: 14px;
+  }
+
+  .summary-mock__case {
+    margin-inline: -18px;
+    padding-inline: 18px;
+  }
+
+  .summary-mock__case-layout {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .summary-mock__case-story > p {
+    margin-bottom: 28px;
+  }
+
+  .summary-mock__text-action {
+    margin-top: 12px;
+  }
+
+  .summary-mock__footer {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-mock__footer > p {
+    grid-column: auto;
+  }
+
+  .summary-mock__mobile-action {
+    position: fixed;
+    z-index: 20;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 8px;
+    padding: 7px;
+    border: 1px solid rgba(16, 36, 31, 0.18);
+    border-radius: 17px;
+    background: #f8faf8;
+    box-shadow: 0 18px 42px rgba(16, 36, 31, 0.18);
+  }
+
+  .summary-mock__mobile-action button {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--summary-ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .summary-mock__mobile-action button:first-child {
+    background: var(--summary-green-deep);
+    color: #f7fbf9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summary-mock *,
+  .summary-mock *::before,
+  .summary-mock *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
