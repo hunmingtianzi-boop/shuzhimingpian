@@ -196,20 +196,20 @@ def upgrade() -> None:
         SECURITY DEFINER
         SET search_path = pg_catalog, public, app
         AS $$
-          SELECT authorization.id,
-                 authorization.auth_corpid_ciphertext,
-                 authorization.permanent_code_ciphertext,
-                 authorization.authorization_ciphertext,
-                 authorization.authorizer_user_id_ciphertext,
-                 authorization.encryption_key_ref,
-                 authorization.agent_id
-          FROM public.wecom_enterprise_authorizations AS authorization
+          SELECT authz.id,
+                 authz.auth_corpid_ciphertext,
+                 authz.permanent_code_ciphertext,
+                 authz.authorization_ciphertext,
+                 authz.authorizer_user_id_ciphertext,
+                 authz.encryption_key_ref,
+                 authz.agent_id
+          FROM public.wecom_enterprise_authorizations AS authz
           WHERE length(p_suite_id_hmac) = 64
             AND length(p_auth_corpid_hmac) = 64
-            AND authorization.suite_id_hmac = p_suite_id_hmac
-            AND authorization.auth_corpid_hmac = p_auth_corpid_hmac
-            AND authorization.status = 'active'
-            AND authorization.revoked_at IS NULL
+            AND authz.suite_id_hmac = p_suite_id_hmac
+            AND authz.auth_corpid_hmac = p_auth_corpid_hmac
+            AND authz.status = 'active'
+            AND authz.revoked_at IS NULL
           LIMIT 1
         $$
         """
