@@ -1,9 +1,12 @@
+import "@testing-library/jest-dom/vitest";
+
 import {
   Children,
   isValidElement,
   type ReactElement,
   type ReactNode,
 } from "react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EnterpriseCardConfig } from "./domain/card";
@@ -116,6 +119,7 @@ describe("card tenant bootstrap", () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.rootRender.mockReset();
+    mocks.app.mockClear();
     mocks.createRoot.mockClear();
     mocks.fetchPublicCard.mockReset();
     mocks.loadTenant.mockReset();
@@ -125,6 +129,7 @@ describe("card tenant bootstrap", () => {
     mocks.validateTenantConfig.mockReset();
     mocks.resolveTenantSlug.mockReturnValue("tuotu");
     mocks.validateTenantConfig.mockReturnValue({ valid: true, errors: [] });
+    window.history.replaceState({}, "", "/");
     document.body.innerHTML = '<div id="root"></div>';
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -202,6 +207,28 @@ describe("card tenant bootstrap", () => {
     });
     expect(mocks.applyTenantRuntime).toHaveBeenCalledTimes(1);
   });
+
+  it("shows an explicit load error for a real card route when the public API fails", async () => {
+    window.history.replaceState({}, "", "/c/tuotu");
+    const remote = deferred<PublicCardData | undefined>();
+    mocks.loadTenant.mockResolvedValue(templateTenant);
+    mocks.fetchPublicCard.mockReturnValue(remote.promise);
+
+    await import("./main");
+    await Promise.resolve();
+    remote.reject(new Error("public API unavailable"));
+    await waitForRenderCount(2);
+
+    const finalTree = mocks.rootRender.mock.calls.at(-1)?.[0] as ReactNode;
+    render(finalTree);
+
+    expect(screen.getByRole("heading", { name: "名片暂时无法加载" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新加载" })).toBeInTheDocument();
+    expect(document.querySelector(".bp-person-head")).not.toBeInTheDocument();
+    expect(screen.queryByText("拓浙 AI")).not.toBeInTheDocument();
+    expect(finalAppProps()).toBeUndefined();
+    expect(mocks.applyTenantRuntime).not.toHaveBeenCalled();
+  }, 15_000);
 
   it("does not leave a registered tenant on the loading screen when the public API hangs", async () => {
     vi.useFakeTimers();

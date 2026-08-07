@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.catalog_schemas import (
+    EnterpriseTemplateDocument,
+    EnterpriseTemplateRecord,
     ForbiddenTopicRecord,
     ManagedCardRecord,
     ProductRecord,
@@ -26,6 +28,26 @@ class CatalogRouteStore:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.product = _product(version=7)
         self.card = _card(version=2)
+        self.enterprise_template = EnterpriseTemplateRecord(
+            card_id=self.card.id,
+            version=self.card.version,
+            draft=EnterpriseTemplateDocument(
+                blocks=[
+                    {
+                        "id": "identity",
+                        "type": "identity",
+                        "sort_order": 0,
+                        "title": "基础名片",
+                    },
+                    {
+                        "id": "intro",
+                        "type": "rich_text",
+                        "sort_order": 1,
+                        "body": "企业介绍",
+                    },
+                ]
+            ),
+        )
         self.topic = _topic(version=3, active=True)
 
     async def list_products(self, **kwargs: Any) -> tuple[list[ProductRecord], int]:
@@ -60,6 +82,19 @@ class CatalogRouteStore:
     async def create_card(self, **kwargs: Any) -> ManagedCardRecord:
         self.calls.append(("create_card", kwargs))
         return self.card
+
+    async def get_enterprise_template(self, **kwargs: Any) -> EnterpriseTemplateRecord:
+        self.calls.append(("get_enterprise_template", kwargs))
+        return self.enterprise_template
+
+    async def update_enterprise_template(self, **kwargs: Any) -> EnterpriseTemplateRecord:
+        self.calls.append(("update_enterprise_template", kwargs))
+        self.enterprise_template = EnterpriseTemplateRecord(
+            card_id=kwargs["card_id"],
+            version=kwargs["expected_version"] + 1,
+            draft=EnterpriseTemplateDocument.model_validate(kwargs["body"]),
+        )
+        return self.enterprise_template
 
     async def set_forbidden_topic_active(self, **kwargs: Any) -> ForbiddenTopicRecord:
         self.calls.append(("set_forbidden_topic_active", kwargs))
@@ -313,6 +348,53 @@ def test_multicard_create_does_not_accept_a_client_selected_slug(
     assert accepted.headers["etag"] == '"2"'
     assert accepted.json()["data"]["slug"] == store.card.slug
     assert accepted.json()["data"]["qr_url"] == accepted.json()["data"]["share_url"]
+
+
+def test_enterprise_template_routes_read_draft_and_forward_if_match(
+    catalog_client: tuple[TestClient, CatalogRouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, _ = catalog_client
+
+    read_response = client.get(f"/api/v1/admin/cards/{store.card.id}/enterprise-template")
+    update_response = client.put(
+        f"/api/v1/admin/cards/{store.card.id}/enterprise-template",
+        headers={"If-Match": 'W/"2"'},
+        json={
+            "schema_version": 1,
+            "theme_key": "warm",
+            "blocks": [
+                {
+                    "id": "identity",
+                    "type": "identity",
+                    "sort_order": 0,
+                    "title": "基础名片",
+                    "directory_enabled": True,
+                },
+                {
+                    "id": "cta",
+                    "type": "cta",
+                    "sort_order": 1,
+                    "title": "联系我们",
+                    "cta_label": "立即沟通",
+                    "cta_url": "https://example.test/contact",
+                },
+            ],
+        },
+    )
+
+    assert read_response.status_code == 200
+    assert [block["id"] for block in read_response.json()["data"]["draft"]["blocks"]] == [
+        "identity",
+        "intro",
+    ]
+    assert update_response.status_code == 200
+    assert update_response.headers["etag"] == '"3"'
+    assert update_response.json()["data"]["draft"]["theme_key"] == "warm"
+    assert [name for name, _ in store.calls[-2:]] == [
+        "get_enterprise_template",
+        "update_enterprise_template",
+    ]
+    assert store.calls[-1][1]["expected_version"] == 2
 
 
 def test_forbidden_topic_deactivation_requires_and_forwards_if_match(

@@ -31,6 +31,7 @@ from app.api.admin_schemas import (
     KnowledgePublishResult,
     KnowledgeVersionSummary,
     PutKnowledgeDocumentRequest,
+    SelectableFaqRecord,
     UpdateCardRequest,
     UpdateCompanyProfileRequest,
 )
@@ -80,6 +81,31 @@ class PreparedPublish:
     version_number: int
     job_id: uuid.UUID
     chunks: tuple[PreparedChunk, ...]
+
+
+def selectable_faq_filters(scope: AdminScope) -> tuple[Any, ...]:
+    """Strict public-safe eligibility used by the card editor FAQ picker."""
+
+    active_public_chunk = (
+        select(KnowledgeChunk.id)
+        .where(
+            KnowledgeChunk.tenant_id == scope.tenant_id,
+            KnowledgeChunk.company_id == scope.company_id,
+            KnowledgeChunk.document_id == KnowledgeDocument.id,
+            KnowledgeChunk.version_id == KnowledgeDocument.current_version_id,
+            KnowledgeChunk.is_active.is_(True),
+            KnowledgeChunk.visibility == Visibility.PUBLIC,
+        )
+        .exists()
+    )
+    return (
+        KnowledgeDocument.tenant_id == scope.tenant_id,
+        KnowledgeDocument.company_id == scope.company_id,
+        KnowledgeDocument.source_type == "faq",
+        KnowledgeDocument.status == ContentStatus.PUBLISHED,
+        KnowledgeDocument.current_version_id.is_not(None),
+        active_public_chunk,
+    )
 
 
 class AdminStore:
@@ -231,12 +257,17 @@ class AdminStore:
         *,
         scope: AdminScope,
         limit: int = 50,
-    ) -> tuple[list[KnowledgeDocumentRecord], int]:
+        selectable_faq: bool = False,
+    ) -> tuple[list[KnowledgeDocumentRecord | SelectableFaqRecord], int]:
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
-            filters = (
-                KnowledgeDocument.tenant_id == scope.tenant_id,
-                KnowledgeDocument.company_id == scope.company_id,
+            filters = list(
+                selectable_faq_filters(scope)
+                if selectable_faq
+                else (
+                    KnowledgeDocument.tenant_id == scope.tenant_id,
+                    KnowledgeDocument.company_id == scope.company_id,
+                )
             )
             total = int(
                 await session.scalar(select(func.count(KnowledgeDocument.id)).where(*filters)) or 0
@@ -255,6 +286,22 @@ class AdminStore:
                 await self._document_record(session, scope=scope, document=document)
                 for document in documents
             ]
+            if selectable_faq:
+                answers = await self._selectable_faq_answers(
+                    session,
+                    scope=scope,
+                    documents=documents,
+                )
+                records = [
+                    SelectableFaqRecord.model_validate(
+                        {
+                            **record.model_dump(),
+                            "visibility": "public",
+                            "answer": answers.get(record.id, ""),
+                        }
+                    )
+                    for record in records
+                ]
             return records, total
 
     async def get_document_detail(
@@ -924,6 +971,47 @@ class AdminStore:
             created_at=document.created_at,
             updated_at=document.updated_at,
         )
+
+    async def _selectable_faq_answers(
+        self,
+        session: AsyncSession,
+        *,
+        scope: AdminScope,
+        documents: Sequence[KnowledgeDocument],
+    ) -> dict[uuid.UUID, str]:
+        document_ids = [document.id for document in documents]
+        if not document_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(
+                    KnowledgeDocument.id.label("document_id"),
+                    KnowledgeChunk.text,
+                )
+                .join(KnowledgeChunk, KnowledgeChunk.document_id == KnowledgeDocument.id)
+                .where(
+                    KnowledgeDocument.id.in_(document_ids),
+                    KnowledgeDocument.tenant_id == scope.tenant_id,
+                    KnowledgeDocument.company_id == scope.company_id,
+                    KnowledgeDocument.source_type == "faq",
+                    KnowledgeDocument.status == ContentStatus.PUBLISHED,
+                    KnowledgeDocument.current_version_id.is_not(None),
+                    KnowledgeChunk.tenant_id == scope.tenant_id,
+                    KnowledgeChunk.company_id == scope.company_id,
+                    KnowledgeChunk.version_id == KnowledgeDocument.current_version_id,
+                    KnowledgeChunk.is_active.is_(True),
+                    KnowledgeChunk.visibility == Visibility.PUBLIC,
+                )
+                .order_by(KnowledgeDocument.updated_at.desc(), KnowledgeChunk.ordinal)
+            )
+        ).all()
+        answer_parts: dict[uuid.UUID, list[str]] = {}
+        for row in rows:
+            answer_parts.setdefault(uuid.UUID(str(row.document_id)), []).append(str(row.text))
+        return {
+            document_id: "\n\n".join(parts)
+            for document_id, parts in answer_parts.items()
+        }
 
     async def _version_summary(
         self,

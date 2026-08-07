@@ -17,6 +17,9 @@ import { loadTenant, resolveTenantSlug } from "./tenants";
 const tenantSlug = resolveTenantSlug(window.location);
 const root = createRoot(document.getElementById("root")!);
 const PUBLIC_CARD_BOOTSTRAP_TIMEOUT_MS = 5_000;
+const isExplicitCardMock = new URLSearchParams(window.location.search).has("mock-card");
+const requiresPublishedCard = /(?:^|\/)c\/[^/]+\/?$/.test(window.location.pathname)
+  && !isExplicitCardMock;
 
 async function fetchPublishedCard(slug: string) {
   const controller = new AbortController();
@@ -109,6 +112,14 @@ async function bootstrapTenant() {
       );
       return;
     }
+    if (requiresPublishedCard) {
+      root.render(
+        <StrictMode>
+          <TenantNotFound />
+        </StrictMode>,
+      );
+      return;
+    }
     if (registeredTenant) {
       renderTenant(registeredTenant);
       return;
@@ -123,14 +134,17 @@ async function bootstrapTenant() {
     console.error("Published tenant loading failed", {
       errorType: error instanceof Error ? error.name : typeof error,
     });
-    if (registeredTenant) {
+    if (registeredTenant && !requiresPublishedCard) {
       renderTenant(registeredTenant);
       return;
     }
 
     root.render(
       <StrictMode>
-        <TenantNotFound kind="runtime" onRetry={() => window.location.reload()} />
+        <TenantNotFound
+          kind={requiresPublishedCard ? "load" : "runtime"}
+          onRetry={() => window.location.reload()}
+        />
       </StrictMode>,
     );
   }

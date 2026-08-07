@@ -16,6 +16,7 @@ from app.api.admin_schemas import (
     KnowledgeDraftResult,
     KnowledgePublishResult,
     KnowledgeVersionSummary,
+    SelectableFaqRecord,
 )
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError, api_error_handler
@@ -62,8 +63,20 @@ class RouteStore:
         )
         return self.card
 
-    async def list_documents(self, **kwargs: Any) -> tuple[list[KnowledgeDocumentRecord], int]:
+    async def list_documents(
+        self, **kwargs: Any
+    ) -> tuple[list[SelectableFaqRecord | KnowledgeDocumentRecord], int]:
         self.calls.append(("list_documents", kwargs))
+        if kwargs.get("selectable_faq"):
+            return [
+                SelectableFaqRecord.model_validate(
+                    {
+                        **self.document.model_dump(),
+                        "visibility": "public",
+                        "answer": "公开 FAQ 答案",
+                    }
+                )
+            ], 1
         return [self.document], 1
 
     async def create_document(self, **kwargs: Any) -> KnowledgeDocumentRecord:
@@ -311,6 +324,9 @@ def test_knowledge_review_permission_covers_create_draft_list_and_publish(
     version_id = store.draft.draft_version.id
 
     list_response = client.get("/api/v1/admin/knowledge/documents?limit=10")
+    selectable_response = client.get(
+        "/api/v1/admin/knowledge/documents?limit=10&selectable_faq=true"
+    )
     detail_response = client.get(f"/api/v1/admin/knowledge/documents/{document_id}")
     create_response = client.post(
         "/api/v1/admin/knowledge/documents",
@@ -332,6 +348,11 @@ def test_knowledge_review_permission_covers_create_draft_list_and_publish(
 
     assert list_response.status_code == 200
     assert list_response.json()["total"] == 1
+    assert selectable_response.status_code == 200
+    assert selectable_response.json()["data"][0]["visibility"] == "public"
+    assert selectable_response.json()["data"][0]["answer"] == "公开 FAQ 答案"
+    list_calls = [payload for name, payload in store.calls if name == "list_documents"]
+    assert list_calls[-1]["selectable_faq"] is True
     assert detail_response.status_code == 200
     assert detail_response.json()["data"]["raw_text"] == "完整的企业知识正文"
     assert create_response.status_code == 201

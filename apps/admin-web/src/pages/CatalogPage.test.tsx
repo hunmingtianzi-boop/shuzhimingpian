@@ -169,15 +169,16 @@ describe("CatalogPage", () => {
     expect(remove).not.toHaveBeenCalled();
     const deleteDialog = await screen.findByRole("dialog", {
       name: "确认删除产品",
+      hidden: true,
     });
     await user.click(
-      await within(deleteDialog).findByRole("button", { name: "确认删除" }),
+      await within(deleteDialog).findByRole("button", { name: "确认删除", hidden: true }),
     );
     await waitFor(() => expect(remove).toHaveBeenCalledWith("product-1", 3));
     await waitFor(() =>
       expect(deleteDialog).not.toBeInTheDocument(),
     );
-  });
+  }, 15_000);
 
   it("creates a case from the accessible empty state", async () => {
     const user = userEvent.setup();

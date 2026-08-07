@@ -5,6 +5,7 @@ import type {
   KnowledgeItem,
 } from "../domain/card";
 import type { PublicCardData } from "./publicCardApi";
+import { resolvePublicResourceUrl } from "./publicResourceUrl";
 
 export { fetchPublicCard } from "./publicCardApi";
 export type { PublicCardData } from "./publicCardApi";
@@ -110,7 +111,7 @@ export function mergePublishedCard(
   if (!base) throw new Error("A base tenant is required to render a published card");
   const knowledge = toKnowledgeItems(card);
   const faqIds = knowledge.map((item) => item.id);
-  const logoSrc = card.company.logo_url || card.avatar_url || base.brand.logo.src;
+  const logoSrc = resolvePublicResourceUrl(card.company.logo_url || card.avatar_url) || base.brand.logo.src;
   const website =
     card.company.website ||
     (staticTenant
@@ -182,6 +183,10 @@ export function mergePublishedCard(
   }
 
   const sections = dynamicSections(card, knowledge, base);
+  const isEmployeeCard = card.card_kind === "employee";
+  const publicSummary = isEmployeeCard
+    ? card.business_summary || card.company.summary
+    : card.company.summary;
 
   return {
     ...base,
@@ -189,7 +194,7 @@ export function mergePublishedCard(
     version: `${base.version}:db`,
     seo: {
       title: `${card.title} | 数智名片`,
-      description: card.company.summary || `${card.company.name}企业数智名片`,
+      description: publicSummary || `${card.company.name}企业数智名片`,
     },
     brand: {
       ...base.brand,
@@ -204,8 +209,10 @@ export function mergePublishedCard(
     hero: {
       ...base.hero,
       kicker: card.company.industry || "企业数智名片",
-      titleLines: [card.company.name, card.title === card.company.name ? "企业数智名片" : card.title],
-      summary: card.company.summary || "企业资料正在完善，请以正式发布内容为准。",
+      titleLines: isEmployeeCard
+        ? [card.display_name, card.title]
+        : [card.company.name, card.title === card.company.name ? "企业数智名片" : card.title],
+      summary: publicSummary || "企业资料正在完善，请以正式发布内容为准。",
       actions: knowledge.length
         ? [{ kind: "assistant", label: "向资料助手提问", target: knowledge[0].question }]
         : card.company.website

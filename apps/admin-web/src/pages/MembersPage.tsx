@@ -35,6 +35,7 @@ import { type FormEvent, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
 import { ApiError } from "../api/client";
+import { adminApi } from "../api/adminApi";
 import {
   memberApi,
   MEMBER_ROLE_LABELS,
@@ -60,7 +61,7 @@ import { formatTimestamp } from "../utils/format";
 const PAGE_SIZE = 50;
 
 const PERMISSION_OPTIONS = [
-  ["members.manage", "企业用户管理"],
+  ["members.manage", "企业员工管理"],
   ["company.manage", "企业治理"],
   ["card.manage", "名片管理"],
   ["catalog.manage", "产品与案例"],
@@ -78,6 +79,9 @@ const emptyCreate: MemberCreateInput = {
   password: "",
   email: "",
   mobile: "",
+  jobTitle: "",
+  avatarUrl: "",
+  businessSummary: "",
   role: "card_owner",
   permissions: [],
   status: "active",
@@ -159,6 +163,9 @@ function MemberEditor({
           ...emptyCreate,
           account: member.account,
           displayName: member.displayName,
+          jobTitle: member.jobTitle ?? "",
+          avatarUrl: member.avatarUrl ?? "",
+          businessSummary: member.businessSummary ?? "",
           role: member.role,
           permissions: member.permissions,
           status: member.status === "active" ? "active" : "disabled",
@@ -168,6 +175,8 @@ function MemberEditor({
   const [attempted, setAttempted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError>();
+  const [avatarFile, setAvatarFile] = useState<File>();
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const valid =
     Boolean(form.displayName.trim()) &&
     (member ? true : Boolean(form.account.trim()) && form.password.length >= 12);
@@ -186,20 +195,26 @@ function MemberEditor({
     }
     setPending(true);
     try {
+      const avatarUrl = avatarFile
+        ? (await adminApi.uploadCardAsset(avatarFile)).url
+        : form.avatarUrl;
       if (member) {
         await memberApi.updateMember(member.membershipId, {
           displayName: form.displayName,
+          jobTitle: form.jobTitle,
+          avatarUrl,
+          businessSummary: form.businessSummary,
           role: form.role,
           permissions: form.permissions,
         });
         onSaved(`用户 ${form.displayName.trim()} 的角色和权限已更新。`);
       } else {
-        const created = await memberApi.createMember(form);
+        const created = await memberApi.createMember({ ...form, avatarUrl });
         onSaved(`用户 ${created.displayName} 已创建，可使用 ${created.account} 登录。`);
       }
       onClose();
     } catch (caught) {
-      setError(friendlyMemberError(apiError(caught, "保存企业用户时发生未知错误。")));
+      setError(friendlyMemberError(apiError(caught, "保存企业员工时发生未知错误。")));
     } finally {
       setPending(false);
     }
@@ -216,7 +231,7 @@ function MemberEditor({
       <DialogSurface className="member-dialog-surface">
         <form onSubmit={submit} noValidate>
           <DialogBody>
-            <DialogTitle>{member ? "编辑企业用户" : "创建企业用户"}</DialogTitle>
+            <DialogTitle>{member ? "编辑企业员工" : "创建企业员工"}</DialogTitle>
             <DialogContent className="member-dialog-content">
               <FormFeedback error={error} />
               <div className="form-grid two-columns">
@@ -271,6 +286,19 @@ function MemberEditor({
                     <option value="company_admin">企业管理员</option>
                   </Select>
                 </Field>
+                <Field label="职位" hint="员工名片会直接使用这里的职位。">
+                  <Input value={form.jobTitle} disabled={pending} onChange={(_, data) => setForm((value) => ({ ...value, jobTitle: data.value }))} />
+                </Field>
+                <Field label="员工头像" hint="上传后员工名片会自动同步，无需在名片里重复维护。">
+                  <div className="member-avatar-field">
+                    {(avatarFile || form.avatarUrl) && <span>{avatarFile?.name || "已设置头像"}</span>}
+                    <input ref={avatarInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setAvatarFile(event.target.files?.[0])} />
+                    <Button type="button" appearance="secondary" icon={<ArrowUpload24Regular />} disabled={pending} onClick={() => avatarInputRef.current?.click()}>选择图片</Button>
+                  </div>
+                </Field>
+                <Field label="个人业务摘要" hint="用于员工名片的业务介绍；不改变企业公共资料。" className="form-field-span-2">
+                  <Textarea value={form.businessSummary} disabled={pending} onChange={(_, data) => setForm((value) => ({ ...value, businessSummary: data.value }))} />
+                </Field>
                 {!member && (
                   <>
                     <Field label="邮箱" hint="可选；邮箱账号会自动作为邮箱。">
@@ -316,7 +344,7 @@ function MemberEditor({
             <DialogActions>
               <Button appearance="secondary" onClick={onClose} disabled={pending}>取消</Button>
               <Button appearance="primary" type="submit" disabled={pending || (attempted && !valid)}>
-                {pending ? "正在保存" : member ? "保存用户" : "创建用户"}
+                {pending ? "正在保存" : member ? "保存员工" : "创建员工"}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -471,7 +499,7 @@ function ImportDialog({
       <DialogSurface className="member-dialog-surface wide">
         <form onSubmit={submit} noValidate>
           <DialogBody>
-            <DialogTitle>批量导入企业用户</DialogTitle>
+            <DialogTitle>批量导入企业员工</DialogTitle>
             <DialogContent className="member-dialog-content">
               <FormFeedback error={error} />
               <div className="member-import-toolbar">
@@ -555,7 +583,7 @@ export function MembersPage() {
       allowed
         ? memberApi.listMembers(PAGE_SIZE, offset)
         : Promise.reject(
-            new ApiError("当前账号没有企业用户管理权限。", {
+            new ApiError("当前账号没有企业员工管理权限。", {
               code: "FORBIDDEN",
               status: 403,
             }),
@@ -602,13 +630,13 @@ export function MembersPage() {
   return (
     <main className="page-stack members-page">
       <PageHeader
-        title="企业用户"
-        description="管理企业管理员与名片成员的登录、角色、权限和账号状态，所有变更由服务端记录审计。"
+        title="企业员工"
+        description="管理员工基础资料、登录、角色、权限和账号状态；员工名片会直接读取姓名、职位、头像和业务摘要。"
         actions={
           allowed ? <>
             <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
             <Button appearance="secondary" icon={<ArrowUpload24Regular />} onClick={() => setImportOpen(true)}>批量导入</Button>
-            <Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建用户</Button>
+            <Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建员工</Button>
           </> : undefined
         }
       />
@@ -616,8 +644,8 @@ export function MembersPage() {
       <OperationFeedback notice={notice} error={actionError} onRetry={resource.reload} />
 
       {resource.status === "ready" && resource.data && (
-        <section className="member-summary-strip" aria-label="企业用户摘要">
-          <div><span>用户总数</span><strong>{resource.data.total}</strong></div>
+        <section className="member-summary-strip" aria-label="企业员工摘要">
+          <div><span>员工总数</span><strong>{resource.data.total}</strong></div>
           <div><span>本页启用</span><strong>{counts.active}</strong></div>
           <div><span>本页启用管理员</span><strong>{counts.admins}</strong></div>
           <p>停用用户会立即撤销登录会话；系统阻止停用或降级最后一位启用中的企业管理员。</p>
@@ -629,17 +657,17 @@ export function MembersPage() {
           resource.data.items.length === 0 ? (
             <ResourceState
               status="empty"
-              title="尚未创建企业用户"
-              description="创建企业管理员或名片成员后，可在这里调整权限与登录状态。"
-              emptyAction={<Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建第一位用户</Button>}
+            title="尚未创建企业员工"
+            description="创建企业管理员或名片成员后，可在这里维护员工资料、权限与登录状态。"
+            emptyAction={<Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建第一位员工</Button>}
             />
           ) : (
             <>
               <div className="table-scroll">
-                <Table aria-label="企业用户列表" size="small">
+                <Table aria-label="企业员工列表" size="small">
                   <TableHeader>
                     <TableRow>
-                      <TableHeaderCell>用户</TableHeaderCell>
+                      <TableHeaderCell>企业员工</TableHeaderCell>
                       <TableHeaderCell>角色与权限</TableHeaderCell>
                       <TableHeaderCell>状态</TableHeaderCell>
                       <TableHeaderCell>更新时间</TableHeaderCell>
@@ -698,7 +726,7 @@ export function MembersPage() {
         ) : (
           <ResourceState
             status={resource.status === "ready" ? "empty" : resource.status}
-            title={resource.status === "permission" ? "没有企业用户管理权限" : undefined}
+            title={resource.status === "permission" ? "没有企业员工管理权限" : undefined}
             description={resource.error?.message}
             errorCode={resource.error?.code}
             requestId={resource.error?.requestId}
@@ -740,7 +768,7 @@ export function MembersPage() {
       {confirmAction && (
         <ActionConfirmDialog
           open
-          title={confirmAction.status === "disabled" ? "停用企业用户" : "启用企业用户"}
+          title={confirmAction.status === "disabled" ? "停用企业员工" : "启用企业员工"}
           description={confirmAction.status === "disabled" ? `停用 ${confirmAction.member.displayName} 后，其现有登录会话会立即撤销。` : `启用 ${confirmAction.member.displayName} 后，该账号可重新登录。`}
           detail={confirmAction.member.membershipId === currentMembershipId && confirmAction.status === "disabled" ? <MessageBar intent="warning"><MessageBarBody>这是当前登录账号。服务端可能拒绝自我停用，请确认已有其他企业管理员。</MessageBarBody></MessageBar> : undefined}
           confirmLabel={confirmAction.status === "disabled" ? "确认停用" : "确认启用"}

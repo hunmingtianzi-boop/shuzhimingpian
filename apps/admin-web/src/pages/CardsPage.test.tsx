@@ -4,10 +4,50 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { adminApi } from "../api/adminApi";
-import type { ManagedCard } from "../api/types";
+import { ApiError } from "../api/client";
+import { memberApi } from "../api/memberApi";
+import type {
+  EnterpriseTemplate,
+  EnterpriseTemplateThemeKey,
+  ManagedCard,
+} from "../api/types";
 import { AuthContext } from "../auth/AuthContext";
 import type { AuthContextValue } from "../auth/AuthContext";
 import { adminLightTheme } from "../theme";
+
+vi.mock("../components/EnterpriseTemplateEditor", () => ({
+  EnterpriseTemplateEditor: ({
+    open,
+    creationDraft,
+    onClose,
+    onDraftConfirm,
+  }: {
+    open: boolean;
+    creationDraft?: {
+      cardKind: ManagedCard["cardKind"];
+      identityPreview: { displayName: string; title: string; avatarUrl?: string };
+    };
+    onClose: () => void;
+    onDraftConfirm?: (document: EnterpriseTemplate["draft"]) => void | Promise<void>;
+  }) => {
+    if (!open || !creationDraft) return null;
+    const document = {
+      schemaVersion: 1 as const,
+      themeKey: "brand" as EnterpriseTemplateThemeKey,
+      blocks: [],
+    };
+    return (
+      <div role="dialog" aria-label={`创建前设计${creationDraft.cardKind === "employee" ? "员工" : "企业"}名片`}>
+        <span>{creationDraft.identityPreview.displayName}</span>
+        <button type="button" onClick={onClose}>取消创建</button>
+        <button type="button" onClick={() => void onDraftConfirm?.(document)}>
+          使用此设计创建名片
+        </button>
+      </div>
+    );
+  },
+}));
+
 import { CardsPage } from "./CardsPage";
 
 const draftCard: ManagedCard = {
@@ -50,10 +90,37 @@ const companyAdminAuth: AuthContextValue = {
   logout: async () => undefined,
 };
 
-function renderPage() {
+const employeeMember = {
+  membershipId: "membership-employee",
+  userId: "user-employee",
+  account: "employee@example.test",
+  displayName: "林顾问",
+  jobTitle: "解决方案顾问",
+  avatarUrl: "/employee-avatar.webp",
+  businessSummary: "负责企业数字化解决方案。",
+  role: "card_owner" as const,
+  permissions: [],
+  status: "active" as const,
+  credentialEnabled: true,
+  createdAt: "2026-08-01T00:00:00Z",
+  updatedAt: "2026-08-01T00:00:00Z",
+};
+
+const cardOwnerAuth: AuthContextValue = {
+  ...companyAdminAuth,
+  user: {
+    ...companyAdminAuth.user!,
+    id: employeeMember.userId,
+    membershipId: employeeMember.membershipId,
+    displayName: employeeMember.displayName,
+    role: "card_owner",
+  },
+};
+
+function renderPage(auth: AuthContextValue = companyAdminAuth) {
   return render(
     <FluentProvider theme={adminLightTheme}>
-      <AuthContext.Provider value={companyAdminAuth}>
+      <AuthContext.Provider value={auth}>
         <CardsPage />
       </AuthContext.Provider>
     </FluentProvider>,
@@ -153,59 +220,158 @@ describe("CardsPage", () => {
     await waitFor(() => expect(deactivate).toHaveBeenCalledWith("card-1", 7));
   });
 
-  it("creates an employee card without allowing the browser to choose a slug", async () => {
+  it("creates an employee card by selecting an enterprise employee", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({ items: [employeeMember], total: 1, limit: 100, offset: 0 });
     const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue(draftCard);
     renderPage();
 
     await screen.findByText("尚未创建名片");
     await user.click(screen.getByRole("button", { name: "新建员工名片" }));
-    fireEvent.change(screen.getByRole("textbox", { name: /展示姓名/ }), {
-      target: { value: "林顾问" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: /职务或头衔/ }), {
-      target: { value: "解决方案顾问" },
-    });
+    const employeeSelect = await screen.findByRole("combobox", { name: "选择企业员工" });
+    await user.selectOptions(employeeSelect, employeeMember.userId);
+    await user.click(screen.getByRole("checkbox", { name: "公开工作手机" }));
     expect(screen.queryByRole("textbox", { name: /公开标识/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保存名片" }));
+    expect(screen.queryByRole("textbox", { name: /所有者用户 ID/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建名片", hidden: true }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create.mock.calls[0][0]).not.toHaveProperty("slug");
-    expect(create.mock.calls[0][0]).toMatchObject({ cardKind: "employee" });
+    expect(create.mock.calls[0][0]).toMatchObject({
+      cardKind: "employee",
+      ownerUserId: employeeMember.userId,
+      displayName: employeeMember.displayName,
+      title: employeeMember.jobTitle,
+      employeeContactVisibility: ["mobile"],
+    });
   });
 
-  it("uploads the selected employee image before saving the card", async () => {
+  it("keeps employee identity canonical while allowing avatar upload from the card flow", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
-    const upload = vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
-      url: "/api/v1/public/card-assets/company-1/asset-1.webp",
-      contentType: "image/webp",
-      width: 640,
-      height: 640,
-      sizeBytes: 12_345,
-    });
-    const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue(draftCard);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({ items: [employeeMember], total: 1, limit: 100, offset: 0 });
     renderPage();
 
     await screen.findByText("尚未创建名片");
     await user.click(screen.getByRole("button", { name: "新建员工名片" }));
-    fireEvent.change(screen.getByRole("textbox", { name: /展示姓名/ }), {
-      target: { value: "林顾问" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: /职务或头衔/ }), {
-      target: { value: "解决方案顾问" },
-    });
-    const file = new File(["image"], "avatar.png", { type: "image/png" });
-    await user.upload(screen.getByLabelText("选择员工头像"), file);
-    expect(screen.getByText("avatar.png")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保存名片" }));
+    const employeeSelect = await screen.findByRole("combobox", { name: "选择企业员工" });
+    expect(screen.getByText("姓名、职位、头像和业务摘要统一来自企业员工；在这里上传头像也会同步到对应员工资料。")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择员工头像")).toBeDisabled();
+    await user.selectOptions(employeeSelect, employeeMember.userId);
+    expect(screen.getByLabelText("选择员工头像")).toBeEnabled();
+    expect(screen.getByText("支持 PNG、JPEG、WebP，最大 5 MiB；保存后同步到企业员工及其公开名片。")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "公开工作邮箱" })).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
-    await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create.mock.calls[0][0].avatarUrl).toBe(
-      "/api/v1/public/card-assets/company-1/asset-1.webp",
+  it("keeps the bound employee identity read-only after creation", async () => {
+    const user = userEvent.setup();
+    const boundMember = {
+      ...employeeMember,
+      membershipId: "membership-1",
+      userId: draftCard.ownerUserId as string,
+    };
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({
+      items: [boundMember], total: 1, limit: 100, offset: 0,
+    });
+    renderPage();
+
+    await screen.findByText("林顾问");
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    const employeeSelect = await screen.findByRole("combobox", { name: "选择企业员工" });
+    expect(employeeSelect).toBeDisabled();
+    expect(screen.getByText("员工身份已绑定；姓名、职位和头像请在企业员工资料中维护。")).toBeInTheDocument();
+  });
+
+  it("uploads an employee avatar and syncs it to the bound enterprise employee", async () => {
+    const user = userEvent.setup();
+    const uploadedUrl = "/api/v1/public/card-assets/avatar.webp";
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({ items: [employeeMember], total: 1, limit: 100, offset: 0 });
+    const upload = vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: uploadedUrl,
+      contentType: "image/webp",
+      width: 640,
+      height: 640,
+      sizeBytes: 2048,
+    });
+    const updateMember = vi.spyOn(memberApi, "updateMember").mockResolvedValue({
+      ...employeeMember,
+      avatarUrl: uploadedUrl,
+    });
+    const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue({
+      ...draftCard,
+      ownerUserId: employeeMember.userId,
+      avatarUrl: uploadedUrl,
+    });
+    renderPage();
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建员工名片" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "选择企业员工" }),
+      employeeMember.userId,
     );
+    const avatar = new File(["avatar"], "portrait.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择员工头像"), avatar);
+    expect(screen.getByText("portrait.png")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建名片" }));
+
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(avatar));
+    await waitFor(() => expect(updateMember).toHaveBeenCalledWith(
+      employeeMember.membershipId,
+      { avatarUrl: uploadedUrl },
+    ));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      cardKind: "employee",
+      ownerUserId: employeeMember.userId,
+      avatarUrl: "",
+    });
+  });
+
+  it("lets a card owner write an uploaded avatar through their own employee profile", async () => {
+    const user = userEvent.setup();
+    const uploadedUrl = "/api/v1/public/card-assets/self-avatar.webp";
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockRejectedValue(new ApiError("无成员列表权限", {
+      code: "PERMISSION_DENIED",
+      status: 403,
+    }));
+    vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: uploadedUrl,
+      contentType: "image/webp",
+      width: 640,
+      height: 640,
+      sizeBytes: 2048,
+    });
+    const updateMyProfile = vi.spyOn(memberApi, "updateMyProfile").mockResolvedValue({
+      ...employeeMember,
+      avatarUrl: uploadedUrl,
+    });
+    const updateMember = vi.spyOn(memberApi, "updateMember");
+    vi.spyOn(adminApi, "createManagedCard").mockResolvedValue({
+      ...draftCard,
+      ownerUserId: employeeMember.userId,
+      avatarUrl: uploadedUrl,
+    });
+    renderPage(cardOwnerAuth);
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建员工名片" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "选择企业员工" }),
+      employeeMember.userId,
+    );
+    await user.upload(
+      screen.getByLabelText("选择员工头像"),
+      new File(["avatar"], "self.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "创建名片", hidden: true }));
+
+    await waitFor(() => expect(updateMyProfile).toHaveBeenCalledWith({ avatarUrl: uploadedUrl }));
+    expect(updateMember).not.toHaveBeenCalled();
   });
 
   it("creates an enterprise official card without an employee owner", async () => {
@@ -239,7 +405,7 @@ describe("CardsPage", () => {
       screen.queryByRole("textbox", { name: /所有者用户 ID/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("选择企业 Logo")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "保存名片" }));
+    await user.click(screen.getByRole("button", { name: "创建名片" }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());
     expect(create.mock.calls[0][0]).toMatchObject({
@@ -247,5 +413,180 @@ describe("CardsPage", () => {
       displayName: "拓途商务",
     });
     expect(create.mock.calls[0][0].ownerUserId).toBe("");
+  });
+
+  it("copies a same-kind card configuration on the quick create path", async () => {
+    const user = userEvent.setup();
+    const source: ManagedCard = {
+      ...draftCard,
+      id: "enterprise-source",
+      cardKind: "enterprise",
+      ownerUserId: undefined,
+      displayName: "参考企业",
+      title: "参考页面",
+    };
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([source]);
+    const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue({
+      ...source,
+      id: "enterprise-created",
+      displayName: "新企业",
+    });
+    renderPage();
+
+    await screen.findByText("参考企业");
+    await user.click(screen.getByRole("button", { name: "新建企业名片" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /企业名称/ }), {
+      target: { value: "新企业" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /业务定位或品牌标语/ }), {
+      target: { value: "新定位" },
+    });
+    const configuration = screen.getByRole("combobox", { name: "配置来源" });
+    await waitFor(() => expect(within(configuration).getByRole("option", {
+      name: "复制「参考企业」的页面配置（快速创建）",
+    })).toBeInTheDocument());
+    await user.selectOptions(configuration, `copy:${source.id}`);
+    await user.click(screen.getByRole("button", { name: "创建名片" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      cardKind: "enterprise",
+      templateSourceCardId: source.id,
+    });
+  });
+
+  it("cancels create-before-design without persisting a card", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    const create = vi.spyOn(adminApi, "createManagedCard");
+    renderPage();
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建企业名片" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /企业名称/ }), {
+      target: { value: "待设计企业" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /业务定位或品牌标语/ }), {
+      target: { value: "待设计定位" },
+    });
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "配置来源" }),
+      "customize",
+    );
+    await user.click(screen.getByRole("button", { name: "下一步：设计名片页面", hidden: true }));
+
+    const composer = await screen.findByRole("dialog", { name: "创建前设计企业名片" });
+    expect(create).not.toHaveBeenCalled();
+    await user.click(within(composer).getByRole("button", { name: "取消创建" }));
+    await waitFor(() => expect(composer).not.toBeInTheDocument());
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("cancels employee custom design without uploading or mutating identity", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({
+      items: [employeeMember], total: 1, limit: 100, offset: 0,
+    });
+    const upload = vi.spyOn(adminApi, "uploadCardAsset");
+    const updateMember = vi.spyOn(memberApi, "updateMember");
+    const updateMyProfile = vi.spyOn(memberApi, "updateMyProfile");
+    const create = vi.spyOn(adminApi, "createManagedCard");
+    renderPage();
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建员工名片" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "选择企业员工" }),
+      employeeMember.userId,
+    );
+    await user.upload(
+      screen.getByLabelText("选择员工头像"),
+      new File(["avatar"], "cancelled.png", { type: "image/png" }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "配置来源" }),
+      "customize",
+    );
+    await user.click(screen.getByRole("button", {
+      name: "下一步：设计名片页面",
+      hidden: true,
+    }));
+
+    const composer = await screen.findByRole("dialog", { name: "创建前设计员工名片" });
+    await user.click(within(composer).getByRole("button", { name: "取消创建" }));
+    await waitFor(() => expect(composer).not.toBeInTheDocument());
+    expect(upload).toHaveBeenCalledTimes(0);
+    expect(updateMember).toHaveBeenCalledTimes(0);
+    expect(updateMyProfile).toHaveBeenCalledTimes(0);
+    expect(create).toHaveBeenCalledTimes(0);
+  });
+
+  it("persists employee avatar and card only after custom design confirmation", async () => {
+    const user = userEvent.setup();
+    const uploadedUrl = "/api/v1/public/card-assets/custom-avatar.webp";
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({
+      items: [employeeMember], total: 1, limit: 100, offset: 0,
+    });
+    const upload = vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: uploadedUrl,
+      contentType: "image/webp",
+      width: 640,
+      height: 640,
+      sizeBytes: 2048,
+    });
+    const updateMember = vi.spyOn(memberApi, "updateMember").mockResolvedValue({
+      ...employeeMember,
+      avatarUrl: uploadedUrl,
+    });
+    const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue({
+      ...draftCard,
+      ownerUserId: employeeMember.userId,
+      avatarUrl: uploadedUrl,
+    });
+    renderPage();
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建员工名片" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "选择企业员工" }),
+      employeeMember.userId,
+    );
+    const avatar = new File(["avatar"], "custom.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择员工头像"), avatar);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "配置来源" }),
+      "customize",
+    );
+    await user.click(screen.getByRole("button", { name: "下一步：设计名片页面", hidden: true }));
+
+    const composer = await screen.findByRole("dialog", { name: "创建前设计员工名片" });
+    expect(screen.getByText(employeeMember.displayName)).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+    expect(updateMember).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    await user.click(within(composer).getByRole("button", { name: "使用此设计创建名片" }));
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(upload).toHaveBeenNthCalledWith(1, avatar);
+    await waitFor(() => expect(updateMember).toHaveBeenCalledTimes(1));
+    expect(updateMember).toHaveBeenNthCalledWith(
+      1,
+      employeeMember.membershipId,
+      { avatarUrl: uploadedUrl },
+    );
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0][0]).toMatchObject({
+      cardKind: "employee",
+      ownerUserId: employeeMember.userId,
+      avatarUrl: "",
+      templateSourceCardId: undefined,
+      templateDocument: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [],
+      },
+    });
   });
 });

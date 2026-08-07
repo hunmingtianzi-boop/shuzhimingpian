@@ -1,0 +1,17 @@
+import { apiBaseUrlFromEnvironment } from "../api/client";
+
+export function resolveApiResourceUrl(value?: string | null): string | undefined {
+  const resource = value?.trim();
+  if (!resource) return undefined;
+  if (!resource.startsWith("/api/")) return resource;
+
+  const apiBaseUrl = apiBaseUrlFromEnvironment().trim();
+  if (!apiBaseUrl) return resource;
+
+  try {
+    const base = new URL(apiBaseUrl, globalThis.location?.origin ?? "http://localhost");
+    return new URL(resource, base.origin).toString();
+  } catch {
+    return resource;
+  }
+}

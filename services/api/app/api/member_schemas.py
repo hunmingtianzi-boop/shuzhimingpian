@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from app.api.catalog_schemas import validate_safe_asset_url
 from app.core.staff_auth import normalize_staff_account
 
 MemberRole = Literal["company_admin", "card_owner"]
@@ -67,10 +68,15 @@ class BulkMemberRow(MemberModel):
     password: SecretStr
     email: str | None = Field(default=None, max_length=320)
     mobile: str | None = Field(default=None, max_length=24)
+    job_title: str | None = Field(default=None, max_length=200)
+    avatar_url: str | None = Field(default=None, max_length=2_048)
+    business_summary: str | None = Field(default=None, max_length=2_000)
     role: MemberRole = "card_owner"
     permissions: list[str] | None = Field(default=None, max_length=40)
     status: MemberStatus = "active"
     rotate_password: bool = False
+
+    _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
 
     @field_validator("account")
     @classmethod
@@ -148,6 +154,9 @@ class MemberRecord(MemberModel):
     user_id: uuid.UUID
     account: str
     display_name: str
+    job_title: str | None = None
+    avatar_url: str | None = None
+    business_summary: str | None = None
     role: MemberRole
     permissions: list[str]
     status: MemberLifecycleStatus
@@ -208,8 +217,13 @@ class MemberEnvelope(MemberModel):
 
 class UpdateMemberAccessRequest(MemberModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    job_title: str | None = Field(default=None, max_length=200)
+    avatar_url: str | None = Field(default=None, max_length=2_048)
+    business_summary: str | None = Field(default=None, max_length=2_000)
     role: MemberRole | None = None
     permissions: list[str] | None = Field(default=None, max_length=40)
+
+    _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
 
     @field_validator("permissions")
     @classmethod
@@ -218,9 +232,17 @@ class UpdateMemberAccessRequest(MemberModel):
 
     @model_validator(mode="after")
     def require_change(self) -> UpdateMemberAccessRequest:
-        if self.display_name is None and self.role is None and self.permissions is None:
+        if not self.model_fields_set:
             raise ValueError("at least one member field must be supplied")
         return self
+
+
+class UpdateSelfProfileRequest(MemberModel):
+    """Narrow self-service surface; target identity always comes from the token."""
+
+    avatar_url: str | None = Field(max_length=2_048)
+
+    _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
 
 
 class ResetMemberPasswordRequest(MemberModel):
@@ -261,6 +283,7 @@ __all__ = [
     "PasswordResetRecord",
     "ResetMemberPasswordRequest",
     "UpdateMemberAccessRequest",
+    "UpdateSelfProfileRequest",
     "UpdateMemberStatusRequest",
     "ALLOWED_COMPANY_MEMBER_PERMISSIONS",
 ]

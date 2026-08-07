@@ -50,6 +50,7 @@ class AiAssistantPublicConfig(StrictModel):
 
 class PublicFaqItem(StrictModel):
     id: str
+    document_id: uuid.UUID
     question: str
     answer: str
     source_label: str
@@ -75,6 +76,7 @@ class PublicCard(StrictModel):
     display_name: str
     title: str
     avatar_url: str | None = None
+    business_summary: str | None = None
     contact_fields: list[dict[str, str]] = Field(default_factory=list)
     wecom_contact: PublicWeComContact | None = None
     company: PublicCompany
@@ -83,6 +85,7 @@ class PublicCard(StrictModel):
     faq_items: list[PublicFaqItem] = Field(default_factory=list)
     ai_assistant: AiAssistantPublicConfig
     policy_versions: PolicyVersions
+    enterprise_template: dict[str, Any] | None = None
 
 
 class PublicCardEnvelope(StrictModel):

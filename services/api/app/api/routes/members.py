@@ -20,6 +20,7 @@ from app.api.member_schemas import (
     ResetMemberPasswordRequest,
     UpdateMemberAccessRequest,
     UpdateMemberStatusRequest,
+    UpdateSelfProfileRequest,
 )
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
@@ -36,6 +37,9 @@ _CSV_COLUMNS = {
     "password",
     "email",
     "mobile",
+    "job_title",
+    "avatar_url",
+    "business_summary",
     "role",
     "permissions",
     "status",
@@ -50,17 +54,15 @@ def _store(request: Request) -> MemberStore:
     return MemberStore(request.app.state.session_factory, request.app.state.settings)
 
 
-def _scope(principal: StaffPrincipal) -> MemberScope:
+def _self_scope(principal: StaffPrincipal) -> MemberScope:
     if principal.company_id is None:
         raise ApiError(
             403,
             "COMPANY_SCOPE_REQUIRED",
-            "Select a company scope before managing members.",
+            "Select a company scope before updating the member profile.",
         )
     role = str(getattr(principal.role, "value", principal.role))
     granted = {str(value) for value in principal.permissions}
-    if role not in _ADMIN_ROLES and not granted.intersection(_MEMBER_PERMISSIONS):
-        raise ApiError(403, "FORBIDDEN", "The current account cannot manage company members.")
     return MemberScope(
         tenant_id=principal.tenant_id,
         company_id=principal.company_id,
@@ -69,6 +71,15 @@ def _scope(principal: StaffPrincipal) -> MemberScope:
         actor_role=role,
         actor_permissions=tuple(sorted(granted)),
     )
+
+
+def _scope(principal: StaffPrincipal) -> MemberScope:
+    scope = _self_scope(principal)
+    role = scope.actor_role
+    granted = set(scope.actor_permissions)
+    if role not in _ADMIN_ROLES and not granted.intersection(_MEMBER_PERMISSIONS):
+        raise ApiError(403, "FORBIDDEN", "The current account cannot manage company members.")
+    return scope
 
 
 @router.get("", response_model=MemberListEnvelope, operation_id="listCompanyMembers")
@@ -100,6 +111,25 @@ async def create_member(
     member = await _store(request).create_member(
         scope=_scope(principal),
         row=body,
+        trace_id=request_id_ctx.get(),
+    )
+    return MemberEnvelope(data=member)
+
+
+@router.patch(
+    "/me/profile",
+    response_model=MemberEnvelope,
+    operation_id="updateCurrentCompanyMemberProfile",
+)
+async def update_current_member_profile(
+    body: UpdateSelfProfileRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> MemberEnvelope:
+    member = await _store(request).update_self_profile(
+        scope=_self_scope(principal),
+        membership_id=principal.membership_id,
+        body=body,
         trace_id=request_id_ctx.get(),
     )
     return MemberEnvelope(data=member)

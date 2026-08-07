@@ -9,7 +9,11 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.api.errors import ApiError
-from app.api.member_schemas import BulkMemberRow
+from app.api.member_schemas import (
+    BulkMemberRow,
+    UpdateMemberAccessRequest,
+    UpdateSelfProfileRequest,
+)
 from app.core.pii import PiiCipher
 from app.db.models import LifecycleStatus, MembershipRole
 from app.services.member_store import MemberScope, MemberStore, _RowConflict
@@ -60,6 +64,92 @@ def test_permissions_are_restricted_to_company_allowlist() -> None:
 def test_platform_role_cannot_be_assigned_through_member_input() -> None:
     with pytest.raises(ValidationError):
         _row(role="platform_admin")
+
+
+def test_member_identity_fields_can_be_explicitly_cleared() -> None:
+    body = UpdateMemberAccessRequest(job_title=None, avatar_url=None, business_summary=None)
+
+    assert body.model_fields_set == {"job_title", "avatar_url", "business_summary"}
+
+
+def test_empty_member_update_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        UpdateMemberAccessRequest()
+
+
+def test_self_profile_contract_only_accepts_a_safe_avatar() -> None:
+    assert UpdateSelfProfileRequest(avatar_url="/assets/avatar.webp").avatar_url == (
+        "/assets/avatar.webp"
+    )
+    with pytest.raises(ValidationError):
+        UpdateSelfProfileRequest.model_validate(
+            {"avatar_url": "/assets/avatar.webp", "membership_id": str(uuid.uuid4())}
+        )
+    with pytest.raises(ValidationError):
+        UpdateSelfProfileRequest(avatar_url="http://127.0.0.1/avatar.webp")
+
+
+def test_self_profile_target_accepts_only_the_actor_active_membership() -> None:
+    scope = _scope()
+    store = object.__new__(MemberStore)
+    membership = SimpleNamespace(user_id=scope.actor_user_id, status=LifecycleStatus.ACTIVE)
+    user = SimpleNamespace(status=LifecycleStatus.ACTIVE, deleted_at=None)
+    credential = SimpleNamespace(is_enabled=True)
+
+    store._authorize_self_profile_target(
+        scope,
+        membership=membership,
+        user=user,
+        credential=credential,
+    )
+
+    for rejected_membership, rejected_user, rejected_credential in (
+        (
+            SimpleNamespace(user_id=uuid.uuid4(), status=LifecycleStatus.ACTIVE),
+            user,
+            credential,
+        ),
+        (
+            SimpleNamespace(user_id=scope.actor_user_id, status=LifecycleStatus.DISABLED),
+            user,
+            credential,
+        ),
+        (
+            membership,
+            SimpleNamespace(status=LifecycleStatus.DISABLED, deleted_at=None),
+            credential,
+        ),
+        (membership, user, SimpleNamespace(is_enabled=False)),
+    ):
+        with pytest.raises(ApiError) as captured:
+            store._authorize_self_profile_target(
+                scope,
+                membership=rejected_membership,
+                user=rejected_user,
+                credential=rejected_credential,
+            )
+        assert captured.value.code == "SELF_PROFILE_UNAVAILABLE"
+
+
+def test_self_profile_avatar_must_belong_to_the_current_company_asset_library() -> None:
+    scope = _scope()
+    store = object.__new__(MemberStore)
+    own_asset = (
+        f"/api/v1/public/card-assets/{scope.company_id}/{uuid.uuid4()}.webp"
+    )
+
+    store._validate_self_avatar(scope, None)
+    store._validate_self_avatar(scope, own_asset)
+
+    for rejected in (
+        "https://cdn.example.test/avatar.webp",
+        f"/api/v1/public/card-assets/{uuid.uuid4()}/{uuid.uuid4()}.webp",
+        f"/api/v1/public/card-assets/{scope.company_id}/avatar.webp",
+    ):
+        with pytest.raises(ApiError) as captured:
+            store._validate_self_avatar(scope, rejected)
+        assert captured.value.status_code == 422
+        assert captured.value.code == "SELF_AVATAR_ASSET_OUT_OF_SCOPE"
 
 
 def test_delegated_manager_cannot_create_or_promote_company_admin() -> None:
@@ -131,6 +221,9 @@ async def test_existing_password_is_not_changed_without_explicit_rotation() -> N
         role=MembershipRole.CARD_OWNER,
         permissions=["card.read"],
         status=LifecycleStatus.ACTIVE,
+        job_title="销售总监",
+        avatar_url="https://cdn.example.test/avatar.png",
+        business_summary="负责重点客户业务。",
     )
     user = SimpleNamespace(
         id=uuid.uuid4(),
@@ -161,6 +254,9 @@ async def test_existing_password_is_not_changed_without_explicit_rotation() -> N
     assert changed is False
     assert credential.password_hash == "original-password-hash"  # noqa: S105
     assert credential.password_changed_at == now
+    assert membership.job_title == "销售总监"
+    assert membership.avatar_url == "https://cdn.example.test/avatar.png"
+    assert membership.business_summary == "负责重点客户业务。"
     store._revoke_sessions.assert_not_awaited()
 
 

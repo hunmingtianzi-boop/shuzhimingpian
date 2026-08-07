@@ -23,6 +23,9 @@ export type CompanyMember = {
   userId: string;
   account: string;
   displayName: string;
+  jobTitle?: string;
+  avatarUrl?: string;
+  businessSummary?: string;
   role: MemberRole;
   permissions: string[];
   status: MemberLifecycleStatus;
@@ -37,6 +40,9 @@ export type MemberCreateInput = {
   password: string;
   email?: string;
   mobile?: string;
+  jobTitle?: string;
+  avatarUrl?: string;
+  businessSummary?: string;
   role: MemberRole;
   permissions: string[];
   status: MemberStatus;
@@ -45,8 +51,15 @@ export type MemberCreateInput = {
 
 export type MemberAccessInput = {
   displayName?: string;
+  jobTitle?: string;
+  avatarUrl?: string;
+  businessSummary?: string;
   role?: MemberRole;
   permissions?: string[];
+};
+
+export type MemberSelfProfileInput = {
+  avatarUrl: string;
 };
 
 export type MemberRowError = {
@@ -137,6 +150,8 @@ export type KnowledgeDocument = {
   id: string;
   title: string;
   status: KnowledgeStatus;
+  sourceType?: string;
+  visibility?: KnowledgeVisibility;
   version?: number;
   latestVersion?: {
     id: string;
@@ -164,6 +179,14 @@ export type KnowledgeDocumentInput = {
   answer: string;
   visibility: KnowledgeVisibility;
   metadata: Record<string, unknown>;
+};
+
+export type SelectableFaqDocument = {
+  id: string;
+  title: string;
+  answer: string;
+  status: "published";
+  visibility: "public";
 };
 
 export type LoginInput = {
@@ -552,6 +575,7 @@ export type ManagedCard = VersionedResource & {
     chatNotice: string;
     leadConsent: string;
   };
+  employeeContactVisibility?: Array<"mobile" | "email">;
   shareUrl: string;
   qrUrl: string;
 };
@@ -566,6 +590,13 @@ export type ManagedCardInput = {
   welcomeMessage: string;
   suggestedQuestions: string[];
   policyVersions: ManagedCard["policyVersions"];
+  employeeContactVisibility: Array<"mobile" | "email">;
+  /** Empty means use the company default configuration on create. */
+  templateSourceCardId?: string;
+  /** In-memory customize-before-create result; never creates an orphan card. */
+  templateDocument?: EnterpriseTemplate["draft"];
+  /** Local wizard state; never sent to the API. */
+  composerMode?: "default" | "customize";
 };
 
 export type WeComCardContactWay = {
@@ -583,6 +614,62 @@ export type CardAssetUpload = {
   height: number;
   sizeBytes: number;
 };
+
+export type EnterpriseTemplateBlockType =
+  | "identity"
+  | "rich_text"
+  | "business_collection"
+  | "image_gallery"
+  | "video_link"
+  | "case_collection"
+  | "trust_panel"
+  | "faq"
+  | "cta"
+  | "ai_assistant";
+
+export type EnterpriseTemplateBlock = {
+  id: string;
+  type: EnterpriseTemplateBlockType;
+  visible: boolean;
+  directoryEnabled?: boolean;
+  sortOrder: number;
+  title?: string;
+  body?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoCoverUrl?: string;
+  productIds?: string[];
+  caseIds?: string[];
+  /** FAQ content always resolves from the company knowledge base. */
+  faqMode?: "all_published" | "selected";
+  /** Ordered canonical KnowledgeDocument ids, used only in selected mode. */
+  faqDocumentIds?: string[];
+  ctaLabel?: string;
+  ctaUrl?: string;
+};
+
+export type EnterpriseTemplate = {
+  cardId: string;
+  version: number;
+  draft: {
+    schemaVersion: 1;
+    themeKey: EnterpriseTemplateThemeKey;
+    blocks: EnterpriseTemplateBlock[];
+  };
+  published?: {
+    schemaVersion: 1;
+    themeKey: EnterpriseTemplateThemeKey;
+    blocks: EnterpriseTemplateBlock[];
+  };
+};
+
+export type CardComposerDefault = {
+  cardKind: ManagedCard["cardKind"];
+  version: number;
+  document: EnterpriseTemplate["draft"];
+};
+
+export type EnterpriseTemplateThemeKey = "brand" | "clean" | "warm";
 
 export type PageResult<T> = {
   items: T[];
