@@ -175,7 +175,7 @@ class WeComClient:
         token = await self.access_token()
         payload = await self._request_json(
             "GET",
-            "/cgi-bin/auth/getuserinfo",
+            "/cgi-bin/user/getuserinfo",
             params={"access_token": token, "code": code},
         )
         user_id = payload.get("UserId")

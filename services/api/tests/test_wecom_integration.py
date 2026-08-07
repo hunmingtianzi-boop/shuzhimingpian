@@ -134,6 +134,34 @@ async def test_wecom_test_message_uses_cached_token_and_rejects_invalid_user() -
 
 
 @pytest.mark.asyncio
+async def test_wecom_internal_oauth_uses_self_built_app_identity_endpoint() -> None:
+    async def provider(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/cgi-bin/user/getuserinfo"
+        assert request.url.params["access_token"] == "cached-token"
+        assert request.url.params["code"] == "oauth-code"
+        return httpx.Response(
+            200,
+            json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "UserId": "ZhouZiHan",
+                "DeviceId": "device-1",
+            },
+        )
+
+    redis = MemoryRedis()
+    digest = hashlib.sha256(b"ww1234567890abcdef").hexdigest()[:20]
+    redis.values[f"wecom:access-token:{digest}"] = "cached-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        identity = await WeComClient(
+            settings=_settings(), http_client=client, redis=redis
+        ).get_user_identity(code="oauth-code")
+
+    assert identity.user_id == "ZhouZiHan"
+    assert identity.device_id == "device-1"
+
+
+@pytest.mark.asyncio
 async def test_wecom_provider_error_does_not_include_provider_message() -> None:
     async def provider(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
