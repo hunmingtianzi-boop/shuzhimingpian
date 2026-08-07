@@ -204,9 +204,12 @@ function IdentityBlock({
         )}
       </div>
       <div className="cpr-identity-copy">
+        <div className="cpr-identity-kicker">
+          <span>{identity.kind === "employee" ? "员工名片" : "企业名片"}</span>
+          {identity.verificationLabel && <b>{identity.verificationLabel}</b>}
+        </div>
         <div className="cpr-identity-name-row">
           <h1>{identity.name}</h1>
-          {identity.verificationLabel && <b>{identity.verificationLabel}</b>}
         </div>
         {identity.headline && <p className="cpr-identity-headline">{identity.headline}</p>}
         {identity.companyName && <p className="cpr-identity-company">{identity.companyName}</p>}
