@@ -260,7 +260,7 @@ def test_company_profile_uses_etag_and_if_match_version(
             "industry": "制造业",
             "region": "上海",
             "website": "https://example.org",
-            "logo_url": None,
+            "logo_url": "/api/v1/public/card-assets/company/logo.webp",
             "profile_personalization_policy_version": "profile-personalization-v2",
         },
     )
@@ -272,6 +272,9 @@ def test_company_profile_uses_etag_and_if_match_version(
     assert put_response.json()["data"]["name"] == "更新后的企业"
     update_call = next(payload for name, payload in store.calls if name == "update_company")
     assert update_call["expected_version"] == 7
+    assert update_call["body"].logo_url == (
+        "/api/v1/public/card-assets/company/logo.webp"
+    )
 
 
 def test_card_uses_etag_and_if_match_version(
@@ -287,7 +290,7 @@ def test_card_uses_etag_and_if_match_version(
             "slug": "updated-card",
             "display_name": "更新后的名片",
             "title": "解决方案顾问",
-            "avatar_url": None,
+            "avatar_url": "/api/v1/public/card-assets/company/avatar.webp",
             "assistant_name": "企业助手",
             "welcome_message": "欢迎咨询",
             "suggested_questions": ["你们提供什么服务？"],
@@ -304,6 +307,32 @@ def test_card_uses_etag_and_if_match_version(
     assert put_response.headers["etag"] == '"5"'
     update_call = next(payload for name, payload in store.calls if name == "update_card")
     assert update_call["expected_version"] == 4
+    assert update_call["body"].avatar_url == (
+        "/api/v1/public/card-assets/company/avatar.webp"
+    )
+
+
+def test_admin_asset_urls_reject_unsafe_remote_destinations(
+    route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, _, _ = route_client
+
+    response = client.put(
+        "/api/v1/admin/card",
+        headers={"If-Match": '"4"'},
+        json={
+            "slug": "updated-card",
+            "display_name": "更新后的名片",
+            "title": "解决方案顾问",
+            "avatar_url": "http://127.0.0.1/private.webp",
+            "assistant_name": "企业助手",
+            "welcome_message": "欢迎咨询",
+            "suggested_questions": [],
+            "policy_versions": {},
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_company_admin_can_complete_enterprise_setup(

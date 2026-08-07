@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from app.api.catalog_schemas import validate_safe_asset_url
 from app.core.text_integrity import ensure_text_tree
 
 
@@ -50,8 +51,10 @@ class UpdateCompanyProfileRequest(AdminStrictModel):
     industry: str | None = Field(default=None, max_length=120)
     region: str | None = Field(default=None, max_length=100)
     website: HttpUrl | None = None
-    logo_url: HttpUrl | None = None
+    logo_url: str | None = Field(default=None, max_length=2_048)
     profile_personalization_policy_version: str = Field(min_length=1, max_length=64)
+
+    _validate_logo_url = field_validator("logo_url")(validate_safe_asset_url)
 
 
 class CardProfile(AdminStrictModel):
@@ -95,11 +98,13 @@ class UpdateCardRequest(AdminStrictModel):
     )
     display_name: str = Field(min_length=1, max_length=160)
     title: str = Field(min_length=1, max_length=200)
-    avatar_url: HttpUrl | None = None
+    avatar_url: str | None = Field(default=None, max_length=2_048)
     assistant_name: str | None = Field(default=None, max_length=120)
     welcome_message: str | None = Field(default=None, max_length=2_000)
     suggested_questions: list[str] = Field(default_factory=list, max_length=6)
     policy_versions: dict[str, str] = Field(default_factory=dict)
+
+    _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
 
     @field_validator("suggested_questions")
     @classmethod
