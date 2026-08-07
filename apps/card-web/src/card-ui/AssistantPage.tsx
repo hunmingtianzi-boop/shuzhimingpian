@@ -80,6 +80,13 @@ function failureMessage(error: unknown) {
   return "本次回答未完成，请稍后重试。";
 }
 
+function streamedFailureMessage(error: unknown, answerText: string) {
+  if (answerText.trim()) {
+    return "回答内容已收到，但传输或保存未能确认；以上内容可能不完整，请重试。";
+  }
+  return failureMessage(error);
+}
+
 function historyKey(cardSlug: string) {
   return `${getAssistantSessionStorageKey(cardSlug)}:visible-messages`;
 }
@@ -442,7 +449,7 @@ export function AssistantPage({
             idempotencyKey,
             assistantMessageId,
             retryable: error instanceof AssistantApiError ? error.retryable : true,
-            message: failureMessage(error),
+            message: streamedFailureMessage(error, answerText),
           });
         })
         .finally(() => {

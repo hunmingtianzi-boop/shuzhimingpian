@@ -396,6 +396,46 @@ async def test_prepare_message_persists_and_forwards_only_redacted_content(
 
 
 @pytest.mark.asyncio
+async def test_ai_configuration_is_provisioned_before_first_enterprise_answer(
+    monkeypatch: Any,
+) -> None:
+    card = _card()
+    principal = _principal(card)
+    session = _Session(card=card)
+    settings = _settings()
+    settings.llm_provider = "test-provider"
+    settings.llm_model = "test-chat-model"
+    store = PublicStore(_SessionFactory(session), settings)  # type: ignore[arg-type]
+    monkeypatch.setattr(store, "_set_principal_scope", AsyncMock())
+    profile_id = uuid.uuid4()
+
+    await store.ensure_ai_configuration(
+        principal=principal,
+        runtime_settings=settings,
+        profile_id=profile_id,
+    )
+
+    prompt_insert = next(
+        statement
+        for statement in session.executed
+        if "INSERT INTO prompt_versions" in str(statement)
+    )
+    model_insert = next(
+        statement
+        for statement in session.executed
+        if "INSERT INTO model_configs" in str(statement)
+    )
+    prompt_parameters = prompt_insert.compile().params
+    model_parameters = model_insert.compile().params
+    assert prompt_parameters["purpose"] == "rag_answer"
+    assert prompt_parameters["published_by"] == card.responsible_user_id
+    assert model_parameters["purpose"] == "chat"
+    assert model_parameters["provider"] == "test-provider"
+    assert model_parameters["model_name"] == "test-chat-model"
+    assert model_parameters["secret_ref"] == f"platform-llm-profile:{profile_id}"
+
+
+@pytest.mark.asyncio
 async def test_conversation_history_keeps_user_before_assistant_when_timestamps_match(
     monkeypatch: Any,
 ) -> None:

@@ -83,6 +83,13 @@ function requestErrorMessage(error: unknown) {
   return "本次回答未完成，请稍后重试。";
 }
 
+function requestFailureMessage(error: unknown, answerText: string) {
+  if (answerText.trim()) {
+    return "回答内容已收到，但传输或保存未能确认；以上内容可能不完整，请重试。";
+  }
+  return requestErrorMessage(error);
+}
+
 export const AIAssistant = forwardRef<
   AIAssistantHandle,
   AIAssistantProps
@@ -401,7 +408,7 @@ export const AIAssistant = forwardRef<
             assistantMessageId,
             retryable:
               error instanceof AssistantApiError ? error.retryable : true,
-            message: requestErrorMessage(error),
+            message: requestFailureMessage(error, answerText),
           });
         })
         .finally(() => {

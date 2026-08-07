@@ -4,7 +4,7 @@ import { createRef } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AssistantStreamEvent } from "../lib/assistantApi";
+import { AssistantApiError, type AssistantStreamEvent } from "../lib/assistantApi";
 import { templateTenant } from "../tenants/template/tenant";
 import { AIAssistant, type AIAssistantHandle } from "./AIAssistant";
 
@@ -152,6 +152,35 @@ describe("AIAssistant lead handoff", () => {
       "detail:product:ai-scenario-service",
     ));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("does not call a received partial answer an unanswered request", async () => {
+    streamMock.mockImplementation(async ({ onEvent }: {
+      onEvent: (event: AssistantStreamEvent) => void;
+    }) => {
+      onEvent({ type: "delta", text: "这是已经收到的回答内容。" });
+      throw new AssistantApiError("persistence failed", {
+        code: "AI_CONFIGURATION_MISSING",
+        retryable: true,
+      });
+    });
+    render(<AIAssistant config={templateTenant.assistant} cardSlug="tenant-a" />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: templateTenant.assistant.launcherAriaLabel }),
+    );
+    fireEvent.change(screen.getByLabelText(templateTenant.assistant.labels.input), {
+      target: { value: "介绍一下企业" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: templateTenant.assistant.labels.send }),
+    );
+
+    expect(await screen.findByText("这是已经收到的回答内容。")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/回答内容已收到，但传输或保存未能确认/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/本次回答未完成/)).not.toBeInTheDocument();
   });
 
   it("blocks two submissions dispatched before React can render the loading state", async () => {

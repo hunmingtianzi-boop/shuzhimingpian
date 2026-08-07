@@ -15,6 +15,7 @@ from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.prompts import DEFAULT_PROMPT_VERSION, PromptRegistry
 from app.ai.schemas import AIAnswer, ChatMessage, ForbiddenTopicPolicy, RefusalCode
 from app.api.catalog_schemas import EnterpriseTemplateDocument
 from app.api.errors import ApiError
@@ -830,6 +831,138 @@ class PublicStore:
                 429,
                 "MODEL_BUDGET_EXCEEDED",
                 "今日 AI 服务额度已用完，请联系企业工作人员",
+            )
+
+    async def ensure_ai_configuration(
+        self,
+        *,
+        principal: VisitorPrincipal,
+        runtime_settings: Settings,
+        profile_id: uuid.UUID | None,
+    ) -> None:
+        """Provision the persistence metadata required by the active Chat runtime.
+
+        WeCom self-service enterprises are created without a tenant-specific
+        prompt/model row.  The model could therefore stream a complete answer and
+        only fail when ``persist_ai_answer`` tried to resolve those rows.  Keep this
+        preflight before the provider call so a visitor never sees an answer followed
+        by a contradictory configuration error.
+        """
+
+        prompt = PromptRegistry().get(DEFAULT_PROMPT_VERSION)
+        prompt_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{principal.company_id}:rag-prompt:{prompt.version}",
+        )
+        model_config_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{principal.company_id}:chat:{runtime_settings.llm_provider}",
+        )
+        async with self._sessions() as session, session.begin():
+            await self._set_principal_scope(session, principal)
+            card = await session.get(Card, principal.card_id)
+            if (
+                card is None
+                or card.tenant_id != principal.tenant_id
+                or card.company_id != principal.company_id
+            ):
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在")
+            publisher_id = card.responsible_user_id or card.owner_user_id
+            if publisher_id is None:
+                publisher_id = await session.scalar(
+                    select(Membership.user_id)
+                    .where(
+                        Membership.tenant_id == principal.tenant_id,
+                        Membership.company_id == principal.company_id,
+                        Membership.status == LifecycleStatus.ACTIVE,
+                    )
+                    .order_by(Membership.created_at, Membership.id)
+                    .limit(1)
+                )
+            if publisher_id is None:
+                raise ApiError(
+                    503,
+                    "AI_CONFIGURATION_MISSING",
+                    "企业 AI 配置尚未完成，请联系管理员",
+                )
+
+            await session.execute(
+                pg_insert(PromptVersion)
+                .values(
+                    id=prompt_id,
+                    tenant_id=principal.tenant_id,
+                    company_id=principal.company_id,
+                    name=prompt.version,
+                    purpose="rag_answer",
+                    version_number=1,
+                    content=prompt.system_text,
+                    content_hash=hashlib.sha256(
+                        prompt.system_text.encode("utf-8")
+                    ).hexdigest(),
+                    change_summary="Auto-provisioned for the active enterprise AI runtime",
+                    evaluation_result={"status": "requires_pilot_evaluation"},
+                    status=PromptStatus.PUBLISHED,
+                    published_by=publisher_id,
+                    published_at=datetime.now(UTC),
+                )
+                .on_conflict_do_nothing(constraint="uq_prompt_versions_name_version")
+            )
+            await session.execute(
+                pg_insert(ModelConfig)
+                .values(
+                    id=model_config_id,
+                    tenant_id=principal.tenant_id,
+                    company_id=principal.company_id,
+                    purpose="chat",
+                    provider=runtime_settings.llm_provider,
+                    model_name=runtime_settings.llm_model,
+                    endpoint_region=None,
+                    secret_ref=(
+                        f"platform-llm-profile:{profile_id}"
+                        if profile_id is not None
+                        else "environment-variable:LLM_API_KEY"
+                    ),
+                    timeout_ms=round(runtime_settings.llm_timeout_seconds * 1_000),
+                    max_retries=runtime_settings.llm_max_retries,
+                    max_concurrency=runtime_settings.llm_max_concurrency,
+                    daily_budget_cny=Decimal(
+                        str(runtime_settings.model_daily_budget_cny)
+                    ),
+                    data_retention="no_training",
+                    enabled=True,
+                    parameters={
+                        "thinking": runtime_settings.llm_thinking,
+                        "reasoning_effort": runtime_settings.llm_reasoning_effort,
+                        "temperature": runtime_settings.llm_temperature,
+                        "max_tokens": runtime_settings.llm_max_output_tokens,
+                    },
+                )
+                .on_conflict_do_update(
+                    constraint="uq_model_configs_purpose_provider",
+                    set_={
+                        "model_name": runtime_settings.llm_model,
+                        "secret_ref": (
+                            f"platform-llm-profile:{profile_id}"
+                            if profile_id is not None
+                            else "environment-variable:LLM_API_KEY"
+                        ),
+                        "timeout_ms": round(
+                            runtime_settings.llm_timeout_seconds * 1_000
+                        ),
+                        "max_retries": runtime_settings.llm_max_retries,
+                        "max_concurrency": runtime_settings.llm_max_concurrency,
+                        "daily_budget_cny": Decimal(
+                            str(runtime_settings.model_daily_budget_cny)
+                        ),
+                        "enabled": True,
+                        "parameters": {
+                            "thinking": runtime_settings.llm_thinking,
+                            "reasoning_effort": runtime_settings.llm_reasoning_effort,
+                            "temperature": runtime_settings.llm_temperature,
+                            "max_tokens": runtime_settings.llm_max_output_tokens,
+                        },
+                    },
+                )
             )
 
     async def load_forbidden_topic_rules(

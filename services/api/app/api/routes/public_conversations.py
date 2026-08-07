@@ -330,6 +330,11 @@ async def _generate_and_persist(
     semaphore = _runtime_semaphore(request, runtime)
     acquired = False
     try:
+        await store.ensure_ai_configuration(
+            principal=principal,
+            runtime_settings=settings,
+            profile_id=runtime.config.profile_id,
+        )
         await store.assert_model_budget(principal=principal)
         async with asyncio.timeout(settings.llm_queue_timeout_seconds):
             await semaphore.acquire()
