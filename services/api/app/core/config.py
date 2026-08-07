@@ -389,11 +389,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WECOM_TENANT_ID and WECOM_COMPANY_ID must be configured together"
             )
-        if (self.wecom_oauth_redirect_uri or any(wecom_callback)) and not all(
+        if self.wecom_oauth_redirect_uri and not all(
+            value is not None for value in wecom_core
+        ):
+            raise ValueError(
+                "WeCom OAuth requires WECOM_CORP_ID, WECOM_AGENT_ID and WECOM_APP_SECRET"
+            )
+        if any(wecom_callback) and not all(
             value is not None for value in (*wecom_core, *wecom_scope)
         ):
             raise ValueError(
-                "WeCom OAuth and callbacks require core credentials and a tenant/company scope"
+                "WeCom callbacks require core credentials and a tenant/company scope"
             )
         wecom_base = urlsplit(self.wecom_api_base_url.strip().rstrip("/"))
         if (

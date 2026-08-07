@@ -10,9 +10,10 @@ import pytest
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from pydantic import ValidationError
 
+from app.api.routes.wecom_auth import _enterprise_name
 from app.core.config import Settings
 from app.core.tokens import StaffPrincipal
-from app.integrations.wecom import WeComClient, WeComProviderError
+from app.integrations.wecom import WeComClient, WeComDepartment, WeComProviderError
 from app.integrations.wecom_crypto import (
     WeComCallbackCrypto,
     WeComCryptoError,
@@ -278,6 +279,31 @@ def test_wecom_callback_crypto_verifies_decrypts_and_rejects_entities() -> None:
         )
     with pytest.raises(WeComCryptoError):
         parse_wecom_xml(b"<!DOCTYPE xml [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><xml/>")
+
+
+def test_wecom_enterprise_name_prefers_root_department() -> None:
+    assert _enterprise_name(
+        (
+            WeComDepartment(2, "销售部", 1, 1),
+            WeComDepartment(1, "夜霜曦雪", 0, 1),
+        )
+    ) == "夜霜曦雪"
+
+
+@pytest.mark.asyncio
+async def test_wecom_login_state_does_not_require_precreated_scope() -> None:
+    settings = _settings(
+        wecom_tenant_id=None,
+        wecom_company_id=None,
+        wecom_oauth_redirect_uri="https://yeshuangxixue.cn/c/admin/wecom/callback",
+    )
+    redis = MemoryRedis()
+    manager = WeComOAuthStateManager(settings=settings, redis=redis)
+    token, _expires_at = await manager.issue(mode="login", return_to="/overview")
+    state = await manager.consume(token)
+    assert state.mode == "login"
+    assert state.tenant_id is None
+    assert state.company_id is None
 
 
 def _encrypt_wecom_fixture(*, key: bytes, corp_id: str, message: bytes) -> str:

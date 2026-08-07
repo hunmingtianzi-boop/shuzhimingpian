@@ -30,6 +30,12 @@ export const APP_PATHS = {
   platformLlmSettings: "/platform/settings/llm",
 } as const;
 
+// These are authentication transport routes rather than workspace pages. The
+// workbench entry always starts (or resumes) WeCom OAuth, while the callback is
+// consumed by AuthProvider before the authenticated shell is mounted.
+export const WECOM_ENTRY_PATH = "/wecom/entry";
+export const WECOM_CALLBACK_PATH = "/wecom/callback";
+
 export type AppPath = (typeof APP_PATHS)[keyof typeof APP_PATHS];
 export type AdminWorkspace = "platform" | "enterprise";
 

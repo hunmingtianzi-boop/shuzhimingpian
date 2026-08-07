@@ -40,6 +40,7 @@ import {
   navigate,
   type AppPath,
   usePathname,
+  WECOM_ENTRY_PATH,
 } from "./routing";
 import { confirmOnboardingWithRecovery } from "./utils/platformOnboarding";
 
@@ -855,16 +856,18 @@ export function SessionGate() {
   const workspace = adminWorkspaceForUser(auth.user);
   const landingPath =
     workspace === "platform" ? APP_PATHS.platformOverview : APP_PATHS.overview;
+  const isAuthenticationEntry =
+    pathname === "/login" || pathname === WECOM_ENTRY_PATH;
 
   useEffect(() => {
-    if (auth.status === "authenticated" && pathname === "/login" && workspace) {
+    if (auth.status === "authenticated" && isAuthenticationEntry && workspace) {
       navigate(landingPath);
     }
-  }, [auth.status, landingPath, pathname, workspace]);
+  }, [auth.status, isAuthenticationEntry, landingPath, workspace]);
 
   if (auth.status === "bootstrapping") return <BootScreen />;
   if (auth.status === "unauthenticated") return <LoginPage />;
-  if (pathname === "/login" && workspace) return <BootScreen />;
+  if (isAuthenticationEntry && workspace) return <BootScreen />;
   return <AuthenticatedApplication />;
 }
 

@@ -12,7 +12,7 @@ import type {
 } from "./api/types";
 import { CurrentPage, SessionGate } from "./App";
 import { AuthContext, type AuthContextValue } from "./auth/AuthContext";
-import { APP_PATHS, appHref } from "./routing";
+import { APP_PATHS, appHref, WECOM_ENTRY_PATH } from "./routing";
 
 function user(role: string, id = "user-1"): AdminUser {
   return {
@@ -112,23 +112,28 @@ afterEach(() => {
 
 describe("CurrentPage workspace routing", () => {
   it.each([
-    ["company_admin", APP_PATHS.overview],
-    ["platform_admin", APP_PATHS.platformOverview],
-  ])("leaves the login URL for %s after authentication", async (role, destination) => {
-    window.history.replaceState({}, "", appHref("/login"));
+    ["company_admin", "/login", APP_PATHS.overview],
+    ["company_admin", WECOM_ENTRY_PATH, APP_PATHS.overview],
+    ["platform_admin", "/login", APP_PATHS.platformOverview],
+    ["platform_admin", WECOM_ENTRY_PATH, APP_PATHS.platformOverview],
+  ])(
+    "leaves the authentication entry for %s after authentication",
+    async (role, entry, destination) => {
+      window.history.replaceState({}, "", appHref(entry));
 
-    render(
-      <FluentProvider theme={webLightTheme}>
-        <AuthContext.Provider value={authValue(role)}>
-          <SessionGate />
-        </AuthContext.Provider>
-      </FluentProvider>,
-    );
+      render(
+        <FluentProvider theme={webLightTheme}>
+          <AuthContext.Provider value={authValue(role)}>
+            <SessionGate />
+          </AuthContext.Provider>
+        </FluentProvider>,
+      );
 
-    await waitFor(() => {
-      expect(window.location.pathname).toBe(appHref(destination));
-    });
-  });
+      await waitFor(() => {
+        expect(window.location.pathname).toBe(appHref(destination));
+      });
+    },
+  );
 
   it("returns a 403 surface before an enterprise account can mount platform data", () => {
     const listProfiles = vi.spyOn(platformApi, "listLlmProfiles");

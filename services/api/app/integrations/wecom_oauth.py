@@ -19,8 +19,8 @@ class WeComOAuthStateError(ValueError):
 @dataclass(frozen=True, slots=True)
 class WeComOAuthState:
     mode: Literal["login", "bind"]
-    tenant_id: uuid.UUID
-    company_id: uuid.UUID
+    tenant_id: uuid.UUID | None
+    company_id: uuid.UUID | None
     token_id: uuid.UUID
     return_to: str
     user_id: uuid.UUID | None = None
@@ -40,12 +40,14 @@ class WeComOAuthStateManager:
         principal: StaffPrincipal | None = None,
         return_to: str = "/",
     ) -> tuple[str, int]:
-        tenant_id, company_id = self._scope()
         if mode == "bind":
             if principal is None:
                 raise WeComOAuthStateError("staff session required")
-            if principal.tenant_id != tenant_id or principal.company_id != company_id:
-                raise WeComOAuthStateError("staff scope does not match WeCom configuration")
+            tenant_id = principal.tenant_id
+            company_id = principal.company_id
+        else:
+            tenant_id = self._settings.wecom_tenant_id
+            company_id = self._settings.wecom_company_id
         if self._redis is None:
             raise WeComOAuthStateError("oauth state store unavailable")
         safe_return_to = _safe_return_to(return_to)
@@ -56,8 +58,8 @@ class WeComOAuthStateManager:
         payload: dict[str, object] = {
             "token_id": str(token_id),
             "mode": mode,
-            "tenant_id": str(tenant_id),
-            "company_id": str(company_id),
+            "tenant_id": str(tenant_id) if tenant_id else None,
+            "company_id": str(company_id) if company_id else None,
             "return_to": safe_return_to,
             "expires_at": expires_at,
         }
@@ -100,8 +102,16 @@ class WeComOAuthStateManager:
             token_id = uuid.UUID(payload["token_id"])
             state = WeComOAuthState(
                 mode=mode,
-                tenant_id=uuid.UUID(payload["tenant_id"]),
-                company_id=uuid.UUID(payload["company_id"]),
+                tenant_id=(
+                    uuid.UUID(payload["tenant_id"])
+                    if payload.get("tenant_id")
+                    else None
+                ),
+                company_id=(
+                    uuid.UUID(payload["company_id"])
+                    if payload.get("company_id")
+                    else None
+                ),
                 token_id=token_id,
                 return_to=_safe_return_to(str(payload.get("return_to", "/"))),
                 user_id=(uuid.UUID(payload["user_id"]) if mode == "bind" else None),
@@ -112,8 +122,14 @@ class WeComOAuthStateManager:
             )
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise WeComOAuthStateError("invalid oauth state") from exc
-        if (state.tenant_id, state.company_id) != self._scope():
-            raise WeComOAuthStateError("oauth state scope mismatch")
+        if state.mode == "bind" and (
+            state.tenant_id is None
+            or state.company_id is None
+            or state.user_id is None
+            or state.membership_id is None
+            or state.session_id is None
+        ):
+            raise WeComOAuthStateError("invalid bind state")
         return state
 
     async def _consume_nonce(self, token: str) -> object:
@@ -125,13 +141,6 @@ class WeComOAuthStateManager:
         if value is not None:
             await self._redis.delete(key)
         return value
-
-    def _scope(self) -> tuple[uuid.UUID, uuid.UUID]:
-        tenant_id = self._settings.wecom_tenant_id
-        company_id = self._settings.wecom_company_id
-        if tenant_id is None or company_id is None:
-            raise WeComOAuthStateError("WeCom identity scope is not configured")
-        return tenant_id, company_id
 
     @staticmethod
     def _nonce_key(token: str) -> str:

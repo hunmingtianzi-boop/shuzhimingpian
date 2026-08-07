@@ -452,6 +452,38 @@ class WeComUserBinding(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, B
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WeComEnterpriseScope(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Global, non-PII mapping from one WeCom corporation to its tenant scope.
+
+    Runtime access is intentionally limited to the security-definer functions
+    installed by the matching migration.  The application role receives no
+    direct table privileges, preventing arbitrary cross-tenant discovery.
+    """
+
+    __tablename__ = "wecom_enterprise_scopes"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("corp_id_hmac", name="uq_wecom_enterprise_scopes_corp"),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            name="uq_wecom_enterprise_scopes_scope",
+        ),
+        CheckConstraint("char_length(corp_id_hmac) = 64", name="corp_id_hmac_sha256"),
+    )
+
+    corp_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    provisioned_by_user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+
+
 class WeComCallbackEvent(UUIDPrimaryKeyMixin, CompanyScopeMixin, Base):
     """Verified WeCom callback retained encrypted for idempotent processing."""
 

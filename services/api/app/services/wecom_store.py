@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -206,36 +206,133 @@ class WeComStore:
             return binding
 
     async def resolve_identity(self, *, wecom_user_id: str) -> WeComResolvedIdentity:
-        tenant_id, company_id = self._scope()
         user_hash = self.user_hash(wecom_user_id)
         async with self._sessions() as session, session.begin():
-            await set_rls_context(
+            resolved = await self._resolve_identity_row(
                 session,
-                tenant_id=tenant_id,
-                company_id=company_id,
+                corp_hash=self._corp_hash(),
+                user_hash=user_hash,
             )
-            binding = await session.scalar(
-                select(WeComUserBinding).where(
-                    WeComUserBinding.tenant_id == tenant_id,
-                    WeComUserBinding.company_id == company_id,
-                    WeComUserBinding.corp_id_hmac == self._corp_hash(),
-                    WeComUserBinding.wecom_user_id_hmac == user_hash,
-                    WeComUserBinding.revoked_at.is_(None),
+        if resolved is None:
+            raise ApiError(
+                403,
+                "WECOM_ACCOUNT_NOT_BOUND",
+                "该企业微信账号尚未绑定后台账号",
+            )
+        return self._resolved_identity(resolved, account_hash=user_hash)
+
+    async def resolve_or_bootstrap_identity(
+        self,
+        *,
+        member: WeComMember,
+        enterprise_name: str,
+    ) -> WeComResolvedIdentity:
+        """Resolve a member or create the corporation's first enterprise admin.
+
+        The provider access token and active-member check happen before this
+        boundary.  PostgreSQL serializes the first-login race by corporation
+        HMAC and exposes no global scope table privileges to the runtime role.
+        Once a corporation has been claimed, additional unbound members cannot
+        promote themselves; they continue through the normal administrator-led
+        member flow.
+        """
+
+        corp_hash = self._corp_hash()
+        user_hash = self.user_hash(member.user_id)
+        profile = json.dumps(
+            {
+                "name": member.name,
+                "department_ids": list(member.departments),
+                "position": member.position,
+                "avatar_url": member.avatar_url,
+                "status": member.status,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        display_name = (member.name or member.user_id).strip()[:120]
+        normalized_enterprise_name = enterprise_name.strip()[:200]
+        if not normalized_enterprise_name:
+            normalized_enterprise_name = "企业微信企业"
+
+        async with self._sessions() as session, session.begin():
+            resolved = await self._resolve_identity_row(
+                session,
+                corp_hash=corp_hash,
+                user_hash=user_hash,
+            )
+            if resolved is None:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT user_id, membership_id, tenant_id, company_id, created
+                        FROM app.bootstrap_wecom_enterprise(
+                          :corp_hash,
+                          :user_hash,
+                          :user_ciphertext,
+                          :profile_ciphertext,
+                          :key_ref,
+                          :enterprise_name,
+                          :display_name,
+                          :tenant_slug,
+                          :card_slug
+                        )
+                        """
+                    ),
+                    {
+                        "corp_hash": corp_hash,
+                        "user_hash": user_hash,
+                        "user_ciphertext": self._cipher.encrypt(member.user_id),
+                        "profile_ciphertext": self._cipher.encrypt(profile),
+                        "key_ref": self._cipher.key_ref,
+                        "enterprise_name": normalized_enterprise_name,
+                        "display_name": display_name,
+                        "tenant_slug": f"wecom-{corp_hash[:24]}",
+                        "card_slug": f"wecom-{corp_hash[:20]}",
+                    },
                 )
+                resolved = result.mappings().one_or_none()
+
+        if resolved is None:
+            raise ApiError(
+                403,
+                "WECOM_ACCOUNT_NOT_BOUND",
+                "该企业微信企业已开通，请联系企业管理员添加你的后台权限",
             )
-            if binding is None:
-                raise ApiError(
-                    403,
-                    "WECOM_ACCOUNT_NOT_BOUND",
-                    "该企业微信账号尚未绑定后台账号",
-                )
-            return WeComResolvedIdentity(
-                user_id=binding.user_id,
-                membership_id=binding.membership_id,
-                tenant_id=binding.tenant_id,
-                company_id=binding.company_id,
-                account_hash=user_hash,
-            )
+        return self._resolved_identity(resolved, account_hash=user_hash)
+
+    @staticmethod
+    async def _resolve_identity_row(
+        session: AsyncSession,
+        *,
+        corp_hash: str,
+        user_hash: str,
+    ) -> object | None:
+        result = await session.execute(
+            text(
+                """
+                SELECT user_id, membership_id, tenant_id, company_id
+                FROM app.resolve_wecom_identity(:corp_hash, :user_hash)
+                """
+            ),
+            {"corp_hash": corp_hash, "user_hash": user_hash},
+        )
+        return result.mappings().one_or_none()
+
+    @staticmethod
+    def _resolved_identity(
+        row: object,
+        *,
+        account_hash: str,
+    ) -> WeComResolvedIdentity:
+        return WeComResolvedIdentity(
+            user_id=row["user_id"],  # type: ignore[index]
+            membership_id=row["membership_id"],  # type: ignore[index]
+            tenant_id=row["tenant_id"],  # type: ignore[index]
+            company_id=row["company_id"],  # type: ignore[index]
+            account_hash=account_hash,
+        )
 
     async def prepare_card_contact_way(
         self,

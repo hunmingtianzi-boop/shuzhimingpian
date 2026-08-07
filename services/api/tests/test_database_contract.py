@@ -62,6 +62,7 @@ REQUIRED_TABLES = {
     "knowledge_import_batches",
     "knowledge_import_items",
     "wecom_user_bindings",
+    "wecom_enterprise_scopes",
     "wecom_callback_events",
 }
 
@@ -73,6 +74,7 @@ COMPANY_SCOPED_TABLES = REQUIRED_TABLES - {
     "auth_sessions",
     "staff_credentials",
     "security_events",
+    "wecom_enterprise_scopes",
 }
 
 
@@ -204,6 +206,21 @@ def test_staff_login_boundary_is_unscoped_but_binds_an_exact_company(migration_s
     assert "alter table staff_credentials enable row level security" not in migration_sql
     assert "alter table memberships force row level security" in migration_sql
     assert "alter table auth_sessions force row level security" in migration_sql
+
+
+def test_wecom_first_login_bootstrap_uses_narrow_security_definer_boundary(
+    migration_sql: str,
+) -> None:
+    scope = Base.metadata.tables["wecom_enterprise_scopes"]
+    assert {"corp_id_hmac", "tenant_id", "company_id"} <= set(scope.columns.keys())
+    assert "create function app.resolve_wecom_identity" in migration_sql
+    assert "create function app.bootstrap_wecom_enterprise" in migration_sql
+    assert "security definer" in migration_sql
+    assert "revoke all on table wecom_enterprise_scopes from public" in migration_sql
+    assert "grant execute on function app.bootstrap_wecom_enterprise" in migration_sql
+    assert "grant select" not in migration_sql.split(
+        "create table wecom_enterprise_scopes", 1
+    )[1].split("create function app.resolve_wecom_identity", 1)[0]
 
 
 def test_active_document_requires_its_own_approved_version(migration_sql: str) -> None:

@@ -24,10 +24,16 @@ describe("admin subpath routing", () => {
 
     expect(routing.appHref(routing.APP_PATHS.overview)).toBe("/c/admin/");
     expect(routing.appHref(routing.APP_PATHS.visits)).toBe("/c/admin/visits");
+    expect(routing.appHref(routing.WECOM_ENTRY_PATH)).toBe(
+      "/c/admin/wecom/entry",
+    );
     expect(routing.appHref("/conversations?visitorId=visitor-1")).toBe(
       "/c/admin/conversations?visitorId=visitor-1",
     );
     expect(routing.appPathFromBrowser("/c/admin/visits")).toBe("/visits");
+    expect(routing.appPathFromBrowser("/c/admin/wecom/callback")).toBe(
+      routing.WECOM_CALLBACK_PATH,
+    );
     expect(routing.appPathFromBrowser("/c/admin/")).toBe("/");
     expect(routing.appPathFromBrowser("/unrelated")).toBe("/unrelated");
   });

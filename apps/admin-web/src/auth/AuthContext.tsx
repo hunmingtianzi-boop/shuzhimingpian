@@ -15,7 +15,12 @@ import {
   ApiError,
 } from "../api/client";
 import type { AdminUser, LoginInput } from "../api/types";
-import { appHref } from "../routing";
+import {
+  appHref,
+  appPathFromBrowser,
+  WECOM_CALLBACK_PATH,
+  WECOM_ENTRY_PATH,
+} from "../routing";
 
 type AuthStatus = "bootstrapping" | "unauthenticated" | "authenticated";
 
@@ -33,17 +38,48 @@ export type AuthContextValue = {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+type AuthProviderProps = {
+  children: ReactNode;
+  externalRedirect?: (url: string) => void;
+};
+
+function assignExternalLocation(url: string): void {
+  globalThis.location.assign(url);
+}
+
 function asApiError(error: unknown): ApiError {
   return error instanceof ApiError
     ? error
     : new ApiError("登录过程中发生未知错误。", { code: "UNKNOWN_ERROR" });
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  externalRedirect = assignExternalLocation,
+}: AuthProviderProps) {
   const [status, setStatus] = useState<AuthStatus>("bootstrapping");
   const [user, setUser] = useState<AdminUser>();
   const [error, setError] = useState<ApiError>();
   const [loginPending, setLoginPending] = useState(false);
+
+  const beginWeComLogin = useCallback(
+    async (returnTo: string) => {
+      setLoginPending(true);
+      setError(undefined);
+      try {
+        const authorizeUrl = await apiClient.createWeComLoginUrl(returnTo);
+        externalRedirect(authorizeUrl);
+      } catch (caught) {
+        const apiError = asApiError(caught);
+        setError(apiError);
+        setStatus("unauthenticated");
+        throw apiError;
+      } finally {
+        setLoginPending(false);
+      }
+    },
+    [externalRedirect],
+  );
 
   useEffect(() => {
     let active = true;
@@ -60,12 +96,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
+        const appPath = appPathFromBrowser(globalThis.location.pathname);
         const query = new URLSearchParams(globalThis.location.search);
         const code = query.get("code");
         const state = query.get("state");
-        const isWeComCallback = globalThis.location.pathname.endsWith(
-          "/wecom/callback",
-        );
+        const isWeComCallback = appPath === WECOM_CALLBACK_PATH;
+        if (isWeComCallback && (!code || !state)) {
+          throw new ApiError("企业微信没有返回完整的登录凭证，请重新进入应用。", {
+            code: "WECOM_OAUTH_CALLBACK_INVALID",
+          });
+        }
         if (isWeComCallback && code && state) {
           const flow = apiClient.consumeWeComFlow();
           if (flow === "bind") {
@@ -86,9 +126,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         setUser(currentUser);
         setStatus("authenticated");
-      } catch {
+      } catch (caught) {
         apiClient.clearSession();
         if (!active) return;
+        const appPath = appPathFromBrowser(globalThis.location.pathname);
+        if (appPath === WECOM_ENTRY_PATH) {
+          // The dedicated workbench URL is intentionally login-only. Keeping
+          // this state on the boot screen avoids flashing the password form
+          // between the session probe and the WeCom authorization redirect.
+          setStatus("bootstrapping");
+          await beginWeComLogin(appHref("/")).catch(() => undefined);
+          return;
+        }
+        if (appPath === WECOM_CALLBACK_PATH) {
+          setError(asApiError(caught));
+        }
         setStatus("unauthenticated");
       }
     };
@@ -98,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false;
       globalThis.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleExpired);
     };
-  }, []);
+  }, [beginWeComLogin]);
 
   const login = useCallback(async ({ account, credential }: LoginInput) => {
     setLoginPending(true);
@@ -131,21 +183,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const wecomLogin = useCallback(async () => {
-    setLoginPending(true);
-    setError(undefined);
-    try {
-      const authorizeUrl = await apiClient.createWeComLoginUrl(appHref("/"));
-      globalThis.location.assign(authorizeUrl);
-    } catch (caught) {
-      const apiError = asApiError(caught);
-      setError(apiError);
-      setStatus("unauthenticated");
-      throw apiError;
-    } finally {
-      setLoginPending(false);
-    }
-  }, []);
+  const wecomLogin = useCallback(
+    () => beginWeComLogin(appHref("/")),
+    [beginWeComLogin],
+  );
 
   const wecomBind = useCallback(async () => {
     setLoginPending(true);

@@ -22,6 +22,7 @@ from app.core.tokens import StaffPrincipal
 from app.integrations.wecom import (
     WeComClient,
     WeComConfigurationError,
+    WeComDepartment,
     WeComMember,
     WeComProviderError,
 )
@@ -139,16 +140,21 @@ async def login_with_wecom(
         state = await _states(request).consume(payload.state)
         if state.mode != "login":
             raise WeComOAuthStateError("wrong oauth mode")
-        identity = await _client(request).get_user_identity(code=payload.code)
-        member = await _client(request).get_member(user_id=identity.user_id)
+        client = _client(request)
+        identity = await client.get_user_identity(code=payload.code)
+        member = await client.get_member(user_id=identity.user_id)
         _require_active_member(member)
+        departments = await client.list_departments()
     except (WeComConfigurationError, WeComOAuthStateError, WeComProviderError) as exc:
         raise _oauth_error(exc) from exc
     store = WeComStore(
         request.app.state.session_factory,
         request.app.state.settings,
     )
-    resolved = await store.resolve_identity(wecom_user_id=identity.user_id)
+    resolved = await store.resolve_or_bootstrap_identity(
+        member=member,
+        enterprise_name=_enterprise_name(departments),
+    )
     authentication = await AuthStore(
         request.app.state.session_factory,
         request.app.state.settings,
@@ -206,6 +212,29 @@ async def bind_current_staff_to_wecom(
 def _require_active_member(member: WeComMember) -> None:
     if member.status is not None and member.status != 1:
         raise ApiError(403, "WECOM_MEMBER_INACTIVE", "企业微信成员未激活或已停用")
+
+
+def _enterprise_name(departments: tuple[WeComDepartment, ...]) -> str:
+    """Choose the corporation root exposed by the application's address book."""
+
+    if not departments:
+        return "企业微信企业"
+    department_ids = {item.department_id for item in departments}
+    roots = [
+        item
+        for item in departments
+        if item.parent_id in (None, 0) or item.parent_id not in department_ids
+    ]
+    candidates = roots or list(departments)
+    selected = min(
+        candidates,
+        key=lambda item: (
+            item.order is None,
+            item.order if item.order is not None else 0,
+            item.department_id,
+        ),
+    )
+    return selected.name.strip()[:200] or "企业微信企业"
 
 
 __all__ = ["router"]
