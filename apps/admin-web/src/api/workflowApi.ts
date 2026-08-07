@@ -258,6 +258,15 @@ function normalizeVisit(value: unknown): Visit {
 
 function normalizeVisitDetail(payload: unknown): VisitDetail {
   const raw = dataRecord(payload, "访问明细");
+  const analysis = recordValue(raw.behavior_analysis);
+  const engagementLevelValue = stringValue(analysis.engagement_level, "low");
+  const engagementLevel = ["low", "medium", "high"].includes(engagementLevelValue)
+    ? engagementLevelValue as VisitDetail["behaviorAnalysis"]["engagementLevel"]
+    : "low";
+  const intentLevelValue = stringValue(analysis.intent_level, "low");
+  const intentLevel = ["low", "medium", "high"].includes(intentLevelValue)
+    ? intentLevelValue as VisitDetail["behaviorAnalysis"]["intentLevel"]
+    : "low";
   return {
     ...normalizeVisit(raw),
     eventCount: numberValue(raw.event_count),
@@ -275,6 +284,45 @@ function normalizeVisitDetail(payload: unknown): VisitDetail {
           };
         })
       : [],
+    pageTimeline: Array.isArray(raw.page_timeline)
+      ? raw.page_timeline.map((value) => {
+          const item = isRecord(value) ? value : invalid("页面访问时间线");
+          const exitReasonValue = stringValue(item.exit_reason, "timeout");
+          const exitReason = [
+            "navigation", "background", "leave", "timeout", "active",
+          ].includes(exitReasonValue)
+            ? exitReasonValue as VisitDetail["pageTimeline"][number]["exitReason"]
+            : "timeout";
+          return {
+            sequence: numberValue(item.sequence),
+            pageKey: requiredString(item.page_key, "页面时间线标识"),
+            pageTitle: requiredString(item.page_title, "页面时间线名称"),
+            objectType: optionalString(item.object_type),
+            objectId: optionalString(item.object_id),
+            enteredAt: requiredString(item.entered_at, "页面进入时间"),
+            lastActivityAt: requiredString(item.last_activity_at, "页面最后活动时间"),
+            durationSeconds: numberValue(item.duration_seconds),
+            exitReason,
+          };
+        })
+      : [],
+    actions: Array.isArray(raw.actions)
+      ? raw.actions.map((value) => {
+          const item = isRecord(value) ? value : invalid("访客操作记录");
+          const actionTypeValue = stringValue(item.action_type);
+          if (!["content_view", "cta_click", "share"].includes(actionTypeValue)) {
+            invalid("访客操作类型");
+          }
+          return {
+            eventId: requiredString(item.event_id, "操作事件 id"),
+            actionType: actionTypeValue as VisitDetail["actions"][number]["actionType"],
+            actionLabel: requiredString(item.action_label, "操作名称"),
+            objectType: optionalString(item.object_type),
+            objectId: optionalString(item.object_id),
+            occurredAt: requiredString(item.occurred_at, "操作时间"),
+          };
+        })
+      : [],
     questions: Array.isArray(raw.questions)
       ? raw.questions.map((value) => {
           const item = isRecord(value) ? value : invalid("访客问题记录");
@@ -284,9 +332,41 @@ function normalizeVisitDetail(payload: unknown): VisitDetail {
             question: requiredString(item.question, "访客问题"),
             askedAt: requiredString(item.asked_at, "提问时间"),
             answerStatus: optionalString(item.answer_status),
+            answer: optionalString(item.answer),
+            answeredAt: optionalString(item.answered_at),
+            responseSeconds:
+              typeof item.response_seconds === "number" ? item.response_seconds : undefined,
           };
         })
       : [],
+    behaviorAnalysis: {
+      summary: stringValue(analysis.summary, "本次访问数据不足，暂无法形成行为分析。"),
+      engagementScore: numberValue(analysis.engagement_score),
+      engagementLevel,
+      intentLevel,
+      trackedDurationSeconds: numberValue(analysis.tracked_duration_seconds),
+      uniquePages: numberValue(analysis.unique_pages),
+      totalActions: numberValue(analysis.total_actions),
+      questionCount: numberValue(analysis.question_count),
+      answeredCount: numberValue(analysis.answered_count),
+      signals: Array.isArray(analysis.signals)
+        ? analysis.signals.map((value) => {
+            const item = isRecord(value) ? value : invalid("行为分析信号");
+            const categoryValue = stringValue(item.category, "engagement");
+            const basisValue = stringValue(item.basis, "observed");
+            return {
+              category: (["engagement", "interest", "intent"].includes(categoryValue)
+                ? categoryValue
+                : "engagement") as VisitDetail["behaviorAnalysis"]["signals"][number]["category"],
+              label: requiredString(item.label, "行为信号名称"),
+              evidence: requiredString(item.evidence, "行为信号证据"),
+              basis: (basisValue === "inferred" ? "inferred" : "observed") as
+                VisitDetail["behaviorAnalysis"]["signals"][number]["basis"],
+              confidence: numberValue(item.confidence),
+            };
+          })
+        : [],
+    },
   };
 }
 

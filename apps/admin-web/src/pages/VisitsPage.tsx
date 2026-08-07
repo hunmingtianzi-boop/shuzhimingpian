@@ -1,6 +1,8 @@
 import {
+  Badge,
   Button,
   Input,
+  ProgressBar,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +25,7 @@ import { ResourceState } from "../components/ResourceState";
 import { useResource } from "../hooks/useResource";
 import { APP_PATHS, navigate } from "../routing";
 import { formatTimestamp } from "../utils/format";
+import "./VisitsPage.css";
 
 const PAGE_SIZE = 20;
 
@@ -59,6 +62,24 @@ function answerStatusLabel(status?: string) {
   return "暂无回答";
 }
 
+function levelLabel(level: "low" | "medium" | "high") {
+  return { low: "较低", medium: "中等", high: "较高" }[level];
+}
+
+function signalCategoryLabel(category: "engagement" | "interest" | "intent") {
+  return { engagement: "参与度", interest: "兴趣", intent: "意向" }[category];
+}
+
+function exitReasonLabel(reason: "navigation" | "background" | "leave" | "timeout" | "active") {
+  return {
+    navigation: "切换页面",
+    background: "切到后台后恢复",
+    leave: "正常离开",
+    timeout: "无活动结束",
+    active: "正在浏览",
+  }[reason];
+}
+
 function VisitDetailPanel({ visitId, onClose }: { visitId: string; onClose: () => void }) {
   const resource = useResource(() => workflowApi.getVisit(visitId), visitId);
   return (
@@ -69,7 +90,57 @@ function VisitDetailPanel({ visitId, onClose }: { visitId: string; onClose: () =
         actions={<Button appearance="subtle" icon={<Dismiss24Regular />} onClick={onClose}>关闭</Button>}
       />
       {resource.status === "ready" && resource.data ? (
-        <div className="page-stack compact-stack">
+        <div className="page-stack compact-stack visit-report">
+          <section className="visit-analysis" aria-label="智能行为分析">
+            <div className="visit-analysis-heading">
+              <div>
+                <span className="eyebrow">基于本次访问证据</span>
+                <h3>智能行为分析</h3>
+              </div>
+              <div className="visit-analysis-score">
+                <strong>{resource.data.behaviorAnalysis.engagementScore}</strong>
+                <span>参与度评分</span>
+              </div>
+            </div>
+            <ProgressBar
+              value={resource.data.behaviorAnalysis.engagementScore / 100}
+              aria-label={`参与度 ${resource.data.behaviorAnalysis.engagementScore} 分`}
+            />
+            <p className="visit-analysis-summary">{resource.data.behaviorAnalysis.summary}</p>
+            <div className="visit-metrics" aria-label="本次访问指标">
+              <div><span>记录停留</span><strong>{formatDuration(resource.data.behaviorAnalysis.trackedDurationSeconds)}</strong></div>
+              <div><span>浏览页面</span><strong>{resource.data.behaviorAnalysis.uniquePages}</strong></div>
+              <div><span>AI 提问</span><strong>{resource.data.behaviorAnalysis.questionCount}</strong></div>
+              <div><span>页面操作</span><strong>{resource.data.behaviorAnalysis.totalActions}</strong></div>
+              <div><span>参与程度</span><strong>{levelLabel(resource.data.behaviorAnalysis.engagementLevel)}</strong></div>
+              <div><span>咨询意向</span><strong>{levelLabel(resource.data.behaviorAnalysis.intentLevel)}</strong></div>
+            </div>
+            {resource.data.behaviorAnalysis.signals.length > 0 ? (
+              <div className="visit-signal-list">
+                {resource.data.behaviorAnalysis.signals.map((signal, index) => (
+                  <article className="visit-signal" key={`${signal.category}:${signal.label}:${index}`}>
+                    <div>
+                      <Badge appearance="tint" color={signal.category === "intent" ? "brand" : "informative"}>
+                        {signalCategoryLabel(signal.category)}
+                      </Badge>
+                      <Badge appearance="outline">{signal.basis === "observed" ? "实际记录" : "系统推断"}</Badge>
+                    </div>
+                    <strong>{signal.label}</strong>
+                    <p>{signal.evidence}</p>
+                    <span>置信度 {Math.round(signal.confidence * 100)}%</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-value">记录较少，暂未形成有效行为信号。</p>
+            )}
+          </section>
+
+          <section className="visit-report-section" aria-labelledby="visit-page-summary">
+            <div className="visit-section-heading">
+              <div><span className="eyebrow">页面汇总</span><h3 id="visit-page-summary">每个页面停留多久</h3></div>
+              <span>相同页面的多次进入会累计计算</span>
+            </div>
           <div className="table-scroll">
             <Table aria-label="页面停留明细">
               <TableHeader><TableRow>
@@ -93,27 +164,91 @@ function VisitDetailPanel({ visitId, onClose }: { visitId: string; onClose: () =
           {resource.data.pageDurations.length === 0 && (
             <ResourceState status="empty" title="尚无页面停留事件" description="新版本上线后的访问会自动记录。" />
           )}
-          <div className="table-scroll">
-            <Table aria-label="本次访问提问明细">
-              <TableHeader><TableRow>
-                <TableHeaderCell>提问时间</TableHeaderCell>
-                <TableHeaderCell>访客问题</TableHeaderCell>
-                <TableHeaderCell>回答状态</TableHeaderCell>
-              </TableRow></TableHeader>
-              <TableBody>
-                {resource.data.questions.map((question) => (
-                  <TableRow key={question.messageId}>
-                    <TableCell>{formatTimestamp(question.askedAt)}</TableCell>
-                    <TableCell>{question.question}</TableCell>
-                    <TableCell>{answerStatusLabel(question.answerStatus)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          </section>
+
+          <section className="visit-report-section" aria-labelledby="visit-timeline">
+            <div className="visit-section-heading">
+              <div><span className="eyebrow">访问路径</span><h3 id="visit-timeline">逐段页面时间线</h3></div>
+              <span>按真实发生顺序排列</span>
+            </div>
+            <div className="table-scroll">
+              <Table aria-label="逐段页面访问时间线">
+                <TableHeader><TableRow>
+                  <TableHeaderCell>顺序</TableHeaderCell>
+                  <TableHeaderCell>页面</TableHeaderCell>
+                  <TableHeaderCell>进入时间</TableHeaderCell>
+                  <TableHeaderCell>本段停留</TableHeaderCell>
+                  <TableHeaderCell>结束方式</TableHeaderCell>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {resource.data.pageTimeline.map((item) => (
+                    <TableRow key={`${item.sequence}:${item.enteredAt}`}>
+                      <TableCell>#{item.sequence}</TableCell>
+                      <TableCell><strong>{item.pageTitle}</strong><br /><code>{item.pageKey}</code></TableCell>
+                      <TableCell>{formatTimestamp(item.enteredAt)}</TableCell>
+                      <TableCell>{formatDuration(item.durationSeconds)}</TableCell>
+                      <TableCell>{exitReasonLabel(item.exitReason)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {resource.data.pageTimeline.length === 0 && <ResourceState status="empty" title="暂无页面时间线" compact />}
+          </section>
+
+          <section className="visit-report-section" aria-labelledby="visit-ai-questions">
+            <div className="visit-section-heading">
+              <div><span className="eyebrow">AI 对话</span><h3 id="visit-ai-questions">访客向 AI 提了什么</h3></div>
+              <span>{resource.data.behaviorAnalysis.answeredCount}/{resource.data.questions.length} 个问题已回答</span>
+            </div>
+            <div className="visit-question-list">
+              {resource.data.questions.map((question, index) => (
+                <article className="visit-question" key={question.messageId}>
+                  <header>
+                    <span>问题 {index + 1} · {formatTimestamp(question.askedAt)}</span>
+                    <Badge appearance="tint">{answerStatusLabel(question.answerStatus)}</Badge>
+                  </header>
+                  <div className="visit-question-copy"><span>访客</span><p>{question.question}</p></div>
+                  <div className="visit-answer-copy">
+                    <span>企业 AI</span>
+                    <p>{question.answer || "本次回答未完成，系统已保留原始问题。"}</p>
+                  </div>
+                  {question.responseSeconds !== undefined && (
+                    <footer>响应用时 {formatDuration(question.responseSeconds)}</footer>
+                  )}
+                </article>
+              ))}
+            </div>
           {resource.data.questions.length === 0 && (
             <ResourceState status="empty" title="本次访问尚未提问" />
           )}
+          </section>
+
+          <section className="visit-report-section" aria-labelledby="visit-actions">
+            <div className="visit-section-heading">
+              <div><span className="eyebrow">关键操作</span><h3 id="visit-actions">点击、查看与分享</h3></div>
+              <span>共 {resource.data.actions.length} 次</span>
+            </div>
+            <div className="table-scroll">
+              <Table aria-label="访客关键操作">
+                <TableHeader><TableRow>
+                  <TableHeaderCell>时间</TableHeaderCell>
+                  <TableHeaderCell>操作</TableHeaderCell>
+                  <TableHeaderCell>对象</TableHeaderCell>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {resource.data.actions.map((action) => (
+                    <TableRow key={action.eventId}>
+                      <TableCell>{formatTimestamp(action.occurredAt)}</TableCell>
+                      <TableCell>{action.actionLabel}</TableCell>
+                      <TableCell>{action.objectId || action.objectType || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {resource.data.actions.length === 0 && <ResourceState status="empty" title="本次访问没有关键操作" compact />}
+          </section>
         </div>
       ) : (
         <ResourceState

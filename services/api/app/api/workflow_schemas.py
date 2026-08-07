@@ -148,12 +148,60 @@ class VisitQuestion(WorkflowModel):
     question: str
     asked_at: datetime
     answer_status: str | None = None
+    answer: str | None = None
+    answered_at: datetime | None = None
+    response_seconds: float | None = Field(default=None, ge=0)
+
+
+class VisitPageTimelineItem(WorkflowModel):
+    sequence: int = Field(ge=1)
+    page_key: str
+    page_title: str
+    object_type: str | None = None
+    object_id: str | None = None
+    entered_at: datetime
+    last_activity_at: datetime
+    duration_seconds: float = Field(ge=0)
+    exit_reason: Literal["navigation", "background", "leave", "timeout", "active"]
+
+
+class VisitAction(WorkflowModel):
+    event_id: uuid.UUID
+    action_type: Literal["content_view", "cta_click", "share"]
+    action_label: str
+    object_type: str | None = None
+    object_id: str | None = None
+    occurred_at: datetime
+
+
+class VisitBehaviorSignal(WorkflowModel):
+    category: Literal["engagement", "interest", "intent"]
+    label: str
+    evidence: str
+    basis: Literal["observed", "inferred"]
+    confidence: float = Field(ge=0, le=1)
+
+
+class VisitBehaviorAnalysis(WorkflowModel):
+    summary: str
+    engagement_score: int = Field(ge=0, le=100)
+    engagement_level: Literal["low", "medium", "high"]
+    intent_level: Literal["low", "medium", "high"]
+    tracked_duration_seconds: float = Field(ge=0)
+    unique_pages: int = Field(ge=0)
+    total_actions: int = Field(ge=0)
+    question_count: int = Field(ge=0)
+    answered_count: int = Field(ge=0)
+    signals: list[VisitBehaviorSignal] = Field(default_factory=list)
 
 
 class VisitDetail(VisitItem):
     event_count: int = Field(ge=0)
     page_durations: list[VisitPageDuration] = Field(default_factory=list)
+    page_timeline: list[VisitPageTimelineItem] = Field(default_factory=list)
+    actions: list[VisitAction] = Field(default_factory=list)
     questions: list[VisitQuestion] = Field(default_factory=list)
+    behavior_analysis: VisitBehaviorAnalysis
 
 
 class VisitDetailEnvelope(WorkflowModel):

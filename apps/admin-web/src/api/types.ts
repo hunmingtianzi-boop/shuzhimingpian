@@ -804,12 +804,60 @@ export type VisitQuestion = {
   question: string;
   askedAt: string;
   answerStatus?: string;
+  answer?: string;
+  answeredAt?: string;
+  responseSeconds?: number;
+};
+
+export type VisitPageTimelineItem = {
+  sequence: number;
+  pageKey: string;
+  pageTitle: string;
+  objectType?: string;
+  objectId?: string;
+  enteredAt: string;
+  lastActivityAt: string;
+  durationSeconds: number;
+  exitReason: "navigation" | "background" | "leave" | "timeout" | "active";
+};
+
+export type VisitAction = {
+  eventId: string;
+  actionType: "content_view" | "cta_click" | "share";
+  actionLabel: string;
+  objectType?: string;
+  objectId?: string;
+  occurredAt: string;
+};
+
+export type VisitBehaviorSignal = {
+  category: "engagement" | "interest" | "intent";
+  label: string;
+  evidence: string;
+  basis: "observed" | "inferred";
+  confidence: number;
+};
+
+export type VisitBehaviorAnalysis = {
+  summary: string;
+  engagementScore: number;
+  engagementLevel: "low" | "medium" | "high";
+  intentLevel: "low" | "medium" | "high";
+  trackedDurationSeconds: number;
+  uniquePages: number;
+  totalActions: number;
+  questionCount: number;
+  answeredCount: number;
+  signals: VisitBehaviorSignal[];
 };
 
 export type VisitDetail = Visit & {
   eventCount: number;
   pageDurations: VisitPageDuration[];
+  pageTimeline: VisitPageTimelineItem[];
+  actions: VisitAction[];
   questions: VisitQuestion[];
+  behaviorAnalysis: VisitBehaviorAnalysis;
 };
 
 export type ConversationStatus = "active" | "closed" | "expired" | "blocked";

@@ -24079,6 +24079,187 @@
         ],
         "title": "ValidationError"
       },
+      "VisitAction": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "content_view",
+              "cta_click",
+              "share"
+            ],
+            "title": "Action Type"
+          },
+          "action_label": {
+            "type": "string",
+            "title": "Action Label"
+          },
+          "object_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Type"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "action_type",
+          "action_label",
+          "occurred_at"
+        ],
+        "title": "VisitAction"
+      },
+      "VisitBehaviorAnalysis": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "engagement_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Engagement Score"
+          },
+          "engagement_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Engagement Level"
+          },
+          "intent_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Intent Level"
+          },
+          "tracked_duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Tracked Duration Seconds"
+          },
+          "unique_pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Pages"
+          },
+          "total_actions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Actions"
+          },
+          "question_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Question Count"
+          },
+          "answered_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Answered Count"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/VisitBehaviorSignal"
+            },
+            "type": "array",
+            "title": "Signals"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "summary",
+          "engagement_score",
+          "engagement_level",
+          "intent_level",
+          "tracked_duration_seconds",
+          "unique_pages",
+          "total_actions",
+          "question_count",
+          "answered_count"
+        ],
+        "title": "VisitBehaviorAnalysis"
+      },
+      "VisitBehaviorSignal": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "engagement",
+              "interest",
+              "intent"
+            ],
+            "title": "Category"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "inferred"
+            ],
+            "title": "Basis"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "label",
+          "evidence",
+          "basis",
+          "confidence"
+        ],
+        "title": "VisitBehaviorSignal"
+      },
       "VisitDetail": {
         "properties": {
           "id": {
@@ -24211,12 +24392,29 @@
             "type": "array",
             "title": "Page Durations"
           },
+          "page_timeline": {
+            "items": {
+              "$ref": "#/components/schemas/VisitPageTimelineItem"
+            },
+            "type": "array",
+            "title": "Page Timeline"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/VisitAction"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
           "questions": {
             "items": {
               "$ref": "#/components/schemas/VisitQuestion"
             },
             "type": "array",
             "title": "Questions"
+          },
+          "behavior_analysis": {
+            "$ref": "#/components/schemas/VisitBehaviorAnalysis"
           }
         },
         "additionalProperties": false,
@@ -24228,7 +24426,8 @@
           "visitor_id",
           "started_at",
           "conversation_count",
-          "event_count"
+          "event_count",
+          "behavior_analysis"
         ],
         "title": "VisitDetail"
       },
@@ -24606,6 +24805,83 @@
         ],
         "title": "VisitPageDuration"
       },
+      "VisitPageTimelineItem": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "page_key": {
+            "type": "string",
+            "title": "Page Key"
+          },
+          "page_title": {
+            "type": "string",
+            "title": "Page Title"
+          },
+          "object_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Type"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "entered_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Entered At"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Activity At"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Duration Seconds"
+          },
+          "exit_reason": {
+            "type": "string",
+            "enum": [
+              "navigation",
+              "background",
+              "leave",
+              "timeout",
+              "active"
+            ],
+            "title": "Exit Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sequence",
+          "page_key",
+          "page_title",
+          "entered_at",
+          "last_activity_at",
+          "duration_seconds",
+          "exit_reason"
+        ],
+        "title": "VisitPageTimelineItem"
+      },
       "VisitQuestion": {
         "properties": {
           "message_id": {
@@ -24637,6 +24913,41 @@
               }
             ],
             "title": "Answer Status"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "answered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered At"
+          },
+          "response_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Seconds"
           }
         },
         "additionalProperties": false,

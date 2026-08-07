@@ -25,11 +25,15 @@ from app.api.workflow_schemas import (
     OpportunityCandidateView,
     SummaryDraft,
     SummaryView,
+    VisitAction,
+    VisitBehaviorAnalysis,
+    VisitBehaviorSignal,
     VisitDetail,
     VisitEventRequest,
     VisitEventView,
     VisitItem,
     VisitPageDuration,
+    VisitPageTimelineItem,
     VisitQuestion,
 )
 from app.core.config import Settings
@@ -212,6 +216,250 @@ def _visit_presentation(
         visitor_channel=visitor_channel,
         visitor_identity_type=identity_type,
         visitor_identity_label=identity_label,
+    )
+
+
+def _event_page_fields(event: VisitEvent) -> tuple[str, str, dict[str, object]]:
+    metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
+    page_key = str(metadata.get("page_key") or event.object_id or event.object_type or "card")[:160]
+    page_title = str(metadata.get("page_title") or page_key)[:160]
+    return page_key, page_title, metadata
+
+
+def _duration_ms(metadata: dict[str, object]) -> float:
+    value = metadata.get("duration_ms")
+    if not isinstance(value, (int, float)):
+        return 0.0
+    return max(0.0, min(float(value), 86_400_000.0))
+
+
+def _page_timeline(
+    events: list[VisitEvent], *, presentation: VisitPresentation
+) -> list[VisitPageTimelineItem]:
+    segments: list[dict[str, object]] = []
+    active_index: int | None = None
+    for event in events:
+        if event.event_type not in {"page_view", "heartbeat", "leave"}:
+            continue
+        page_key, page_title, metadata = _event_page_fields(event)
+        if event.event_type == "page_view":
+            if active_index is not None:
+                previous = segments[active_index]
+                previous["exit_reason"] = (
+                    "background" if previous["page_key"] == page_key else "navigation"
+                )
+            segments.append(
+                {
+                    "page_key": page_key,
+                    "page_title": page_title,
+                    "object_type": event.object_type,
+                    "object_id": event.object_id,
+                    "entered_at": event.occurred_at,
+                    "last_activity_at": event.occurred_at,
+                    "duration_ms": 0.0,
+                    "exit_reason": "active",
+                }
+            )
+            active_index = len(segments) - 1
+            continue
+
+        duration_ms = _duration_ms(metadata)
+        matching_index = (
+            active_index
+            if active_index is not None and segments[active_index]["page_key"] == page_key
+            else None
+        )
+        if matching_index is None:
+            entered_at = event.occurred_at - timedelta(milliseconds=duration_ms)
+            segments.append(
+                {
+                    "page_key": page_key,
+                    "page_title": page_title,
+                    "object_type": event.object_type,
+                    "object_id": event.object_id,
+                    "entered_at": entered_at,
+                    "last_activity_at": event.occurred_at,
+                    "duration_ms": duration_ms,
+                    "exit_reason": "active",
+                }
+            )
+            matching_index = len(segments) - 1
+            active_index = matching_index
+        else:
+            segment = segments[matching_index]
+            segment["duration_ms"] = float(segment["duration_ms"]) + duration_ms
+            segment["last_activity_at"] = max(segment["last_activity_at"], event.occurred_at)
+        if event.event_type == "leave":
+            segments[matching_index]["exit_reason"] = "leave"
+            active_index = None
+
+    if active_index is not None:
+        segments[active_index]["exit_reason"] = (
+            "active" if presentation.activity_status == "active" else "timeout"
+        )
+    return [
+        VisitPageTimelineItem(
+            sequence=index,
+            page_key=str(segment["page_key"]),
+            page_title=str(segment["page_title"]),
+            object_type=(
+                str(segment["object_type"]) if segment["object_type"] is not None else None
+            ),
+            object_id=(str(segment["object_id"]) if segment["object_id"] is not None else None),
+            entered_at=segment["entered_at"],
+            last_activity_at=segment["last_activity_at"],
+            duration_seconds=round(float(segment["duration_ms"]) / 1_000, 1),
+            exit_reason=segment["exit_reason"],
+        )
+        for index, segment in enumerate(segments, start=1)
+    ]
+
+
+def _action_label(event: VisitEvent) -> str:
+    metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
+    explicit = metadata.get("action_label")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()[:160]
+    known = {
+        "lead_form": "打开联系表单",
+        "share_dialog": "打开分享名片",
+        "privacy": "查看隐私说明",
+        "profile": "查看访客画像说明",
+    }
+    if event.object_id in known:
+        return known[event.object_id]
+    return {
+        "content_view": "查看内容",
+        "cta_click": "点击行动按钮",
+        "share": "分享名片",
+    }.get(event.event_type, event.event_type)
+
+
+def _human_duration(seconds: float) -> str:
+    rounded = max(0, round(seconds))
+    if rounded < 60:
+        return f"{rounded} 秒"
+    minutes, remaining = divmod(rounded, 60)
+    return f"{minutes} 分 {remaining} 秒" if remaining else f"{minutes} 分钟"
+
+
+def _behavior_analysis(
+    *,
+    page_durations: list[VisitPageDuration],
+    actions: list[VisitAction],
+    questions: list[VisitQuestion],
+) -> VisitBehaviorAnalysis:
+    tracked_duration = round(sum(item.duration_seconds for item in page_durations), 1)
+    unique_pages = sum(1 for item in page_durations if item.view_count > 0)
+    answered_count = sum(1 for item in questions if item.answer_status == "completed")
+    cta_count = sum(1 for item in actions if item.action_type == "cta_click")
+    share_count = sum(1 for item in actions if item.action_type == "share")
+    content_count = sum(1 for item in actions if item.action_type == "content_view")
+    duration_score = min(35.0, tracked_duration / 180 * 35)
+    depth_score = min(20.0, unique_pages / 5 * 20)
+    question_score = min(25.0, len(questions) * 10.0)
+    action_score = min(20.0, cta_count * 10 + share_count * 8 + content_count * 2)
+    engagement_score = round(duration_score + depth_score + question_score + action_score)
+    engagement_level = (
+        "high" if engagement_score >= 70 else "medium" if engagement_score >= 35 else "low"
+    )
+    if cta_count or len(questions) >= 3 or share_count + len(questions) >= 3:
+        intent_level = "high"
+    elif questions or share_count or content_count >= 2:
+        intent_level = "medium"
+    else:
+        intent_level = "low"
+
+    signals: list[VisitBehaviorSignal] = []
+    ranked_pages = sorted(
+        page_durations,
+        key=lambda item: (item.duration_seconds, item.view_count),
+        reverse=True,
+    )
+    for page in ranked_pages[:3]:
+        if page.duration_seconds <= 0:
+            continue
+        share = page.duration_seconds / tracked_duration if tracked_duration else 0
+        signals.append(
+            VisitBehaviorSignal(
+                category="interest",
+                label=f"重点浏览：{page.page_title}",
+                evidence=(
+                    f"累计停留 {_human_duration(page.duration_seconds)}，"
+                    f"占已记录停留时间的 {round(share * 100)}%"
+                ),
+                basis="observed",
+                confidence=round(min(0.98, 0.55 + share * 0.4), 2),
+            )
+        )
+    if questions:
+        signals.append(
+            VisitBehaviorSignal(
+                category="engagement",
+                label="主动使用企业 AI",
+                evidence=f"本次向 AI 提问 {len(questions)} 次，其中 {answered_count} 次已回答",
+                basis="observed",
+                confidence=0.98,
+            )
+        )
+    if cta_count:
+        signals.append(
+            VisitBehaviorSignal(
+                category="intent",
+                label="出现联系行动",
+                evidence=f"点击联系或行动入口 {cta_count} 次",
+                basis="observed",
+                confidence=0.98,
+            )
+        )
+    if share_count:
+        signals.append(
+            VisitBehaviorSignal(
+                category="intent",
+                label="出现分享行为",
+                evidence=f"打开分享入口 {share_count} 次",
+                basis="observed",
+                confidence=0.95,
+            )
+        )
+    if intent_level != "low":
+        confidence = min(
+            0.9,
+            0.5 + min(0.2, len(questions) * 0.05) + min(0.2, cta_count * 0.1),
+        )
+        signals.append(
+            VisitBehaviorSignal(
+                category="intent",
+                label=f"{ {'medium': '中等', 'high': '较高'}[intent_level] }咨询意向",
+                evidence=(
+                    f"综合 {len(questions)} 次提问、{cta_count} 次行动点击、"
+                    f"{share_count} 次分享和 {unique_pages} 个浏览页面得出"
+                ),
+                basis="inferred",
+                confidence=round(confidence, 2),
+            )
+        )
+
+    engagement_text = {"low": "较低", "medium": "中等", "high": "较高"}[engagement_level]
+    intent_text = {"low": "暂未表现出明确", "medium": "表现出一定", "high": "表现出较强"}[
+        intent_level
+    ]
+    summary = (
+        f"本次共浏览 {unique_pages} 个页面，已记录停留 {_human_duration(tracked_duration)}，"
+        f"向 AI 提问 {len(questions)} 次，产生 {len(actions)} 次操作。"
+        f"综合参与度{engagement_text}，{intent_text}咨询意向。"
+    )
+    return VisitBehaviorAnalysis(
+        summary=summary,
+        engagement_score=engagement_score,
+        engagement_level=engagement_level,
+        intent_level=intent_level,
+        tracked_duration_seconds=tracked_duration,
+        unique_pages=unique_pages,
+        total_actions=len(actions),
+        question_count=len(questions),
+        answered_count=answered_count,
+        signals=signals,
     )
 
 
@@ -846,16 +1094,13 @@ class WorkflowStore:
             )
             page_totals: dict[str, dict[str, object]] = {}
             for event in events:
-                metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
-                page_key = str(
-                    metadata.get("page_key") or event.object_id or event.object_type or "card"
-                )[:160]
                 if event.event_type not in {"page_view", "heartbeat", "leave"}:
                     continue
+                page_key, page_title, metadata = _event_page_fields(event)
                 current = page_totals.setdefault(
                     page_key,
                     {
-                        "page_title": str(metadata.get("page_title") or page_key)[:160],
+                        "page_title": page_title,
                         "object_type": event.object_type,
                         "object_id": event.object_id,
                         "duration_ms": 0.0,
@@ -865,13 +1110,8 @@ class WorkflowStore:
                 )
                 if event.event_type == "page_view":
                     current["view_count"] = int(current["view_count"]) + 1
-                duration_ms = metadata.get("duration_ms")
-                if event.event_type in {"heartbeat", "leave"} and isinstance(
-                    duration_ms, (int, float)
-                ):
-                    current["duration_ms"] = float(current["duration_ms"]) + max(
-                        0.0, min(float(duration_ms), 86_400_000.0)
-                    )
+                if event.event_type in {"heartbeat", "leave"}:
+                    current["duration_ms"] = float(current["duration_ms"]) + _duration_ms(metadata)
                 current["last_viewed_at"] = max(current["last_viewed_at"], event.occurred_at)
 
             message_rows = (
@@ -894,7 +1134,7 @@ class WorkflowStore:
                 )
             ).all()
             questions: list[dict[str, object]] = []
-            pending_by_conversation: dict[uuid.UUID, int] = {}
+            pending_by_conversation: dict[uuid.UUID, list[int]] = {}
             conversation_ids: set[uuid.UUID] = set()
             for message, conversation_id in message_rows:
                 conversation_ids.add(conversation_id)
@@ -906,14 +1146,31 @@ class WorkflowStore:
                             "question": message.content,
                             "asked_at": message.created_at,
                             "answer_status": None,
+                            "answer": None,
+                            "answered_at": None,
+                            "response_seconds": None,
                         }
                     )
-                    pending_by_conversation[conversation_id] = len(questions) - 1
+                    pending_by_conversation.setdefault(conversation_id, []).append(
+                        len(questions) - 1
+                    )
                 elif message.role == MessageRole.ASSISTANT:
-                    question_index = pending_by_conversation.pop(conversation_id, None)
-                    if question_index is not None:
+                    pending = pending_by_conversation.get(conversation_id, [])
+                    if pending:
+                        question_index = pending.pop(0)
                         questions[question_index]["answer_status"] = str(
                             getattr(message.status, "value", message.status)
+                        )
+                        questions[question_index]["answer"] = message.content
+                        questions[question_index]["answered_at"] = message.created_at
+                        questions[question_index]["response_seconds"] = round(
+                            max(
+                                0.0,
+                                (
+                                    message.created_at - questions[question_index]["asked_at"]
+                                ).total_seconds(),
+                            ),
+                            2,
                         )
 
             presentation = _visit_presentation(
@@ -922,6 +1179,39 @@ class WorkflowStore:
                 event_count=len(events),
                 now=datetime.now(UTC),
             )
+            page_durations = [
+                VisitPageDuration(
+                    page_key=page_key,
+                    page_title=str(values["page_title"]),
+                    object_type=(
+                        str(values["object_type"]) if values["object_type"] is not None else None
+                    ),
+                    object_id=(
+                        str(values["object_id"]) if values["object_id"] is not None else None
+                    ),
+                    duration_seconds=round(float(values["duration_ms"]) / 1_000, 1),
+                    view_count=int(values["view_count"]),
+                    last_viewed_at=values["last_viewed_at"],
+                )
+                for page_key, values in sorted(
+                    page_totals.items(),
+                    key=lambda item: item[1]["last_viewed_at"],
+                    reverse=True,
+                )
+            ]
+            actions = [
+                VisitAction(
+                    event_id=event.id,
+                    action_type=event.event_type,
+                    action_label=_action_label(event),
+                    object_type=event.object_type,
+                    object_id=event.object_id,
+                    occurred_at=event.occurred_at,
+                )
+                for event in events
+                if event.event_type in {"content_view", "cta_click", "share"}
+            ]
+            question_views = [VisitQuestion(**question) for question in questions]
 
             return VisitDetail(
                 id=visit.id,
@@ -940,29 +1230,15 @@ class WorkflowStore:
                 visitor_identity_label=presentation.visitor_identity_label,
                 conversation_count=len(conversation_ids),
                 event_count=len(events),
-                page_durations=[
-                    VisitPageDuration(
-                        page_key=page_key,
-                        page_title=str(values["page_title"]),
-                        object_type=(
-                            str(values["object_type"])
-                            if values["object_type"] is not None
-                            else None
-                        ),
-                        object_id=(
-                            str(values["object_id"]) if values["object_id"] is not None else None
-                        ),
-                        duration_seconds=round(float(values["duration_ms"]) / 1_000, 1),
-                        view_count=int(values["view_count"]),
-                        last_viewed_at=values["last_viewed_at"],
-                    )
-                    for page_key, values in sorted(
-                        page_totals.items(),
-                        key=lambda item: item[1]["last_viewed_at"],
-                        reverse=True,
-                    )
-                ],
-                questions=[VisitQuestion(**question) for question in questions],
+                page_durations=page_durations,
+                page_timeline=_page_timeline(events, presentation=presentation),
+                actions=actions,
+                questions=question_views,
+                behavior_analysis=_behavior_analysis(
+                    page_durations=page_durations,
+                    actions=actions,
+                    questions=question_views,
+                ),
             )
 
     async def list_conversations(

@@ -120,6 +120,16 @@ export function useVisitAnalytics({
 
   useEffect(() => {
     if (!enabled) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        flushDuration("heartbeat");
+      }
+    }, 15_000);
+    return () => window.clearInterval(intervalId);
+  }, [enabled, flushDuration]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
     const visibilityChanged = () => {
       if (document.visibilityState === "hidden") {
         flushDuration("heartbeat", true);
