@@ -368,6 +368,9 @@ class Membership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=list,
         server_default=text("'{}'::varchar[]"),
     )
+    job_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(2_048), nullable=True)
+    business_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[LifecycleStatus] = mapped_column(
         db_enum(LifecycleStatus, "membership_status"),
         nullable=False,

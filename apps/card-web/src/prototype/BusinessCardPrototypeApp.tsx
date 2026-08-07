@@ -13,6 +13,7 @@ import {
   SquaresFourIcon,
   UserCircleIcon,
 } from "@phosphor-icons/react";
+import type { CardPageIdentity } from "@cf/card-page-renderer";
 import {
   forwardRef,
   useEffect,
@@ -27,7 +28,9 @@ import type { EnterpriseCardConfig } from "../domain/card";
 import { AssistantApiError } from "../lib/assistantApi";
 import type { AssistantRelatedSection } from "../lib/assistantRelatedSections";
 import { copyText } from "../lib/clipboard";
-import type { PublicCardData } from "../lib/publicCardApi";
+import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
+import { EnterpriseTemplateBlocks } from "../components/EnterpriseTemplateBlocks";
+import { resolvePublicResourceUrl } from "../lib/publicResourceUrl";
 import {
   fetchPublicCaseStudy,
   fetchPublicCatalog,
@@ -143,6 +146,126 @@ function recordLabel(record: Record<string, string>) {
     record.value ||
     ""
   ).trim();
+}
+
+function createStandaloneDefaultBlocks({
+  kind,
+  positioning,
+  intro,
+  assistantTitle,
+  assistantBody,
+}: {
+  kind: "employee" | "enterprise";
+  positioning: string;
+  intro: string;
+  assistantTitle: string;
+  assistantBody: string;
+}): PublicEnterpriseTemplateBlock[] {
+  return [
+    {
+      id: `default-${kind}-identity`,
+      type: "identity",
+      title: "基础名片",
+      visible: true,
+      directory_enabled: false,
+      sort_order: 0,
+    },
+    {
+      id: `default-${kind}-overview`,
+      type: "rich_text",
+      title: "概览",
+      body: positioning,
+      visible: true,
+      directory_enabled: true,
+      sort_order: 10,
+    },
+    {
+      id: `default-${kind}-intro`,
+      type: "rich_text",
+      title: kind === "employee" ? "个人介绍" : "企业介绍",
+      body: intro,
+      visible: true,
+      directory_enabled: true,
+      sort_order: 20,
+    },
+    {
+      id: `default-${kind}-business`,
+      type: "business_collection",
+      title: "核心业务",
+      visible: true,
+      directory_enabled: true,
+      sort_order: 30,
+    },
+    {
+      id: `default-${kind}-cases`,
+      type: "case_collection",
+      title: "代表案例",
+      visible: true,
+      directory_enabled: true,
+      sort_order: 40,
+    },
+    {
+      id: `default-${kind}-trust`,
+      type: "trust_panel",
+      title: "企业资料",
+      visible: true,
+      directory_enabled: true,
+      sort_order: 50,
+    },
+    {
+      id: `default-${kind}-faq`,
+      type: "faq",
+      title: "常见问题",
+      visible: true,
+      directory_enabled: true,
+      sort_order: 60,
+      faq_mode: "all_published",
+    },
+    {
+      id: `default-${kind}-ai`,
+      type: "ai_assistant",
+      title: assistantTitle,
+      body: assistantBody,
+      visible: true,
+      directory_enabled: true,
+      sort_order: 70,
+    },
+  ];
+}
+
+function completeStandaloneTemplateBlocks(
+  publishedBlocks: PublicEnterpriseTemplateBlock[],
+  defaultBlocks: PublicEnterpriseTemplateBlock[],
+) {
+  if (publishedBlocks.some((block) => block.type === "identity")) {
+    return publishedBlocks;
+  }
+  if (!publishedBlocks.length) return defaultBlocks;
+
+  const identity = defaultBlocks.find((block) => block.type === "identity");
+  const publishedTypes = new Set(publishedBlocks.map((block) => block.type));
+  const publishedTitles = new Set(
+    publishedBlocks.map((block) => block.title?.trim()).filter(Boolean),
+  );
+  const firstOrder = publishedBlocks[0]?.sort_order ?? 0;
+  const lastOrder = publishedBlocks.reduce(
+    (maximum, block) => Math.max(maximum, block.sort_order ?? 0),
+    firstOrder,
+  );
+  const appendedDefaults = defaultBlocks.filter((block) => {
+    if (block.type === "identity") return false;
+    if (block.type === "rich_text") return !publishedTitles.has(block.title?.trim());
+    return !publishedTypes.has(block.type);
+  }).map((block, index) => ({
+    ...block,
+    sort_order: lastOrder + (index + 1) * 10,
+  }));
+
+  return [
+    ...(identity ? [{ ...identity, sort_order: firstOrder - 10 }] : []),
+    ...publishedBlocks,
+    ...appendedDefaults,
+  ];
 }
 
 function detailRouteFromLocation() {
@@ -606,10 +729,10 @@ export const BusinessCardPrototypeApp = forwardRef<
   const companySummary = card?.company.summary || tenant.hero.summary;
   const displayName = card?.display_name ?? tenant.brand.shortName;
   const title = card?.title ?? tenant.brand.headerDescriptor;
-  const avatar = isBlankTemplate ? undefined : card?.avatar_url || undefined;
+  const avatar = isBlankTemplate ? undefined : resolvePublicResourceUrl(card?.avatar_url);
   const companyLogo = isBlankTemplate
     ? undefined
-    : card?.company.logo_url || tenant.brand.logo.src;
+    : resolvePublicResourceUrl(card?.company.logo_url) || tenant.brand.logo.src;
   const assistantName = card?.ai_assistant.display_name ?? tenant.assistant.title;
   const assistantAvailable =
     !isBlankTemplate && (card?.ai_assistant.available ?? true);
@@ -864,12 +987,68 @@ export const BusinessCardPrototypeApp = forwardRef<
   }, [assistantRelatedSections, onAssistantRelatedSectionsChange]);
 
   const isStandaloneEnterprise = isStandaloneCard && standaloneKind === "enterprise";
-  const companyNavigationItems = companySectionDefinitions.filter(({ id }) => {
-    if (id === "cases") return cases.length > 0;
-    if (id === "faq") return Boolean(card?.faq_items.length);
-    return true;
+  const isStandaloneEmployee = isStandaloneCard && standaloneKind === "employee";
+  const companyNavigationItems = companySectionDefinitions;
+  const publishedTemplateBlocks = (card?.enterprise_template?.blocks ?? [])
+    .slice()
+    .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0));
+  const visibleTemplateBlocks = publishedTemplateBlocks.filter(
+    (block) => block.type === "identity" || block.visible !== false,
+  );
+  const standaloneTemplateKind = isStandaloneEmployee ? "employee" : "enterprise";
+  const standaloneDefaultBlocks = createStandaloneDefaultBlocks({
+    kind: standaloneTemplateKind,
+    positioning: isStandaloneEmployee
+      ? card?.business_summary || companySummary
+      : tenant.hero.summary,
+    intro: isStandaloneEmployee
+      ? card?.business_summary || companySummary
+      : companySummary,
+    assistantTitle: isStandaloneEmployee ? `${displayName}的 AI 助手` : assistantName,
+    assistantBody: card?.ai_assistant.welcome_message
+      || "基于已发布资料介绍业务，并协助整理合作需求。",
   });
+  const effectiveTemplateBlocks = isStandaloneCard
+    ? completeStandaloneTemplateBlocks(publishedTemplateBlocks, standaloneDefaultBlocks)
+    : publishedTemplateBlocks;
+  const hasComposableStandalonePage = isStandaloneCard;
+  const hasComposableEnterprisePage = isStandaloneEnterprise;
+  const hasComposableEmployeePage = isStandaloneEmployee;
+  const templateIntroBlock = visibleTemplateBlocks.find(
+    (block) => block.type === "rich_text" && block.title?.trim() === "企业介绍",
+  );
+  const templateAiBlock = visibleTemplateBlocks.find((block) => block.type === "ai_assistant");
+  const templateFeatureBlocks = visibleTemplateBlocks.filter(
+    (block) => block !== templateIntroBlock && ["rich_text", "image_gallery", "video_link"].includes(block.type),
+  );
+  const templateCaseBlocks = visibleTemplateBlocks.filter((block) => block.type === "case_collection");
+  const templateFaqBlocks = visibleTemplateBlocks.filter((block) => block.type === "faq");
+  const templateCtaBlocks = visibleTemplateBlocks.filter((block) => block.type === "cta");
   const companyNavigationKey = companyNavigationItems.map(({ id }) => id).join(",");
+  const composedIdentity: CardPageIdentity = isStandaloneEmployee
+    ? {
+        kind: "employee",
+        name: displayName,
+        headline: title,
+        summary: card?.business_summary || undefined,
+        imageUrl: avatar,
+        companyName,
+        verificationLabel: isPublished ? "已发布" : "本地展示",
+        positioning: card?.business_summary || companySummary,
+        tags,
+      }
+    : {
+        kind: "enterprise",
+        name: companyName,
+        headline: card?.company.industry || undefined,
+        summary: companySummary,
+        imageUrl: companyLogo,
+        verificationLabel: isPublished ? "资料已发布" : "本地展示",
+        positioning: tenant.hero.summary,
+        meta: [card?.company.industry, card?.company.region]
+          .filter((value): value is string => Boolean(value)),
+        tags,
+      };
 
   useEffect(() => {
     if (!isStandaloneEnterprise || view !== "company") return;
@@ -983,6 +1162,22 @@ export const BusinessCardPrototypeApp = forwardRef<
     </nav>
   );
 
+  const composedTemplatePage = hasComposableStandalonePage ? (
+    <EnterpriseTemplateBlocks
+      blocks={effectiveTemplateBlocks}
+      directory={{
+        ariaLabel: isStandaloneEmployee ? "员工名片内容导航" : "企业名片内容导航",
+      }}
+      identityData={composedIdentity}
+      products={products}
+      cases={cases}
+      faqItems={card?.faq_items ?? []}
+      onOpenProduct={(slug) => openDetailRoute({ kind: "product", slug })}
+      onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
+      onAssistant={assistantAvailable ? (question) => onAssistant(question) : undefined}
+    />
+  ) : null;
+
   const cardPage = (
     <>
       <AppHeader
@@ -995,6 +1190,8 @@ export const BusinessCardPrototypeApp = forwardRef<
         onShare={onShare}
       />
       <main className="bp-page bp-card-page">
+        {hasComposableEmployeePage ? composedTemplatePage : (
+          <>
         <div className="bp-person-head">
           {avatar ? (
             <img className="bp-portrait" src={avatar} alt={`${displayName}的职业头像`} />
@@ -1096,6 +1293,8 @@ export const BusinessCardPrototypeApp = forwardRef<
           )}
           {isBlankTemplate && <a className="bp-template-link" href={onboardingHref}>配置企业知识库 <Arrow /></a>}
         </section>
+          </>
+        )}
         {isStandaloneCard && (
           <div className="bp-standalone-utilities">
             <button type="button" onClick={toggleSaved}>{saved ? "取消保存" : "保存名片"}</button>
@@ -1138,7 +1337,7 @@ export const BusinessCardPrototypeApp = forwardRef<
         onShare={onShare}
       />
       <main className="bp-page bp-company-page">
-        <div className="bp-company-head">
+        {!hasComposableEnterprisePage && <div className="bp-company-head">
           {companyLogo ? <img src={companyLogo} alt={`${companyName}标识`} /> : <i>◈</i>}
           <div>
             <div className="bp-name-line"><h1>{companyName}</h1><b>{isBlankTemplate ? "待配置" : isPublished ? "✓ 资料已发布" : "本地展示"}</b></div>
@@ -1148,9 +1347,9 @@ export const BusinessCardPrototypeApp = forwardRef<
             </small>
             <div className="bp-tags">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
           </div>
-        </div>
+        </div>}
 
-        {isStandaloneEnterprise && (
+        {isStandaloneEnterprise && !hasComposableEnterprisePage && (
           <nav ref={companySectionNavRef} className="bp-company-section-nav" aria-label="企业名片内容导航">
             {companyNavigationItems.map(({ id, label }) => (
               <button
@@ -1168,18 +1367,29 @@ export const BusinessCardPrototypeApp = forwardRef<
           </nav>
         )}
 
-        <section
+        {!hasComposableEnterprisePage && <section
           className={`bp-company-position${isStandaloneEnterprise ? " bp-company-scroll-section" : ""}`}
           id={isStandaloneEnterprise ? "bp-company-section-overview" : undefined}
           data-company-section={isStandaloneEnterprise ? "overview" : undefined}
         >
           <small>{isBlankTemplate ? "配置提示" : "我们能帮助你"}</small>
           <strong>{isBlankTemplate ? "录入品牌定位和核心价值后，此处会生成企业对外主张。" : tenant.hero.summary}</strong>
-        </section>
+        </section>}
 
+        {hasComposableEnterprisePage && composedTemplatePage}
+
+        {!hasComposableEnterprisePage && (
+          <>
         <Section title="企业介绍" sectionId={isStandaloneEnterprise ? "intro" : undefined}>
-          {isBlankTemplate ? <div className="bp-empty-state bp-inline-empty"><strong>企业介绍待录入</strong><p>支持从企业简介、官网文本或审核后的文档生成。</p><a href={onboardingHref}>录入企业资料</a></div> : <div className="bp-intro"><p>{companySummary}</p></div>}
+          {isBlankTemplate ? <div className="bp-empty-state bp-inline-empty"><strong>企业介绍待录入</strong><p>支持从企业简介、官网文本或审核后的文档生成。</p><a href={onboardingHref}>录入企业资料</a></div> : <div className="bp-intro"><p>{companySummary}</p>{templateIntroBlock?.body && templateIntroBlock.body.trim().length >= 24 && templateIntroBlock.body !== companySummary ? <p>{templateIntroBlock.body}</p> : null}</div>}
         </Section>
+
+        {isStandaloneEnterprise && templateFeatureBlocks.length > 0 && (
+          <EnterpriseTemplateBlocks
+            blocks={templateFeatureBlocks}
+            onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
+          />
+        )}
 
         <Section
           title="核心业务"
@@ -1191,17 +1401,29 @@ export const BusinessCardPrototypeApp = forwardRef<
           )}
         </Section>
 
-        {cases.length > 0 && (
-          <Section
-            title="代表案例"
-            sectionId={isStandaloneEnterprise ? "cases" : undefined}
-            action={cases.length > 3 ? <button className="bp-text-button" type="button" onClick={() => go("square")}>查看全部</button> : undefined}
-          >
+        <Section
+          title="代表案例"
+          sectionId={isStandaloneEnterprise ? "cases" : undefined}
+          action={cases.length > 3 ? <button className="bp-text-button" type="button" onClick={() => go("square")}>查看全部</button> : undefined}
+        >
+          {cases.length > 0 ? (
             <CaseShowcase
               items={cases.slice(0, 3)}
               onOpen={(item) => openDetail({ kind: "case", item })}
             />
-          </Section>
+          ) : (
+            <div className="bp-empty-state bp-inline-empty">
+              <strong>代表案例待补充</strong>
+              <p>案例经企业确认公开范围后会显示在这里。</p>
+            </div>
+          )}
+        </Section>
+
+        {isStandaloneEnterprise && templateCaseBlocks.length > 0 && (
+          <EnterpriseTemplateBlocks
+            blocks={templateCaseBlocks}
+            onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
+          />
         )}
 
         <Section title="企业资料" sectionId={isStandaloneEnterprise ? "trust" : undefined}>
@@ -1221,8 +1443,8 @@ export const BusinessCardPrototypeApp = forwardRef<
           </div>}
         </Section>}
 
-        {card?.faq_items.length ? (
-          <Section title="常见问题" sectionId={isStandaloneEnterprise ? "faq" : undefined}>
+        <Section title="常见问题" sectionId={isStandaloneEnterprise ? "faq" : undefined}>
+          {card?.faq_items.length ? (
             <FaqShowcase
               items={card.faq_items}
               openFaq={openFaq}
@@ -1230,8 +1452,21 @@ export const BusinessCardPrototypeApp = forwardRef<
               onAssistant={onAssistant}
               assistantAvailable={assistantAvailable}
             />
-          </Section>
-        ) : null}
+          ) : (
+            <div className="bp-empty-state bp-inline-empty">
+              <strong>常见问题待补充</strong>
+              <p>企业确认问答口径后会显示在这里。</p>
+            </div>
+          )}
+        </Section>
+
+        {isStandaloneEnterprise && templateFaqBlocks.length > 0 && (
+          <EnterpriseTemplateBlocks blocks={templateFaqBlocks} />
+        )}
+
+        {isStandaloneEnterprise && templateCtaBlocks.length > 0 && (
+          <EnterpriseTemplateBlocks blocks={templateCtaBlocks} />
+        )}
 
         <section
           className={`bp-ai-card bp-company-ai${isStandaloneEnterprise ? " bp-company-scroll-section" : ""}`}
@@ -1239,10 +1474,12 @@ export const BusinessCardPrototypeApp = forwardRef<
           data-company-section={isStandaloneEnterprise ? "ai" : undefined}
         >
           <div><i>AI</i><span><strong>{assistantName}</strong><small>{assistantAvailable ? isPublished ? "基于已发布资料" : "基于本地展示资料" : "暂未开放"}</small></span></div>
-          <p>{isBlankTemplate ? "知识资料尚未录入；完成解析、预览和发布后才会开放问答。" : assistantAvailable ? (card?.ai_assistant.welcome_message || "我可以介绍企业能力、解释常见问题，并帮助整理合作需求。") : "企业尚未开放 AI 问答，可提交合作需求等待人工联系。"}</p>
+          <p>{isBlankTemplate ? "知识资料尚未录入；完成解析、预览和发布后才会开放问答。" : assistantAvailable ? (templateAiBlock?.body || card?.ai_assistant.welcome_message || "我可以介绍企业能力、解释常见问题，并帮助整理合作需求。") : "企业尚未开放 AI 问答，可提交合作需求等待人工联系。"}</p>
           {assistantAvailable && <button type="button" onClick={() => onAssistant()}>咨询适合我们的解决方案 <Arrow /></button>}
           {isBlankTemplate && <a className="bp-template-link" href={onboardingHref}>配置企业知识库 <Arrow /></a>}
         </section>
+          </>
+        )}
         {isStandaloneCard && (
           <div className="bp-standalone-utilities">
             <button type="button" onClick={toggleSaved}>{saved ? "取消保存" : "保存企业名片"}</button>

@@ -172,6 +172,13 @@ class KnowledgeDocumentRecord(AdminStrictModel):
     updated_at: datetime
 
 
+class SelectableFaqRecord(KnowledgeDocumentRecord):
+    """Public-safe FAQ projection for the card editor data picker."""
+
+    visibility: Literal["public"] = "public"
+    answer: str
+
+
 class KnowledgeDocumentEnvelope(AdminStrictModel):
     data: KnowledgeDocumentRecord
 
@@ -188,7 +195,7 @@ class KnowledgeDocumentDetailEnvelope(AdminStrictModel):
 
 
 class KnowledgeDocumentListEnvelope(AdminStrictModel):
-    data: list[KnowledgeDocumentRecord]
+    data: list[SelectableFaqRecord | KnowledgeDocumentRecord]
     total: int = Field(ge=0)
 
 

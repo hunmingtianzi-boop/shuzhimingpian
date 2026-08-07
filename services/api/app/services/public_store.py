@@ -8,12 +8,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
+from pydantic import ValidationError
 from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.schemas import AIAnswer, ChatMessage, ForbiddenTopicPolicy, RefusalCode
+from app.api.catalog_schemas import EnterpriseTemplateDocument
 from app.api.errors import ApiError
 from app.api.schemas import (
     AiAssistantPublicConfig,
@@ -48,6 +51,7 @@ from app.db.models import (
     AIRun,
     Card,
     CardKind,
+    CaseStudy,
     Company,
     ConsentRecord,
     ConsentScope,
@@ -61,13 +65,17 @@ from app.db.models import (
     KnowledgeDocument,
     KnowledgeGap,
     KnowledgeGapStatus,
+    LifecycleStatus,
+    Membership,
     Message,
     MessageCitation,
     MessageRole,
     MessageStatus,
     ModelConfig,
+    Product,
     PromptStatus,
     PromptVersion,
+    User,
     Visibility,
     Visit,
     Visitor,
@@ -101,6 +109,16 @@ class PreparedMessage:
     idempotency_key: str
     card_slug: str
     replay: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PublicEmployeeIdentity:
+    display_name: str
+    job_title: str | None
+    avatar_url: str | None
+    business_summary: str | None
+    email: str | None
+    mobile: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,63 +164,43 @@ class PublicStore:
             company = await session.get(Company, scope.company_id)
             if card is None or company is None:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在")
+            employee_identity = (
+                await _public_employee_identity(session, card=card, cipher=self._cipher)
+                if card.card_kind == CardKind.EMPLOYEE
+                else None
+            )
             official_card_slug = await _published_enterprise_card_slug(
                 session,
                 card=card,
             )
+            card_settings = card.settings if isinstance(card.settings, dict) else {}
+            company_settings = company.settings if isinstance(company.settings, dict) else {}
+            public_template = (
+                await _public_enterprise_template(
+                    session,
+                    tenant_id=scope.tenant_id,
+                    company_id=scope.company_id,
+                    value=card_settings.get("enterprise_template_published"),
+                )
+                if card_settings.get("enterprise_template_published")
+                else None
+            )
             knowledge_count = (
                 await session.execute(
                     select(func.count(KnowledgeDocument.id)).where(
+                        KnowledgeDocument.tenant_id == scope.tenant_id,
                         KnowledgeDocument.company_id == company.id,
                         KnowledgeDocument.status == ContentStatus.PUBLISHED,
                         KnowledgeDocument.current_version_id.is_not(None),
                     )
                 )
             ).scalar_one()
-
-            faq_rows = (
-                await session.execute(
-                    select(
-                        KnowledgeDocument.source_id,
-                        KnowledgeDocument.title,
-                        KnowledgeChunk.text,
-                        KnowledgeChunk.ordinal,
-                        KnowledgeChunk.metadata_json,
-                    )
-                    .join(
-                        KnowledgeChunk,
-                        KnowledgeChunk.document_id == KnowledgeDocument.id,
-                    )
-                    .where(
-                        KnowledgeDocument.tenant_id == scope.tenant_id,
-                        KnowledgeDocument.company_id == scope.company_id,
-                        KnowledgeDocument.status == ContentStatus.PUBLISHED,
-                        KnowledgeDocument.source_type == "faq",
-                        KnowledgeChunk.version_id == KnowledgeDocument.current_version_id,
-                        KnowledgeChunk.is_active.is_(True),
-                        KnowledgeChunk.visibility == Visibility.PUBLIC,
-                    )
-                    .order_by(KnowledgeDocument.updated_at.desc(), KnowledgeChunk.ordinal)
-                    .limit(60)
-                )
-            ).all()
-            faq_by_source: dict[str, dict[str, Any]] = {}
-            for row in faq_rows:
-                item = faq_by_source.setdefault(
-                    row.source_id,
-                    {
-                        "question": row.title,
-                        "parts": [],
-                        "source_label": "企业已发布资料",
-                    },
-                )
-                item["parts"].append(row.text)
-                metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
-                if isinstance(metadata.get("source_label"), str):
-                    item["source_label"] = metadata["source_label"]
-
-            card_settings = card.settings if isinstance(card.settings, dict) else {}
-            company_settings = company.settings if isinstance(company.settings, dict) else {}
+            faq_items = await _public_faq_items(
+                session,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+                enterprise_template=public_template,
+            )
             policies = card_settings.get("policy_versions", {})
             if not isinstance(policies, dict):
                 policies = {}
@@ -210,21 +208,51 @@ class PublicStore:
             if not isinstance(suggested, list):
                 suggested = []
             suggested_questions = [str(item) for item in suggested if isinstance(item, str)][:6]
-            wecom_contact = await session.scalar(
-                select(WeComCardContactWay).where(
-                    WeComCardContactWay.tenant_id == scope.tenant_id,
-                    WeComCardContactWay.company_id == scope.company_id,
-                    WeComCardContactWay.card_id == card.id,
-                    WeComCardContactWay.revoked_at.is_(None),
+            # WeCom contact ways are optional public-card enrichment. During a
+            # rolling deployment an older database can briefly serve the newer
+            # API before migration 0026 creates this table; the card itself must
+            # remain available in that window.
+            has_wecom_contact_table = True
+            if session.get_bind().dialect.name == "postgresql":
+                has_wecom_contact_table = bool(
+                    await session.scalar(
+                        text("SELECT to_regclass('public.wecom_card_contact_ways') IS NOT NULL")
+                    )
                 )
+            wecom_contact = (
+                await session.scalar(
+                    select(WeComCardContactWay).where(
+                        WeComCardContactWay.tenant_id == scope.tenant_id,
+                        WeComCardContactWay.company_id == scope.company_id,
+                        WeComCardContactWay.card_id == card.id,
+                        WeComCardContactWay.revoked_at.is_(None),
+                    )
+                )
+                if has_wecom_contact_table
+                else None
             )
             return PublicCard(
                 id=card.id,
                 slug=card.slug,
                 card_kind=card.card_kind,
-                display_name=card.display_name,
-                title=str(card_settings.get("title") or company.name),
-                avatar_url=_optional_string(card_settings.get("avatar_url")),
+                display_name=(
+                    employee_identity.display_name
+                    if employee_identity is not None
+                    else card.display_name
+                ),
+                title=(
+                    employee_identity.job_title or company.name
+                    if employee_identity is not None
+                    else str(card_settings.get("title") or company.name)
+                ),
+                avatar_url=(
+                    employee_identity.avatar_url
+                    if employee_identity is not None
+                    else _optional_string(card_settings.get("avatar_url"))
+                ),
+                business_summary=(
+                    employee_identity.business_summary if employee_identity is not None else None
+                ),
                 company=PublicCompany(
                     id=company.id,
                     name=company.name,
@@ -235,9 +263,16 @@ class PublicStore:
                     logo_url=_optional_string(company_settings.get("logo_url")),
                     official_card_slug=official_card_slug,
                 ),
-                contact_fields=_public_dict_list(
-                    card_settings.get("contact_fields"),
-                    allowed_keys=("label", "value", "href"),
+                contact_fields=(
+                    _employee_contact_fields(
+                        employee_identity,
+                        _employee_contact_visibility(card_settings),
+                    )
+                    if employee_identity is not None
+                    else _public_dict_list(
+                        card_settings.get("contact_fields"),
+                        allowed_keys=("label", "value", "href"),
+                    )
                 ),
                 wecom_contact=(
                     PublicWeComContact(
@@ -259,15 +294,7 @@ class PublicStore:
                     company_settings.get("featured_cases"),
                     allowed_keys=("title", "description", "industry", "url"),
                 ),
-                faq_items=[
-                    PublicFaqItem(
-                        id=source_id,
-                        question=str(item["question"]),
-                        answer="\n\n".join(str(part) for part in item["parts"]),
-                        source_label=str(item["source_label"]),
-                    )
-                    for source_id, item in list(faq_by_source.items())[:30]
-                ],
+                faq_items=faq_items,
                 ai_assistant=AiAssistantPublicConfig(
                     # This value represents card/content readiness only. The
                     # public route combines it with the same dynamic LLM
@@ -288,10 +315,9 @@ class PublicStore:
                     privacy=str(policies.get("privacy") or "privacy-v1"),
                     chat_notice=str(policies.get("chat_notice") or "chat-notice-v1"),
                     lead_consent=str(policies.get("lead_consent") or "lead-consent-v1"),
-                    profile_personalization=str(
-                        _company_profile_policy(company)
-                    ),
+                    profile_personalization=str(_company_profile_policy(company)),
                 ),
+                enterprise_template=public_template,
             )
 
     async def create_visit(
@@ -307,9 +333,7 @@ class PublicStore:
             company = await session.get(Company, scope.company_id)
             if card is None or company is None:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在")
-            if request.privacy_notice_version != _policy_version(
-                card, ConsentScope.BROWSE_NOTICE
-            ):
+            if request.privacy_notice_version != _policy_version(card, ConsentScope.BROWSE_NOTICE):
                 raise _policy_version_mismatch()
             linked_consent = await self._valid_profile_link_consent(
                 session,
@@ -438,18 +462,14 @@ class PublicStore:
             company = await session.get(Company, principal.company_id)
             expected_policy = (
                 _company_profile_policy(company)
-                if requested_scope == ConsentScope.PROFILE_PERSONALIZATION
-                and company is not None
+                if requested_scope == ConsentScope.PROFILE_PERSONALIZATION and company is not None
                 else _policy_version(card, requested_scope)
             )
             if request.policy_version != expected_policy:
                 raise _policy_version_mismatch()
             if requested_scope == ConsentScope.PROFILE_PERSONALIZATION:
                 await self._lock_profile_visitor(session, principal.visitor_id)
-            if (
-                request.scope == ConsentScope.PROFILE_PERSONALIZATION.value
-                and request.granted
-            ):
+            if request.scope == ConsentScope.PROFILE_PERSONALIZATION.value and request.granted:
                 latest_profile_consent = await self._latest_profile_consent(
                     session,
                     tenant_id=principal.tenant_id,
@@ -507,10 +527,7 @@ class PublicStore:
                 )
                 session.add(record)
                 await session.flush()
-                if (
-                    record.scope == ConsentScope.PROFILE_PERSONALIZATION
-                    and not record.granted
-                ):
+                if record.scope == ConsentScope.PROFILE_PERSONALIZATION and not record.granted:
                     await session.execute(
                         delete(VisitorProfileSignal).where(
                             VisitorProfileSignal.tenant_id == principal.tenant_id,
@@ -548,9 +565,7 @@ class PublicStore:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal, card_slug=slug)
             card = await self._require_principal_card(session, principal, slug)
-            if request.chat_notice_version != _policy_version(
-                card, ConsentScope.CHAT_NOTICE
-            ):
+            if request.chat_notice_version != _policy_version(card, ConsentScope.CHAT_NOTICE):
                 raise _policy_version_mismatch()
             await self._require_current_consent(
                 session,
@@ -788,8 +803,7 @@ class PublicStore:
                 finish_reason=finish_reason,
                 citations=citations,
                 lead_prompt=(
-                    prepared.card_slug != "tuotu"
-                    and _looks_like_opportunity(prepared.question)
+                    prepared.card_slug != "tuotu" and _looks_like_opportunity(prepared.question)
                 ),
             )
 
@@ -837,9 +851,7 @@ class PublicStore:
                 match_terms=tuple(row.match_terms),
                 action=row.action,
                 safe_response=(
-                    redact_sensitive_text(row.safe_response).content
-                    if row.safe_response
-                    else None
+                    redact_sensitive_text(row.safe_response).content if row.safe_response else None
                 ),
                 version=row.version,
             )
@@ -856,34 +868,37 @@ class PublicStore:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal)
             rows = (
-                await session.execute(
-                    select(Message)
-                    .where(
-                        Message.conversation_id == prepared.conversation_id,
-                        Message.id != prepared.user_message_id,
-                        Message.role.in_([MessageRole.USER, MessageRole.ASSISTANT]),
-                        Message.status.in_([MessageStatus.COMPLETED, MessageStatus.REFUSED]),
-                        Message.content != "",
+                (
+                    await session.execute(
+                        select(Message)
+                        .where(
+                            Message.conversation_id == prepared.conversation_id,
+                            Message.id != prepared.user_message_id,
+                            Message.role.in_([MessageRole.USER, MessageRole.ASSISTANT]),
+                            Message.status.in_([MessageStatus.COMPLETED, MessageStatus.REFUSED]),
+                            Message.content != "",
+                        )
+                        # User and assistant rows are inserted in one transaction and
+                        # therefore usually share the exact same database timestamp.
+                        # UUID ordering is random, so make the reverse-chronological
+                        # query return assistant before user; reversing the result
+                        # below then always restores user -> assistant turn order.
+                        .order_by(
+                            Message.created_at.desc(),
+                            case(
+                                (Message.role == MessageRole.ASSISTANT, 1),
+                                else_=0,
+                            ).desc(),
+                            Message.id.desc(),
+                        )
+                        .limit(max(0, min(limit, 8)))
                     )
-                    # User and assistant rows are inserted in one transaction and
-                    # therefore usually share the exact same database timestamp.
-                    # UUID ordering is random, so make the reverse-chronological
-                    # query return assistant before user; reversing the result
-                    # below then always restores user -> assistant turn order.
-                    .order_by(
-                        Message.created_at.desc(),
-                        case(
-                            (Message.role == MessageRole.ASSISTANT, 1),
-                            else_=0,
-                        ).desc(),
-                        Message.id.desc(),
-                    )
-                    .limit(max(0, min(limit, 8)))
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return tuple(
-            ChatMessage(role=item.role.value, content=item.content[:600])
-            for item in reversed(rows)
+            ChatMessage(role=item.role.value, content=item.content[:600]) for item in reversed(rows)
         )
 
     async def persist_ai_answer(
@@ -994,9 +1009,7 @@ class PublicStore:
                     "coverage_ratio": float(
                         result.trace.extra.get("retrieval_coverage_ratio", 1.0)
                     ),
-                    "confidence_band": result.trace.extra.get(
-                        "confidence_band", "not_applicable"
-                    ),
+                    "confidence_band": result.trace.extra.get("confidence_band", "not_applicable"),
                     "evidence_ids": list(result.trace.extra.get("retrieved_evidence_ids", ())),
                     "version_ids": list(result.trace.extra.get("retrieved_version_ids", ())),
                 },
@@ -1075,8 +1088,7 @@ class PublicStore:
                 # knowledge base cannot ground an AI answer.  The lead form is the
                 # safe human handoff for exactly that case.
                 lead_prompt=(
-                    prepared.card_slug != "tuotu"
-                    and _looks_like_opportunity(prepared.question)
+                    prepared.card_slug != "tuotu" and _looks_like_opportunity(prepared.question)
                 ),
             )
 
@@ -1263,9 +1275,7 @@ class PublicStore:
         )
 
     @staticmethod
-    async def _lock_profile_visitor(
-        session: AsyncSession, visitor_id: uuid.UUID
-    ) -> None:
+    async def _lock_profile_visitor(session: AsyncSession, visitor_id: uuid.UUID) -> None:
         await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:visitor_id, 0))"),
             {"visitor_id": str(visitor_id)},
@@ -1333,8 +1343,7 @@ class PublicStore:
                     ConsentRecord.company_id == principal.company_id,
                     ConsentRecord.visitor_id == principal.visitor_id,
                     ConsentRecord.scope == scope,
-                    ConsentRecord.evidence["card_id"].as_string()
-                    == str(principal.card_id),
+                    ConsentRecord.evidence["card_id"].as_string() == str(principal.card_id),
                 )
                 .order_by(ConsentRecord.recorded_at.desc(), ConsentRecord.id.desc())
                 .limit(1)
@@ -1343,9 +1352,7 @@ class PublicStore:
         now = datetime.now(UTC)
         expires_at = consent.expires_at if consent is not None else None
         evidence = (
-            consent.evidence
-            if consent is not None and isinstance(consent.evidence, dict)
-            else {}
+            consent.evidence if consent is not None and isinstance(consent.evidence, dict) else {}
         )
         if expires_at is not None and expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
@@ -1585,6 +1592,420 @@ class PublicStore:
         return (input_cost + output_cost).quantize(Decimal("0.000001"))
 
 
+async def _public_employee_identity(
+    session: AsyncSession,
+    *,
+    card: Card,
+    cipher: PiiCipher,
+) -> PublicEmployeeIdentity:
+    if card.owner_user_id is None:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "员工名片未绑定有效员工")
+    row = (
+        (
+            await session.execute(
+                select(
+                    User.display_name.label("display_name"),
+                    User.email_ciphertext.label("email_ciphertext"),
+                    User.mobile_ciphertext.label("mobile_ciphertext"),
+                    Membership.job_title.label("job_title"),
+                    Membership.avatar_url.label("avatar_url"),
+                    Membership.business_summary.label("business_summary"),
+                )
+                .join(Membership, Membership.user_id == User.id)
+                .where(
+                    User.id == card.owner_user_id,
+                    User.status == LifecycleStatus.ACTIVE,
+                    User.deleted_at.is_(None),
+                    Membership.tenant_id == card.tenant_id,
+                    Membership.company_id == card.company_id,
+                    Membership.status == LifecycleStatus.ACTIVE,
+                )
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        # Public resolution deliberately collapses inactive/out-of-scope owners
+        # into the same not-found boundary as an unavailable card.
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在或员工身份已停用")
+    return PublicEmployeeIdentity(
+        display_name=str(row["display_name"]),
+        job_title=_optional_string(row["job_title"]),
+        avatar_url=_optional_string(row["avatar_url"]),
+        business_summary=_optional_string(row["business_summary"]),
+        email=(
+            cipher.decrypt(row["email_ciphertext"])
+            if row.get("email_ciphertext") is not None
+            else None
+        ),
+        mobile=(
+            cipher.decrypt(row["mobile_ciphertext"])
+            if row.get("mobile_ciphertext") is not None
+            else None
+        ),
+    )
+
+
+def _employee_contact_fields(
+    identity: PublicEmployeeIdentity,
+    visibility: set[str],
+) -> list[dict[str, str]]:
+    fields: list[dict[str, str]] = []
+    if "mobile" in visibility and identity.mobile:
+        fields.append(
+            {"label": "工作手机", "value": identity.mobile, "href": f"tel:{identity.mobile}"}
+        )
+    if "email" in visibility and identity.email:
+        fields.append(
+            {"label": "工作邮箱", "value": identity.email, "href": f"mailto:{identity.email}"}
+        )
+    return fields
+
+
+def _employee_contact_visibility(settings: dict[str, Any]) -> set[str]:
+    raw = settings.get("employee_contact_visibility")
+    if raw is None:
+        # Compatibility for employee cards created before explicit visibility.
+        return {"mobile", "email"}
+    if not isinstance(raw, list):
+        return set()
+    return {value for value in raw if value in {"mobile", "email"}}
+
+
+def _faq_document_selection(enterprise_template: object) -> list[uuid.UUID] | None:
+    """Return ordered selected ids, ``None`` for all, or ``[]`` for no FAQ block."""
+
+    if enterprise_template is None:
+        # Cards published before page templates existed keep their historical
+        # behaviour and expose every currently public FAQ.
+        return None
+    if not isinstance(enterprise_template, dict):
+        return []
+    blocks = enterprise_template.get("blocks")
+    if not isinstance(blocks, list):
+        return []
+    selected: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    has_faq = False
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "faq":
+            continue
+        has_faq = True
+        if block.get("faq_mode") in {None, "all_published"}:
+            return None
+        raw_ids = block.get("faq_document_ids")
+        if not isinstance(raw_ids, list):
+            continue
+        for raw_id in raw_ids:
+            try:
+                document_id = uuid.UUID(str(raw_id))
+            except (TypeError, ValueError):
+                continue
+            if document_id not in seen:
+                seen.add(document_id)
+                selected.append(document_id)
+    return selected if has_faq else []
+
+
+async def _public_faq_items(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    company_id: uuid.UUID,
+    enterprise_template: object,
+) -> list[PublicFaqItem]:
+    """Resolve FAQ answers from current public chunks, never template body text."""
+
+    selection = _faq_document_selection(enterprise_template)
+    if selection == []:
+        return []
+    filters = [
+        KnowledgeDocument.tenant_id == tenant_id,
+        KnowledgeDocument.company_id == company_id,
+        KnowledgeDocument.status == ContentStatus.PUBLISHED,
+        KnowledgeDocument.source_type == "faq",
+        KnowledgeDocument.current_version_id.is_not(None),
+        KnowledgeChunk.tenant_id == tenant_id,
+        KnowledgeChunk.company_id == company_id,
+        KnowledgeChunk.version_id == KnowledgeDocument.current_version_id,
+        KnowledgeChunk.is_active.is_(True),
+        KnowledgeChunk.visibility == Visibility.PUBLIC,
+    ]
+    if selection is not None:
+        filters.append(KnowledgeDocument.id.in_(selection))
+    rows = (
+        await session.execute(
+            select(
+                KnowledgeDocument.id.label("document_id"),
+                KnowledgeDocument.source_id,
+                KnowledgeDocument.title,
+                KnowledgeChunk.text,
+                KnowledgeChunk.ordinal,
+                KnowledgeChunk.metadata_json,
+            )
+            .join(KnowledgeChunk, KnowledgeChunk.document_id == KnowledgeDocument.id)
+            .where(*filters)
+            .order_by(KnowledgeDocument.updated_at.desc(), KnowledgeChunk.ordinal)
+            .limit(600)
+        )
+    ).all()
+    faq_by_document: dict[uuid.UUID, dict[str, Any]] = {}
+    encounter_order: list[uuid.UUID] = []
+    for row in rows:
+        document_id = uuid.UUID(str(row.document_id))
+        if document_id not in faq_by_document:
+            encounter_order.append(document_id)
+        item = faq_by_document.setdefault(
+            document_id,
+            {
+                "source_id": row.source_id,
+                "question": row.title,
+                "parts": [],
+                "source_label": "企业已发布资料",
+            },
+        )
+        item["parts"].append(row.text)
+        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+        if isinstance(metadata.get("source_label"), str):
+            item["source_label"] = metadata["source_label"]
+
+    ordered_ids = selection if selection is not None else encounter_order
+    return [
+        PublicFaqItem(
+            id=str(item["source_id"]),
+            document_id=document_id,
+            question=str(item["question"]),
+            answer="\n\n".join(str(part) for part in item["parts"]),
+            source_label=str(item["source_label"]),
+        )
+        for document_id in ordered_ids[:30]
+        if (item := faq_by_document.get(document_id)) is not None
+    ]
+
+
+async def _public_enterprise_template(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    company_id: uuid.UUID,
+    value: object,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    default_blocks = [
+        {
+            "id": "identity",
+            "type": "identity",
+            "visible": True,
+            "directory_enabled": False,
+            "sort_order": 0,
+            "title": "基础名片",
+        },
+        {"id": "overview", "type": "rich_text", "visible": True, "sort_order": 1, "title": "概览"},
+        {"id": "intro", "type": "rich_text", "visible": True, "sort_order": 2, "title": "企业介绍"},
+        {
+            "id": "business",
+            "type": "business_collection",
+            "visible": True,
+            "sort_order": 3,
+            "title": "核心业务",
+        },
+        {
+            "id": "cases",
+            "type": "case_collection",
+            "visible": True,
+            "sort_order": 4,
+            "title": "代表案例",
+        },
+        {
+            "id": "trust",
+            "type": "trust_panel",
+            "visible": True,
+            "sort_order": 5,
+            "title": "企业资料",
+        },
+        {"id": "faq", "type": "faq", "visible": True, "sort_order": 6, "title": "常见问题"},
+        {
+            "id": "ai",
+            "type": "ai_assistant",
+            "visible": True,
+            "sort_order": 7,
+            "title": "企业 AI 助手",
+        },
+    ]
+    raw_blocks = value.get("blocks") if isinstance(value.get("blocks"), list) else []
+    indexed = [(index, block) for index, block in enumerate(raw_blocks) if isinstance(block, dict)]
+    merged = [
+        block
+        for _, block in sorted(
+            indexed,
+            key=lambda item: (
+                item[1].get("sort_order")
+                if isinstance(item[1].get("sort_order"), int)
+                else item[0],
+                item[0],
+            ),
+        )
+    ]
+    matched_default_ids: set[str] = set()
+
+    def matches_default(block: dict[str, Any], default_block: dict[str, Any]) -> bool:
+        return bool(
+            block.get("id") == default_block["id"]
+            or (default_block["type"] != "rich_text" and block.get("type") == default_block["type"])
+            or (
+                default_block["type"] == "rich_text"
+                and block.get("type") == "rich_text"
+                and block.get("title") == default_block.get("title")
+            )
+        )
+
+    for index, block in enumerate(merged):
+        match = next(
+            (
+                default_block
+                for default_block in default_blocks
+                if default_block["id"] not in matched_default_ids
+                and matches_default(block, default_block)
+            ),
+            None,
+        )
+        if match is None:
+            continue
+        matched_default_ids.add(match["id"])
+        if match["type"] == "identity":
+            merged[index] = {
+                **block,
+                "visible": True,
+                "directory_enabled": block.get(
+                    "directory_enabled", match["directory_enabled"]
+                ),
+            }
+
+    for default_block in default_blocks:
+        if default_block["id"] in matched_default_ids:
+            continue
+        insert_at = min(int(default_block["sort_order"]), len(merged))
+        merged.insert(insert_at, default_block)
+    candidate = {
+        **value,
+        "blocks": [{**block, "sort_order": index} for index, block in enumerate(merged)],
+    }
+    try:
+        document = EnterpriseTemplateDocument.model_validate(candidate)
+    except ValidationError:
+        return None
+    product_ids = {
+        product_id
+        for block in document.blocks
+        if block.visible and block.type == "business_collection"
+        for product_id in block.product_ids
+    }
+    public_products: dict[uuid.UUID, Product] = {}
+    if product_ids:
+        product_rows = (
+            await session.scalars(
+                select(Product).where(
+                    Product.id.in_(product_ids),
+                    Product.tenant_id == tenant_id,
+                    Product.company_id == company_id,
+                    Product.status == ContentStatus.PUBLISHED,
+                    Product.visibility == Visibility.PUBLIC,
+                    Product.published_at.is_not(None),
+                    Product.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        public_products = {row.id: row for row in product_rows}
+    case_ids = {
+        case_id
+        for block in document.blocks
+        if block.visible and block.type == "case_collection"
+        for case_id in block.case_ids
+    }
+    public_cases: dict[uuid.UUID, CaseStudy] = {}
+    if case_ids:
+        case_rows = (
+            await session.scalars(
+                select(CaseStudy).where(
+                    CaseStudy.id.in_(case_ids),
+                    CaseStudy.tenant_id == tenant_id,
+                    CaseStudy.company_id == company_id,
+                    CaseStudy.status == ContentStatus.PUBLISHED,
+                    CaseStudy.visibility == Visibility.PUBLIC,
+                    CaseStudy.published_at.is_not(None),
+                    CaseStudy.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        public_cases = {row.id: row for row in case_rows}
+    blocks: list[dict[str, Any]] = []
+    for block in document.blocks:
+        if not block.visible:
+            continue
+        asset_urls = [*block.image_urls]
+        if block.video_cover_url:
+            asset_urls.append(block.video_cover_url)
+        if any(not _is_scoped_card_asset(url, company_id) for url in asset_urls):
+            continue
+        if block.type == "business_collection" and set(block.product_ids) - set(public_products):
+            continue
+        if block.type == "case_collection" and set(block.case_ids) - set(public_cases):
+            continue
+        payload = block.model_dump(mode="json")
+        if block.type == "business_collection":
+            payload["product_items"] = [
+                {
+                    "id": str(product.id),
+                    "slug": product.slug,
+                    "name": product.name,
+                    "category": product.category,
+                    "summary": product.summary,
+                    "image_url": product.image_url,
+                }
+                for product_id in block.product_ids
+                if (product := public_products.get(product_id)) is not None
+            ]
+        if block.type == "case_collection":
+            payload["case_items"] = [
+                {
+                    "id": str(case_study.id),
+                    "slug": case_study.slug,
+                    "title": case_study.title,
+                    "industry": case_study.industry,
+                    "summary": case_study.result,
+                    "image_url": case_study.image_url,
+                }
+                for case_id in block.case_ids
+                if (case_study := public_cases.get(case_id)) is not None
+            ]
+        blocks.append(payload)
+    return {
+        "schema_version": document.schema_version,
+        "theme_key": document.theme_key,
+        "blocks": blocks,
+    }
+
+
+def _is_scoped_card_asset(value: str, company_id: uuid.UUID) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        index = parts.index("public")
+    except ValueError:
+        return False
+    suffix = parts[index:]
+    return (
+        len(suffix) == 4
+        and suffix[:2] == ["public", "card-assets"]
+        and suffix[2] == str(company_id)
+        and suffix[3].endswith(".webp")
+    )
+
+
 async def _published_enterprise_card_slug(
     session: AsyncSession,
     *,
@@ -1618,9 +2039,7 @@ def _policy_version(card: Card, scope: ConsentScope) -> str:
     if scope == ConsentScope.CHAT_NOTICE:
         return str(policies.get("chat_notice") or "chat-notice-v1")
     if scope == ConsentScope.PROFILE_PERSONALIZATION:
-        return str(
-            policies.get("profile_personalization") or "profile-personalization-v1"
-        )
+        return str(policies.get("profile_personalization") or "profile-personalization-v1")
     return str(policies.get("lead_consent") or "lead-consent-v1")
 
 
@@ -1648,9 +2067,7 @@ def _company_profile_policy(company: Company) -> str:
     policies = settings.get("policy_versions", {})
     if not isinstance(policies, dict):
         policies = {}
-    return str(
-        policies.get("profile_personalization") or "profile-personalization-v1"
-    )
+    return str(policies.get("profile_personalization") or "profile-personalization-v1")
 
 
 def _policy_version_mismatch() -> ApiError:

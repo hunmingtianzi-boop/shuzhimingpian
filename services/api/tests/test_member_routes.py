@@ -42,6 +42,10 @@ class RouteMemberStore:
         self.calls.append(("access", kwargs))
         return self.member.model_copy(update={"role": "company_admin"})
 
+    async def update_self_profile(self, **kwargs: Any) -> MemberRecord:
+        self.calls.append(("self_profile", kwargs))
+        return self.member.model_copy(update={"avatar_url": kwargs["body"].avatar_url})
+
     async def set_status(self, **kwargs: Any) -> MemberRecord:
         self.calls.append(("status", kwargs))
         return self.member.model_copy(
@@ -138,6 +142,9 @@ def test_member_router_exposes_complete_user_management_contract(
     assert paths["/api/v1/admin/members/{membership_id}"]["patch"]["operationId"] == (
         "updateCompanyMemberAccess"
     )
+    assert paths["/api/v1/admin/members/me/profile"]["patch"]["operationId"] == (
+        "updateCurrentCompanyMemberProfile"
+    )
     assert paths["/api/v1/admin/members/{membership_id}/status"]["put"]["operationId"] == (
         "updateCompanyMemberStatus"
     )
@@ -221,6 +228,52 @@ def test_card_owner_without_member_permission_is_forbidden(
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+    assert store.calls == []
+
+
+def test_card_owner_can_update_only_their_own_avatar(
+    route_client: tuple[TestClient, RouteMemberStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = route_client
+    principal = _principal(role="card_owner", permissions=("card.write",))
+    principal_box["value"] = principal
+    avatar_url = "/api/v1/public/card-assets/" + str(principal.company_id) + "/avatar.webp"
+
+    response = client.patch(
+        "/api/v1/admin/members/me/profile",
+        json={"avatar_url": avatar_url},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["avatar_url"] == avatar_url
+    name, values = store.calls[-1]
+    assert name == "self_profile"
+    assert values["membership_id"] == principal.membership_id
+    assert values["scope"].actor_user_id == principal.user_id
+
+
+def test_self_profile_cannot_name_another_member_or_use_an_unsafe_asset(
+    route_client: tuple[TestClient, RouteMemberStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = route_client
+    principal_box["value"] = _principal(role="card_owner", permissions=("card.write",))
+
+    other = client.patch(
+        "/api/v1/admin/members/me/profile",
+        json={"avatar_url": "/assets/avatar.webp", "membership_id": str(uuid.uuid4())},
+    )
+    unsafe = client.patch(
+        "/api/v1/admin/members/me/profile",
+        json={"avatar_url": "javascript:alert(1)"},
+    )
+    admin_only_path = client.patch(
+        f"/api/v1/admin/members/{uuid.uuid4()}",
+        json={"avatar_url": "/assets/avatar.webp"},
+    )
+
+    assert other.status_code == 422
+    assert unsafe.status_code == 422
+    assert admin_only_path.status_code == 403
     assert store.calls == []
 
 

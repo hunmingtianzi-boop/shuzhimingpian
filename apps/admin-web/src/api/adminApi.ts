@@ -2,6 +2,10 @@ import { apiClient, ApiClient, ApiError, unwrapData } from "./client";
 import type {
   AdminUser,
   CardAssetUpload,
+  CardComposerDefault,
+  EnterpriseTemplate,
+  EnterpriseTemplateBlock,
+  EnterpriseTemplateThemeKey,
   CardSettings,
   CardSettingsInput,
   CaseStudy,
@@ -20,6 +24,7 @@ import type {
   ManagedCardInput,
   Product,
   ProductInput,
+  SelectableFaqDocument,
   WeComCardContactWay,
 } from "./types";
 
@@ -128,6 +133,106 @@ function normalizeCard(payload: unknown): CardSettings {
   };
 }
 
+function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.type !== "string") return undefined;
+  const type = value.type;
+  if (![
+    "identity", "rich_text", "business_collection", "image_gallery", "video_link", "case_collection", "trust_panel", "faq", "cta", "ai_assistant",
+  ].includes(type)) return undefined;
+  const strings = (raw: unknown) => Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : undefined;
+  return {
+    id: value.id,
+    type: type as EnterpriseTemplateBlock["type"],
+    visible: value.visible !== false,
+    directoryEnabled: value.directory_enabled !== false,
+    sortOrder: optionalNumber(value.sort_order) ?? 0,
+    title: optionalString(value.title) || undefined,
+    body: optionalString(value.body) || undefined,
+    imageUrls: strings(value.image_urls),
+    videoUrl: optionalString(value.video_url) || undefined,
+    videoCoverUrl: optionalString(value.video_cover_url) || undefined,
+    productIds: strings(value.product_ids),
+    caseIds: strings(value.case_ids),
+    faqMode: type === "faq" && value.faq_mode === "selected" ? "selected" : type === "faq" ? "all_published" : undefined,
+    faqDocumentIds: type === "faq" ? strings(value.faq_document_ids) : undefined,
+    ctaLabel: optionalString(value.cta_label) || undefined,
+    ctaUrl: optionalString(value.cta_url) || undefined,
+  };
+}
+
+function normalizeEnterpriseTemplate(payload: unknown): EnterpriseTemplate {
+  const raw = requireRecord(unwrapData(payload), "企业名片模板");
+  const document = (value: unknown) => {
+    const record = isRecord(value) ? value : {};
+    return {
+      schemaVersion: 1 as const,
+      themeKey: ["brand", "clean", "warm"].includes(optionalString(record.theme_key))
+        ? optionalString(record.theme_key) as EnterpriseTemplateThemeKey
+        : "brand",
+      blocks: Array.isArray(record.blocks)
+        ? record.blocks.flatMap((item) => {
+            const block = normalizeTemplateBlock(item);
+            return block ? [block] : [];
+          })
+        : [],
+    };
+  };
+  return {
+    cardId: requireString(raw.card_id, "企业模板 card_id"),
+    version: optionalNumber(raw.version) ?? 1,
+    draft: document(raw.draft),
+    published: isRecord(raw.published) ? document(raw.published) : undefined,
+  };
+}
+
+function normalizeCardComposerDefault(payload: unknown): CardComposerDefault {
+  const raw = requireRecord(unwrapData(payload), "名片默认配置");
+  const cardKind = optionalString(raw.card_kind);
+  if (cardKind !== "enterprise" && cardKind !== "employee") {
+    throw new ApiError("名片默认配置缺少有效类型。", { code: "INVALID_API_RESPONSE" });
+  }
+  const document = normalizeEnterpriseTemplate({
+    card_id: "default",
+    version: raw.version,
+    draft: raw.document,
+  }).draft;
+  return { cardKind, version: requireNumber(raw.version, "名片默认配置 version"), document };
+}
+
+function enterpriseTemplatePayload(
+  themeKey: EnterpriseTemplateThemeKey,
+  blocks: EnterpriseTemplateBlock[],
+) {
+  return {
+    schema_version: 1,
+    theme_key: themeKey,
+    blocks: blocks.map((block, index) => ({
+      id: block.id,
+      type: block.type,
+      visible: block.visible,
+      directory_enabled: block.directoryEnabled !== false,
+      sort_order: index,
+      ...(block.title?.trim() ? { title: block.title.trim() } : {}),
+      ...(block.body?.trim() ? { body: block.body.trim() } : {}),
+      ...(block.imageUrls?.length ? { image_urls: block.imageUrls.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.videoUrl?.trim() ? { video_url: block.videoUrl.trim() } : {}),
+      ...(block.videoCoverUrl?.trim() ? { video_cover_url: block.videoCoverUrl.trim() } : {}),
+      ...(block.productIds?.length ? { product_ids: block.productIds.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.caseIds?.length ? { case_ids: block.caseIds.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.type === "faq" ? {
+        faq_mode: block.faqMode === "selected" ? "selected" : "all_published",
+        ...(block.faqMode === "selected" && block.faqDocumentIds?.length
+          ? { faq_document_ids: block.faqDocumentIds.map((value) => value.trim()).filter(Boolean) }
+          : {}),
+      } : {}),
+      ...(block.ctaLabel?.trim() ? { cta_label: block.ctaLabel.trim() } : {}),
+      ...(block.ctaUrl?.trim() ? { cta_url: block.ctaUrl.trim() } : {}),
+    })),
+  };
+}
+
 function normalizeLatestVersion(raw: unknown): KnowledgeDocument["latestVersion"] {
   if (!isRecord(raw)) return undefined;
   return {
@@ -147,10 +252,15 @@ function normalizeDocument(raw: unknown): KnowledgeDocument {
       code: "INVALID_API_RESPONSE",
     });
   }
+  const visibility = optionalString(raw.visibility);
   return {
     id: requireId(raw, "知识条目"),
     title: optionalString(raw.title),
     status: optionalString(raw.status) || "draft",
+    sourceType: optionalString(raw.source_type) || undefined,
+    visibility: (["public", "authenticated", "internal"] as string[]).includes(visibility)
+      ? visibility as KnowledgeVisibility
+      : undefined,
     version: optionalNumber(raw.version),
     latestVersion: normalizeLatestVersion(raw.latest_version),
     updatedAt: optionalString(raw.updated_at) || undefined,
@@ -165,6 +275,25 @@ function normalizeDocuments(payload: unknown): KnowledgeDocument[] {
     });
   }
   return raw.map(normalizeDocument);
+}
+
+function normalizeSelectableFaqDocuments(payload: unknown): SelectableFaqDocument[] {
+  const raw = unwrapData(payload);
+  if (!Array.isArray(raw)) {
+    throw new ApiError("可选 FAQ 接口返回了无法识别的数据。", {
+      code: "INVALID_API_RESPONSE",
+    });
+  }
+  return raw.map((item) => {
+    const record = requireRecord(item, "可选 FAQ");
+    return {
+      id: requireId(record, "可选 FAQ"),
+      title: requireString(record.title, "可选 FAQ title"),
+      answer: requireString(record.answer, "可选 FAQ answer"),
+      status: "published",
+      visibility: "public",
+    };
+  });
 }
 
 function requireNumber(value: unknown, label: string): number {
@@ -328,6 +457,8 @@ function normalizeManagedCard(rawValue: unknown): ManagedCard {
       chatNotice: optionalString(policies.chat_notice),
       leadConsent: optionalString(policies.lead_consent),
     },
+    employeeContactVisibility: normalizeStringArray(rawValue.employee_contact_visibility)
+      .filter((value): value is "mobile" | "email" => value === "mobile" || value === "email"),
     status: optionalString(rawValue.status) || "draft",
     version: requireNumber(rawValue.version, "名片 version"),
     shareUrl: requireString(rawValue.share_url, "名片 share_url"),
@@ -493,9 +624,21 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
     ...(input.cardKind === "employee" && ownerUserId
       ? { owner_user_id: ownerUserId }
       : {}),
-    display_name: input.displayName.trim(),
+    ...(!requireOwner && input.templateDocument
+      ? {
+          template_document: enterpriseTemplatePayload(
+            input.templateDocument.themeKey,
+            input.templateDocument.blocks,
+          ),
+        }
+      : !requireOwner && input.templateSourceCardId?.trim()
+        ? { template_source_card_id: input.templateSourceCardId.trim() }
+        : {}),
+    display_name: input.displayName.trim() || "员工名片",
     title: input.title.trim(),
-    avatar_url: nullableString(input.avatarUrl),
+    ...(input.cardKind === "enterprise"
+      ? { avatar_url: nullableString(input.avatarUrl) }
+      : {}),
     assistant_name: nullableString(input.assistantName),
     welcome_message: nullableString(input.welcomeMessage),
     suggested_questions: input.suggestedQuestions
@@ -503,6 +646,9 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
       .filter(Boolean)
       .slice(0, 6),
     policy_versions: policyVersions,
+    ...(input.cardKind === "employee"
+      ? { employee_contact_visibility: input.employeeContactVisibility }
+      : {}),
   };
 }
 
@@ -553,6 +699,12 @@ export function createAdminApi(client: ApiClient) {
   async listKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
     return normalizeDocuments(
       await client.get("/admin/knowledge/documents"),
+    );
+  },
+
+  async listSelectableFaqDocuments(): Promise<SelectableFaqDocument[]> {
+    return normalizeSelectableFaqDocuments(
+      await client.get("/admin/knowledge/documents?selectable_faq=true"),
     );
   },
 
@@ -817,6 +969,48 @@ export function createAdminApi(client: ApiClient) {
           {},
           { version },
         ),
+      ),
+    );
+  },
+
+  async getEnterpriseTemplate(id: string): Promise<EnterpriseTemplate> {
+    return normalizeEnterpriseTemplate(
+      await client.get(`/admin/cards/${encodeURIComponent(id)}/enterprise-template`),
+    );
+  },
+
+  async updateEnterpriseTemplate(
+    id: string,
+    version: number,
+    themeKey: EnterpriseTemplateThemeKey,
+    blocks: EnterpriseTemplateBlock[],
+  ): Promise<EnterpriseTemplate> {
+    return normalizeEnterpriseTemplate(
+      await client.put(
+        `/admin/cards/${encodeURIComponent(id)}/enterprise-template`,
+        enterpriseTemplatePayload(themeKey, blocks),
+        { version },
+      ),
+    );
+  },
+
+  async getCardComposerDefault(cardKind: ManagedCard["cardKind"]): Promise<CardComposerDefault> {
+    return normalizeCardComposerDefault(
+      await client.get(`/admin/card-composer/defaults/${encodeURIComponent(cardKind)}`),
+    );
+  },
+
+  async updateCardComposerDefault(
+    cardKind: ManagedCard["cardKind"],
+    version: number,
+    themeKey: EnterpriseTemplateThemeKey,
+    blocks: EnterpriseTemplateBlock[],
+  ): Promise<CardComposerDefault> {
+    return normalizeCardComposerDefault(
+      await client.put(
+        `/admin/card-composer/defaults/${encodeURIComponent(cardKind)}`,
+        enterpriseTemplatePayload(themeKey, blocks),
+        { version },
       ),
     );
   },

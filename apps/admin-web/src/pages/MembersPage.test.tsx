@@ -42,13 +42,13 @@ describe("MembersPage", () => {
     renderPage();
     expect(screen.getByRole("status", { name: "正在加载" })).toBeInTheDocument();
     expect(await screen.findByText("member@example.test")).toBeInTheDocument();
-    expect(screen.getByText("用户总数").nextSibling).toHaveTextContent("2");
+    expect(screen.getByText("员工总数").nextSibling).toHaveTextContent("2");
   });
 
   it("shows empty, error and permission states", async () => {
     vi.mocked(memberApi.listMembers).mockResolvedValueOnce({ items: [], total: 0, limit: 50, offset: 0 });
     const empty = renderPage();
-    expect(await screen.findByText("尚未创建企业用户")).toBeInTheDocument();
+    expect(await screen.findByText("尚未创建企业员工")).toBeInTheDocument();
     empty.unmount();
 
     vi.mocked(memberApi.listMembers).mockRejectedValueOnce(new ApiError("服务离线", { code: "NETWORK_ERROR" }));
@@ -58,7 +58,7 @@ describe("MembersPage", () => {
 
     vi.mocked(useAuth).mockReturnValue({ user: { ...admin, role: "card_owner", permissions: [] } } as unknown as ReturnType<typeof useAuth>);
     renderPage();
-    expect(await screen.findByText("没有企业用户管理权限")).toBeInTheDocument();
+    expect(await screen.findByText("没有企业员工管理权限")).toBeInTheDocument();
   });
 
   it("creates a member with validated form values", async () => {
@@ -66,11 +66,11 @@ describe("MembersPage", () => {
     const create = vi.spyOn(memberApi, "createMember").mockResolvedValue(cardOwner);
     renderPage();
     await screen.findByText("member@example.test");
-    await user.click(screen.getAllByRole("button", { name: "创建用户" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "创建员工" }).at(-1)!);
     fireEvent.change(screen.getByRole("textbox", { name: /登录账号/ }), { target: { value: "member2@example.test" } });
     fireEvent.change(screen.getByRole("textbox", { name: /显示姓名/ }), { target: { value: "李四" } });
     fireEvent.change(screen.getByLabelText(/初始密码/), { target: { value: "SecurePassword!2026" } });
-    await user.click(screen.getAllByRole("button", { name: "创建用户" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "创建员工" }).at(-1)!);
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ account: "member2@example.test", displayName: "李四", password: "SecurePassword!2026" })));
   });
 
@@ -80,11 +80,11 @@ describe("MembersPage", () => {
     renderPage();
     await screen.findByText("admin@example.test");
     await user.click(screen.getAllByRole("button", { name: "编辑" })[0]);
-    const editor = await screen.findByRole("dialog", { name: "编辑企业用户" });
+    const editor = await screen.findByRole("dialog", { name: "编辑企业员工" });
     const role = within(editor).getByRole("combobox", { name: "角色" });
     await user.selectOptions(role, "card_owner");
     await waitFor(() => expect(role).toHaveValue("card_owner"));
-    await user.click(within(editor).getByRole("button", { name: "保存用户" }));
+    await user.click(within(editor).getByRole("button", { name: "保存员工" }));
     expect(update).not.toHaveBeenCalled();
     const confirmation = await screen.findByRole("dialog", {
       name: "移除企业管理员角色",
