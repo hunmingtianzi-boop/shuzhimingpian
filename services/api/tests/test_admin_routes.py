@@ -63,6 +63,23 @@ class RouteStore:
         )
         return self.card
 
+    async def complete_enterprise_setup(
+        self, **kwargs: Any
+    ) -> tuple[CompanyProfile, CardProfile]:
+        self.calls.append(("complete_setup", kwargs))
+        self.company = self.company.model_copy(
+            update={"onboarding_status": "completed", "version": self.company.version + 1}
+        )
+        self.card = self.card.model_copy(
+            update={
+                "onboarding_status": "completed",
+                "status": "published",
+                "published_at": datetime.now(UTC),
+                "version": self.card.version + 1,
+            }
+        )
+        return self.company, self.card
+
     async def list_documents(
         self, **kwargs: Any
     ) -> tuple[list[SelectableFaqRecord | KnowledgeDocumentRecord], int]:
@@ -137,6 +154,7 @@ def _company_profile(*, version: int) -> CompanyProfile:
         region="杭州",
         website="https://example.com",
         profile_personalization_policy_version="profile-personalization-v1",
+        onboarding_status="content_pending",
         status="active",
         version=version,
         updated_at=datetime.now(UTC),
@@ -154,6 +172,7 @@ def _card_profile(*, version: int) -> CardProfile:
         suggested_questions=["你们提供什么服务？"],
         policy_versions={"privacy": "privacy-v1"},
         status="draft",
+        onboarding_status="content_pending",
         version=version,
         updated_at=datetime.now(UTC),
     )
@@ -220,6 +239,7 @@ def test_admin_router_exposes_requested_vertical_slice(
 
     assert set(paths["/api/v1/admin/company/profile"]) == {"get", "put"}
     assert set(paths["/api/v1/admin/card"]) == {"get", "put"}
+    assert set(paths["/api/v1/admin/setup/complete"]) == {"post"}
     assert set(paths["/api/v1/admin/knowledge/documents"]) == {"get", "post"}
     assert set(paths["/api/v1/admin/knowledge/documents/{document_id}"]) == {"get", "put"}
     assert "post" in paths["/api/v1/admin/knowledge/documents/{document_id}/publish"]
@@ -284,6 +304,21 @@ def test_card_uses_etag_and_if_match_version(
     assert put_response.headers["etag"] == '"5"'
     update_call = next(payload for name, payload in store.calls if name == "update_card")
     assert update_call["expected_version"] == 4
+
+
+def test_company_admin_can_complete_enterprise_setup(
+    route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, _ = route_client
+
+    response = client.post("/api/v1/admin/setup/complete", json={})
+
+    assert response.status_code == 200
+    assert response.json()["data"]["completed"] is True
+    assert response.json()["data"]["company"]["onboarding_status"] == "completed"
+    assert response.json()["data"]["card"]["onboarding_status"] == "completed"
+    assert response.json()["data"]["card"]["status"] == "published"
+    assert any(name == "complete_setup" for name, _payload in store.calls)
 
 
 @pytest.mark.parametrize("value", ["", "0", 'W/"abc"', '"1.5"'])

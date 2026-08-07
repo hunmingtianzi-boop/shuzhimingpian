@@ -487,6 +487,59 @@ class WeComEnterpriseScope(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class WeComEnterpriseAuthorization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Encrypted third-party authorization for one customer corporation.
+
+    This global provider index is accessed only through the narrow
+    SECURITY DEFINER functions installed by its migration.
+    """
+
+    __tablename__ = "wecom_enterprise_authorizations"
+    __table_args__ = (
+        UniqueConstraint(
+            "suite_id_hmac",
+            "auth_corpid_hmac",
+            name="uq_wecom_enterprise_authorizations_provider_corp",
+        ),
+        CheckConstraint("char_length(suite_id_hmac) = 64", name="suite_id_hmac_sha256"),
+        CheckConstraint(
+            "char_length(auth_corpid_hmac) = 64",
+            name="auth_corpid_hmac_sha256",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'revoked')",
+            name="authorization_status_allowed",
+        ),
+        Index(
+            "ix_wecom_enterprise_authorizations_status",
+            "suite_id_hmac",
+            "status",
+            "updated_at",
+        ),
+    )
+
+    suite_id_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    auth_corpid_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    auth_corpid_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    permanent_code_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    authorization_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    authorizer_user_id_ciphertext: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True
+    )
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    agent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="active", server_default=text("'active'")
+    )
+    authorized_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class WeComCallbackEvent(UUIDPrimaryKeyMixin, CompanyScopeMixin, Base):
     """Verified WeCom callback retained encrypted for idempotent processing."""
 
@@ -2983,6 +3036,8 @@ __all__ = [
     "WeComCallbackEvent",
     "WeComCardContactWay",
     "WeComCustomerLink",
+    "WeComEnterpriseAuthorization",
+    "WeComEnterpriseScope",
     "WeComUserBinding",
     "WorkerJobResult",
 ]

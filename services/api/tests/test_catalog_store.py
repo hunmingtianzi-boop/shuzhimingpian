@@ -176,7 +176,11 @@ async def test_card_creation_retries_a_slug_collision_in_a_fresh_attempt() -> No
 
     result = await store.create_card(
         scope=scope,
-        body=CreateCardRequest(display_name="销售名片", title="解决方案顾问"),
+        body=CreateCardRequest(
+            owner_user_id=scope.actor_user_id,
+            display_name="销售名片",
+            title="解决方案顾问",
+        ),
     )
 
     assert store.attempts == [first, second]

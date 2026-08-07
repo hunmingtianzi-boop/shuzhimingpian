@@ -99,6 +99,11 @@ const CompanyProfilePage = lazy(() =>
     default: module.CompanyProfilePage,
   })),
 );
+const CompanySetupPage = lazy(() =>
+  import("./pages/CompanySetupPage").then((module) => ({
+    default: module.CompanySetupPage,
+  })),
+);
 const CardSettingsPage = lazy(() =>
   import("./pages/CardSettingsPage").then((module) => ({
     default: module.CardSettingsPage,
@@ -801,6 +806,7 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.knowledgeGaps) return <KnowledgeGapsPage />;
   if (pathname === APP_PATHS.notifications) return <NotificationsPage />;
   if (pathname === APP_PATHS.privacyRequests) return <PrivacyRequestsPage />;
+  if (pathname === APP_PATHS.setup) return <CompanySetupPage />;
   if (pathname === APP_PATHS.company) return <CompanyProfilePage />;
   if (pathname === APP_PATHS.members) return <MembersPage />;
   if (pathname === APP_PATHS.card) return <CardSettingsPage />;
@@ -856,14 +862,18 @@ export function SessionGate() {
   const workspace = adminWorkspaceForUser(auth.user);
   const landingPath =
     workspace === "platform" ? APP_PATHS.platformOverview : APP_PATHS.overview;
+  const authenticationLandingPath =
+    pathname === WECOM_ENTRY_PATH && workspace === "enterprise"
+      ? APP_PATHS.setup
+      : landingPath;
   const isAuthenticationEntry =
     pathname === "/login" || pathname === WECOM_ENTRY_PATH;
 
   useEffect(() => {
     if (auth.status === "authenticated" && isAuthenticationEntry && workspace) {
-      navigate(landingPath);
+      navigate(authenticationLandingPath);
     }
-  }, [auth.status, isAuthenticationEntry, landingPath, workspace]);
+  }, [auth.status, authenticationLandingPath, isAuthenticationEntry, workspace]);
 
   if (auth.status === "bootstrapping") return <BootScreen />;
   if (auth.status === "unauthenticated") return <LoginPage />;

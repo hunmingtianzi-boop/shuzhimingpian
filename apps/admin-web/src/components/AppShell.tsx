@@ -26,6 +26,7 @@ import {
   ShieldLock24Regular,
   ShieldError24Regular,
   SignOut24Regular,
+  Sparkle24Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import type { ComponentType, ReactNode } from "react";
@@ -53,7 +54,10 @@ type NavItem = {
 const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "工作台",
-    items: [{ path: APP_PATHS.overview, label: "业务概览", icon: Home24Regular }],
+    items: [
+      { path: APP_PATHS.overview, label: "业务概览", icon: Home24Regular },
+      { path: APP_PATHS.setup, label: "开通向导", icon: Sparkle24Regular, permission: "company.write" },
+    ],
   },
   {
     label: "客户经营",

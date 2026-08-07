@@ -310,6 +310,22 @@ describe("adminApi real contract", () => {
     });
   });
 
+  it("marks the enterprise setup complete through the existing admin scope", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({ data: { completed: true } }));
+    const api = await authenticatedApi(fetcher);
+
+    await api.completeEnterpriseSetup();
+
+    expect(fetcher.mock.calls[1][0]).toBe(
+      "https://api.example.test/api/v1/admin/setup/complete",
+    );
+    expect(fetcher.mock.calls[1][1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({});
+  });
+
   it("loads detail before editing and uses the two-stage FAQ create flow", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

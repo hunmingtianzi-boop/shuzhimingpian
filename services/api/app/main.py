@@ -36,6 +36,7 @@ from app.api.routes import (
     wecom,
     wecom_auth,
     wecom_callbacks,
+    wecom_suite,
     workflow,
 )
 from app.core.config import Settings, get_settings
@@ -204,6 +205,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(wecom.router, prefix=runtime_settings.api_prefix)
     app.include_router(wecom_auth.router, prefix=runtime_settings.api_prefix)
     app.include_router(wecom_callbacks.router, prefix=runtime_settings.api_prefix)
+    app.include_router(wecom_suite.router, prefix=runtime_settings.api_prefix)
     return app
 
 

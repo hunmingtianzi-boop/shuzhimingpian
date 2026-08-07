@@ -252,6 +252,79 @@ class AdminStore:
             await session.refresh(card)
             return _card_profile(card)
 
+    async def complete_enterprise_setup(
+        self,
+        *,
+        scope: AdminScope,
+        trace_id: str | None = None,
+    ) -> tuple[CompanyProfile, CardProfile]:
+        """Mark the initial mobile setup complete after validating real content."""
+
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope, for_update=True)
+            card = await self._card(session, scope, for_update=True)
+            company_settings = _dict_value(company.settings)
+            card_settings = _dict_value(card.settings)
+            missing: list[str] = []
+            if not company.name.strip():
+                missing.append("company.name")
+            if not (_string_value(company_settings.get("summary")) or "").strip():
+                missing.append("company.summary")
+            if not card.display_name.strip():
+                missing.append("card.display_name")
+            if not (_string_value(card_settings.get("title")) or "").strip():
+                missing.append("card.title")
+            if not card.slug.strip():
+                missing.append("card.slug")
+            if missing:
+                raise ApiError(
+                    422,
+                    "ENTERPRISE_SETUP_INCOMPLETE",
+                    "请先补全企业简介和名片基本信息",
+                    details={"missing_fields": missing},
+                )
+
+            if card.status == ContentStatus.ARCHIVED:
+                raise ApiError(
+                    409,
+                    "ENTERPRISE_CARD_ARCHIVED",
+                    "当前名片已归档，请先在名片管理中恢复",
+                )
+            if (
+                company_settings.get("onboarding_status") == "completed"
+                and card_settings.get("onboarding_status") == "completed"
+                and card.status == ContentStatus.PUBLISHED
+            ):
+                return _company_profile(company), _card_profile(card)
+
+            company_settings["onboarding_status"] = "completed"
+            card_settings["onboarding_status"] = "completed"
+            company.settings = company_settings
+            card.settings = card_settings
+            if card.status != ContentStatus.PUBLISHED:
+                card.status = ContentStatus.PUBLISHED
+                card.published_at = datetime.now(UTC)
+            company.version += 1
+            card.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="enterprise.setup.complete",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "company_version": company.version,
+                    "card_id": str(card.id),
+                    "card_version": card.version,
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            await session.refresh(card)
+            return _company_profile(company), _card_profile(card)
+
     async def list_documents(
         self,
         *,
@@ -1151,6 +1224,9 @@ def _company_profile(company: Company) -> CompanyProfile:
             or "profile-personalization-v1"
         ),
         status=company.status.value,
+        onboarding_status=(
+            _string_value(settings.get("onboarding_status")) or "content_pending"
+        ),
         version=company.version,
         updated_at=company.updated_at,
     )
@@ -1181,6 +1257,9 @@ def _card_profile(card: Card) -> CardProfile:
             else {}
         ),
         status=card.status.value,
+        onboarding_status=(
+            _string_value(settings.get("onboarding_status")) or "content_pending"
+        ),
         published_at=card.published_at,
         version=card.version,
         updated_at=card.updated_at,

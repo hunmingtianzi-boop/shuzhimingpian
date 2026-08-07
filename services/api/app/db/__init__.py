@@ -45,6 +45,8 @@ from app.db.models import (
     WeComCallbackEvent,
     WeComCardContactWay,
     WeComCustomerLink,
+    WeComEnterpriseAuthorization,
+    WeComEnterpriseScope,
     WeComUserBinding,
     WorkerJobResult,
 )
@@ -106,6 +108,8 @@ __all__ = [
     "WeComCallbackEvent",
     "WeComCardContactWay",
     "WeComCustomerLink",
+    "WeComEnterpriseAuthorization",
+    "WeComEnterpriseScope",
     "WeComUserBinding",
     "WorkerJobResult",
     "async_session_factory",

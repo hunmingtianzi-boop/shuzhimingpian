@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient, ApiError } from "../api/client";
-import { appHref, WECOM_ENTRY_PATH } from "../routing";
+import { APP_PATHS, appHref, WECOM_ENTRY_PATH } from "../routing";
 import { AuthProvider, useAuth } from "./AuthContext";
 
 function AuthProbe() {
@@ -45,7 +45,7 @@ describe("WeCom workbench authentication entry", () => {
     );
 
     await waitFor(() => {
-      expect(createLoginUrl).toHaveBeenCalledWith(appHref("/"));
+      expect(createLoginUrl).toHaveBeenCalledWith(appHref(APP_PATHS.setup));
       expect(redirect).toHaveBeenCalledWith(authorizeUrl);
     });
     expect(screen.getByText("bootstrapping")).toBeInTheDocument();

@@ -16,6 +16,7 @@ import {
 } from "../api/client";
 import type { AdminUser, LoginInput } from "../api/types";
 import {
+  APP_PATHS,
   appHref,
   appPathFromBrowser,
   WECOM_CALLBACK_PATH,
@@ -135,7 +136,7 @@ export function AuthProvider({
           // this state on the boot screen avoids flashing the password form
           // between the session probe and the WeCom authorization redirect.
           setStatus("bootstrapping");
-          await beginWeComLogin(appHref("/")).catch(() => undefined);
+          await beginWeComLogin(appHref(APP_PATHS.setup)).catch(() => undefined);
           return;
         }
         if (appPath === WECOM_CALLBACK_PATH) {
@@ -184,7 +185,7 @@ export function AuthProvider({
   }, []);
 
   const wecomLogin = useCallback(
-    () => beginWeComLogin(appHref("/")),
+    () => beginWeComLogin(appHref(APP_PATHS.setup)),
     [beginWeComLogin],
   );
 

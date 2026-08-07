@@ -30,8 +30,10 @@ from app.integrations.wecom_oauth import (
     WeComOAuthStateError,
     WeComOAuthStateManager,
 )
+from app.integrations.wecom_suite import WeComSuiteClient
 from app.services.auth_store import AuthStore
 from app.services.wecom_store import WeComStore
+from app.services.wecom_suite_store import WeComSuiteStore
 
 router = APIRouter(prefix="/auth/wecom", tags=["WeCom Authentication"])
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
@@ -50,6 +52,30 @@ def _states(request: Request) -> WeComOAuthStateManager:
         settings=request.app.state.settings,
         redis=getattr(request.app.state, "redis", None),
     )
+
+
+def _suite_client(request: Request) -> WeComSuiteClient:
+    return WeComSuiteClient(
+        settings=request.app.state.settings,
+        http_client=request.app.state.http_client,
+        redis=getattr(request.app.state, "redis", None),
+    )
+
+
+def _suite_store(request: Request) -> WeComSuiteStore:
+    return WeComSuiteStore(
+        request.app.state.session_factory,
+        request.app.state.settings,
+    )
+
+
+def _uses_suite(request: Request) -> bool:
+    settings = request.app.state.settings
+    if settings.wecom_auth_mode == "third_party":
+        return True
+    if settings.wecom_auth_mode == "self_built":
+        return False
+    return bool(settings.wecom_suite_id and settings.wecom_suite_secret)
 
 
 def _oauth_error(exc: Exception) -> ApiError:
@@ -85,7 +111,11 @@ async def _oauth_url(
             principal=principal,
             return_to=return_to,
         )
-        authorize_url = _client(request).build_oauth_authorize_url(state=state)
+        authorize_url = (
+            _suite_client(request).build_oauth_authorize_url(state=state)
+            if _uses_suite(request)
+            else _client(request).build_oauth_authorize_url(state=state)
+        )
     except (WeComConfigurationError, WeComOAuthStateError) as exc:
         raise _oauth_error(exc) from exc
     return WeComOAuthUrlEnvelope(
@@ -140,11 +170,37 @@ async def login_with_wecom(
         state = await _states(request).consume(payload.state)
         if state.mode != "login":
             raise WeComOAuthStateError("wrong oauth mode")
-        client = _client(request)
-        identity = await client.get_user_identity(code=payload.code)
-        member = await client.get_member(user_id=identity.user_id)
+        corp_id: str | None = None
+        allow_bootstrap = True
+        enterprise_name: str
+        if _uses_suite(request):
+            suite_client = _suite_client(request)
+            identity = await suite_client.get_user_identity(code=payload.code)
+            authorization = await _suite_store(request).get_authorization(
+                auth_corpid=identity.corp_id
+            )
+            member = await suite_client.get_member(
+                auth_corpid=authorization.auth_corpid,
+                permanent_code=authorization.permanent_code,
+                user_id=identity.user_id,
+            )
+            departments = await suite_client.list_departments(
+                auth_corpid=authorization.auth_corpid,
+                permanent_code=authorization.permanent_code,
+            )
+            corp_id = authorization.auth_corpid
+            allow_bootstrap = (
+                authorization.authorizer_user_id is not None
+                and authorization.authorizer_user_id == identity.user_id
+            )
+            enterprise_name = authorization.corp_name or _enterprise_name(departments)
+        else:
+            client = _client(request)
+            identity = await client.get_user_identity(code=payload.code)
+            member = await client.get_member(user_id=identity.user_id)
+            departments = await client.list_departments()
+            enterprise_name = _enterprise_name(departments)
         _require_active_member(member)
-        departments = await client.list_departments()
     except (WeComConfigurationError, WeComOAuthStateError, WeComProviderError) as exc:
         raise _oauth_error(exc) from exc
     store = WeComStore(
@@ -153,7 +209,9 @@ async def login_with_wecom(
     )
     resolved = await store.resolve_or_bootstrap_identity(
         member=member,
-        enterprise_name=_enterprise_name(departments),
+        enterprise_name=enterprise_name,
+        corp_id=corp_id,
+        allow_bootstrap=allow_bootstrap,
     )
     authentication = await AuthStore(
         request.app.state.session_factory,
@@ -187,8 +245,27 @@ async def bind_current_staff_to_wecom(
         state = await _states(request).consume(payload.state)
         if state.mode != "bind":
             raise WeComOAuthStateError("wrong oauth mode")
-        identity = await _client(request).get_user_identity(code=payload.code)
-        member = await _client(request).get_member(user_id=identity.user_id)
+        corp_id: str | None = None
+        if _uses_suite(request):
+            suite_client = _suite_client(request)
+            identity = await suite_client.get_user_identity(code=payload.code)
+            authorization = await _suite_store(request).get_authorization(
+                auth_corpid=identity.corp_id
+            )
+            await _suite_store(request).require_scope(
+                auth_corpid=authorization.auth_corpid,
+                tenant_id=state.tenant_id,
+                company_id=state.company_id,
+            )
+            member = await suite_client.get_member(
+                auth_corpid=authorization.auth_corpid,
+                permanent_code=authorization.permanent_code,
+                user_id=identity.user_id,
+            )
+            corp_id = authorization.auth_corpid
+        else:
+            identity = await _client(request).get_user_identity(code=payload.code)
+            member = await _client(request).get_member(user_id=identity.user_id)
         _require_active_member(member)
     except (WeComConfigurationError, WeComOAuthStateError, WeComProviderError) as exc:
         raise _oauth_error(exc) from exc
@@ -199,6 +276,7 @@ async def bind_current_staff_to_wecom(
         state=state,
         member=member,
         trace_id=request_id_ctx.get(),
+        corp_id=corp_id,
     )
     return WeComBindingEnvelope(
         data=WeComBindingRecord(

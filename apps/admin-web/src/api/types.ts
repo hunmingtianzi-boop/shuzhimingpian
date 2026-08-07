@@ -106,13 +106,14 @@ export type CompanyProfile = {
   website: string;
   logoUrl: string;
   profilePersonalizationPolicyVersion: string;
+  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CompanyProfileInput = Omit<
   CompanyProfile,
-  "id" | "updatedAt"
+  "id" | "updatedAt" | "onboardingStatus"
 >;
 
 export type CardSettings = {
@@ -130,13 +131,14 @@ export type CardSettings = {
     leadConsent: string;
   };
   status?: string;
+  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CardSettingsInput = Omit<
   CardSettings,
-  "id" | "status" | "updatedAt"
+  "id" | "status" | "onboardingStatus" | "updatedAt"
 >;
 
 export type KnowledgeStatus =

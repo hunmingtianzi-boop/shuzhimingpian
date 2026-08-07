@@ -122,6 +122,22 @@ class Settings(BaseSettings):
     wecom_callback_encoding_aes_key: SecretStr | None = None
     wecom_timeout_seconds: float = Field(default=8.0, ge=2, le=30)
 
+    # Enterprise WeChat third-party provider application.  These values are
+    # intentionally separate from the self-built pilot credentials above so a
+    # release can keep the pilot online while the provider application is
+    # being tested and certified.  No customer corporation credential belongs
+    # in environment variables; each authorization is encrypted in PostgreSQL.
+    wecom_auth_mode: Literal["auto", "self_built", "third_party"] = "auto"
+    wecom_suite_id: str | None = None
+    wecom_suite_secret: SecretStr | None = None
+    wecom_suite_callback_token: SecretStr | None = None
+    wecom_suite_callback_encoding_aes_key: SecretStr | None = None
+    wecom_suite_install_redirect_uri: str | None = None
+    wecom_suite_oauth_redirect_uri: str | None = None
+    wecom_suite_success_redirect_uri: str | None = None
+    wecom_suite_auth_type: Literal["formal", "test"] = "test"
+    wecom_suite_userinfo_path: str = "/cgi-bin/service/auth/getuserinfo3rd"
+
     retrieval_top_k: int = Field(default=8, ge=1, le=30)
     retrieval_context_k: int = Field(default=5, ge=1, le=10)
     retrieval_vector_weight: float = Field(default=0.65, ge=0, le=1)
@@ -215,6 +231,9 @@ class Settings(BaseSettings):
         "wecom_app_secret",
         "wecom_callback_token",
         "wecom_callback_encoding_aes_key",
+        "wecom_suite_secret",
+        "wecom_suite_callback_token",
+        "wecom_suite_callback_encoding_aes_key",
         mode="before",
     )
     @classmethod
@@ -241,7 +260,15 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("wecom_corp_id", "wecom_oauth_redirect_uri", mode="before")
+    @field_validator(
+        "wecom_corp_id",
+        "wecom_oauth_redirect_uri",
+        "wecom_suite_id",
+        "wecom_suite_install_redirect_uri",
+        "wecom_suite_oauth_redirect_uri",
+        "wecom_suite_success_redirect_uri",
+        mode="before",
+    )
     @classmethod
     def empty_wecom_text_is_unconfigured(cls, value: object) -> object:
         if isinstance(value, str):
@@ -401,6 +428,36 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WeCom callbacks require core credentials and a tenant/company scope"
             )
+        wecom_suite_core = (self.wecom_suite_id, self.wecom_suite_secret)
+        if any(value is not None for value in wecom_suite_core) and not all(
+            value is not None for value in wecom_suite_core
+        ):
+            raise ValueError(
+                "WECOM_SUITE_ID and WECOM_SUITE_SECRET must be configured together"
+            )
+        wecom_suite_callback = (
+            self.wecom_suite_callback_token,
+            self.wecom_suite_callback_encoding_aes_key,
+        )
+        if any(value is not None for value in wecom_suite_callback) and not all(
+            value is not None for value in wecom_suite_callback
+        ):
+            raise ValueError(
+                "WECOM_SUITE_CALLBACK_TOKEN and WECOM_SUITE_CALLBACK_ENCODING_AES_KEY "
+                "must be configured together"
+            )
+        if any(value is not None for value in wecom_suite_callback) and not all(
+            value is not None for value in wecom_suite_core
+        ):
+            raise ValueError("WeCom suite callbacks require SuiteID and SuiteSecret")
+        if self.wecom_auth_mode == "self_built" and not all(
+            value is not None for value in wecom_core
+        ):
+            raise ValueError("WECOM_AUTH_MODE=self_built requires self-built credentials")
+        if self.wecom_auth_mode == "third_party" and not all(
+            value is not None for value in wecom_suite_core
+        ):
+            raise ValueError("WECOM_AUTH_MODE=third_party requires suite credentials")
         wecom_base = urlsplit(self.wecom_api_base_url.strip().rstrip("/"))
         if (
             wecom_base.scheme.casefold() != "https"
@@ -426,6 +483,29 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "WECOM_OAUTH_REDIRECT_URI must use HTTPS outside local development"
                 )
+        for field_name, value in (
+            ("WECOM_SUITE_INSTALL_REDIRECT_URI", self.wecom_suite_install_redirect_uri),
+            ("WECOM_SUITE_OAUTH_REDIRECT_URI", self.wecom_suite_oauth_redirect_uri),
+            ("WECOM_SUITE_SUCCESS_REDIRECT_URI", self.wecom_suite_success_redirect_uri),
+        ):
+            if not value:
+                continue
+            parsed = urlsplit(value)
+            local_uri = parsed.hostname in {"localhost", "127.0.0.1"}
+            if (
+                parsed.scheme.casefold() not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+                or (parsed.scheme.casefold() != "https" and not local_uri)
+            ):
+                raise ValueError(f"{field_name} must use HTTPS outside local development")
+        suite_path = self.wecom_suite_userinfo_path.strip()
+        if not suite_path.startswith("/cgi-bin/service/") or any(
+            value in suite_path for value in ("?", "#", "\\")
+        ):
+            raise ValueError("WECOM_SUITE_USERINFO_PATH is invalid")
+        self.wecom_suite_userinfo_path = suite_path
         bootstrap_values = (
             self.admin_bootstrap_tenant_slug,
             self.admin_bootstrap_account,

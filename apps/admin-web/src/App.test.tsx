@@ -113,7 +113,7 @@ afterEach(() => {
 describe("CurrentPage workspace routing", () => {
   it.each([
     ["company_admin", "/login", APP_PATHS.overview],
-    ["company_admin", WECOM_ENTRY_PATH, APP_PATHS.overview],
+    ["company_admin", WECOM_ENTRY_PATH, APP_PATHS.setup],
     ["platform_admin", "/login", APP_PATHS.platformOverview],
     ["platform_admin", WECOM_ENTRY_PATH, APP_PATHS.platformOverview],
   ])(

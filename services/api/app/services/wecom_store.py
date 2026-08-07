@@ -82,6 +82,7 @@ class WeComStore:
         state: WeComOAuthState,
         member: WeComMember,
         trace_id: str | None,
+        corp_id: str | None = None,
     ) -> WeComUserBinding:
         if (
             state.mode != "bind"
@@ -91,8 +92,8 @@ class WeComStore:
         ):
             raise ApiError(400, "WECOM_BIND_STATE_INVALID", "企业微信绑定状态无效")
         now = datetime.now(UTC)
-        corp_hash = self._corp_hash()
-        user_hash = self.user_hash(member.user_id)
+        corp_hash = self._corp_hash(corp_id)
+        user_hash = self.user_hash(member.user_id, corp_id=corp_id)
         profile = json.dumps(
             {
                 "name": member.name,
@@ -205,12 +206,17 @@ class WeComStore:
             await session.flush()
             return binding
 
-    async def resolve_identity(self, *, wecom_user_id: str) -> WeComResolvedIdentity:
-        user_hash = self.user_hash(wecom_user_id)
+    async def resolve_identity(
+        self,
+        *,
+        wecom_user_id: str,
+        corp_id: str | None = None,
+    ) -> WeComResolvedIdentity:
+        user_hash = self.user_hash(wecom_user_id, corp_id=corp_id)
         async with self._sessions() as session, session.begin():
             resolved = await self._resolve_identity_row(
                 session,
-                corp_hash=self._corp_hash(),
+                corp_hash=self._corp_hash(corp_id),
                 user_hash=user_hash,
             )
         if resolved is None:
@@ -226,6 +232,8 @@ class WeComStore:
         *,
         member: WeComMember,
         enterprise_name: str,
+        corp_id: str | None = None,
+        allow_bootstrap: bool = True,
     ) -> WeComResolvedIdentity:
         """Resolve a member or create the corporation's first enterprise admin.
 
@@ -237,8 +245,8 @@ class WeComStore:
         member flow.
         """
 
-        corp_hash = self._corp_hash()
-        user_hash = self.user_hash(member.user_id)
+        corp_hash = self._corp_hash(corp_id)
+        user_hash = self.user_hash(member.user_id, corp_id=corp_id)
         profile = json.dumps(
             {
                 "name": member.name,
@@ -262,7 +270,7 @@ class WeComStore:
                 corp_hash=corp_hash,
                 user_hash=user_hash,
             )
-            if resolved is None:
+            if resolved is None and allow_bootstrap:
                 result = await session.execute(
                     text(
                         """
@@ -295,6 +303,12 @@ class WeComStore:
                 resolved = result.mappings().one_or_none()
 
         if resolved is None:
+            if not allow_bootstrap:
+                raise ApiError(
+                    403,
+                    "WECOM_AUTHORIZER_LOGIN_REQUIRED",
+                    "请由完成应用授权的企业管理员首次进入并完成开通",
+                )
             raise ApiError(
                 403,
                 "WECOM_ACCOUNT_NOT_BOUND",
@@ -743,9 +757,12 @@ class WeComStore:
             provisioned_at=contact.provisioned_at,
         )
 
-    def user_hash(self, wecom_user_id: str) -> str:
+    def user_hash(self, wecom_user_id: str, *, corp_id: str | None = None) -> str:
+        resolved_corp_id = corp_id or self._settings.wecom_corp_id
+        if not resolved_corp_id:
+            raise ApiError(409, "WECOM_NOT_CONFIGURED", "企业微信尚未完成配置")
         return self._cipher.hmac(
-            f"wecom-user:{self._settings.wecom_corp_id}:{wecom_user_id}"
+            f"wecom-user:{resolved_corp_id}:{wecom_user_id}"
         )
 
     def state_hash(self, state: str) -> str:
@@ -756,11 +773,11 @@ class WeComStore:
             f"wecom-external:{self._settings.wecom_corp_id}:{external_user_id}"
         )
 
-    def _corp_hash(self) -> str:
-        corp_id = self._settings.wecom_corp_id
-        if not corp_id:
+    def _corp_hash(self, corp_id: str | None = None) -> str:
+        resolved_corp_id = corp_id or self._settings.wecom_corp_id
+        if not resolved_corp_id:
             raise ApiError(409, "WECOM_NOT_CONFIGURED", "企业微信尚未完成配置")
-        return self._cipher.hmac(f"wecom-corp:{corp_id}")
+        return self._cipher.hmac(f"wecom-corp:{resolved_corp_id}")
 
     def _scope(self) -> tuple[uuid.UUID, uuid.UUID]:
         tenant_id = self._settings.wecom_tenant_id

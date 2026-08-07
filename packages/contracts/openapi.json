@@ -2,11 +2,10 @@
   "openapi": "3.1.0",
   "info": {
     "title": "创非凡数智名片 API",
-    "version": "0.1.0",
-    "description": "V1.0 MVP 开发契约基线。公开端点的企业作用域必须由 card slug 或访客会话在服务端推导。"
+    "version": "0.1.0"
   },
   "paths": {
-    "/health/live": {
+    "/api/v1/health/live": {
       "get": {
         "tags": [
           "Health"
@@ -29,7 +28,7 @@
         }
       }
     },
-    "/health/ready": {
+    "/api/v1/health/ready": {
       "get": {
         "tags": [
           "Health"
@@ -52,7 +51,7 @@
         }
       }
     },
-    "/auth/login": {
+    "/api/v1/auth/login": {
       "post": {
         "tags": [
           "Auth"
@@ -94,7 +93,7 @@
         }
       }
     },
-    "/auth/refresh": {
+    "/api/v1/auth/refresh": {
       "post": {
         "tags": [
           "Auth"
@@ -144,7 +143,7 @@
         }
       }
     },
-    "/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "tags": [
           "Auth"
@@ -210,7 +209,7 @@
         }
       }
     },
-    "/auth/me": {
+    "/api/v1/auth/me": {
       "get": {
         "tags": [
           "Auth"
@@ -259,7 +258,7 @@
         }
       }
     },
-    "/admin/company/profile": {
+    "/api/v1/admin/company/profile": {
       "get": {
         "tags": [
           "Admin Content"
@@ -374,7 +373,7 @@
         }
       }
     },
-    "/admin/card": {
+    "/api/v1/admin/card": {
       "get": {
         "tags": [
           "Admin Content"
@@ -489,7 +488,56 @@
         }
       }
     },
-    "/admin/knowledge/documents": {
+    "/api/v1/admin/setup/complete": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Complete Enterprise Setup",
+        "operationId": "completeEnterpriseSetup",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseSetupEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/documents": {
       "get": {
         "tags": [
           "Admin Content"
@@ -617,7 +665,7 @@
         }
       }
     },
-    "/admin/knowledge/documents/{document_id}": {
+    "/api/v1/admin/knowledge/documents/{document_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -743,7 +791,7 @@
         }
       }
     },
-    "/admin/knowledge/documents/{document_id}/publish": {
+    "/api/v1/admin/knowledge/documents/{document_id}/publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -819,7 +867,7 @@
         }
       }
     },
-    "/admin/knowledge/documents/{document_id}:schedule-publish": {
+    "/api/v1/admin/knowledge/documents/{document_id}:schedule-publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -897,7 +945,7 @@
         }
       }
     },
-    "/admin/products": {
+    "/api/v1/admin/products": {
       "get": {
         "tags": [
           "Admin Content"
@@ -1058,7 +1106,7 @@
         }
       }
     },
-    "/admin/products/{product_id}": {
+    "/api/v1/admin/products/{product_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -1328,7 +1376,7 @@
         }
       }
     },
-    "/admin/products/{product_id}:publish": {
+    "/api/v1/admin/products/{product_id}:publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -1396,7 +1444,7 @@
         }
       }
     },
-    "/admin/products/{product_id}/publish": {
+    "/api/v1/admin/products/{product_id}/publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -1464,7 +1512,7 @@
         }
       }
     },
-    "/admin/products/{product_id}:schedule-publish": {
+    "/api/v1/admin/products/{product_id}:schedule-publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -1542,7 +1590,7 @@
         }
       }
     },
-    "/admin/products/{product_id}/archive": {
+    "/api/v1/admin/products/{product_id}/archive": {
       "post": {
         "tags": [
           "Admin Content"
@@ -1610,7 +1658,7 @@
         }
       }
     },
-    "/admin/cases": {
+    "/api/v1/admin/cases": {
       "get": {
         "tags": [
           "Admin Content"
@@ -1755,7 +1803,7 @@
         }
       }
     },
-    "/admin/case-studies": {
+    "/api/v1/admin/case-studies": {
       "get": {
         "tags": [
           "Admin Content"
@@ -1900,7 +1948,7 @@
         }
       }
     },
-    "/admin/cases/{case_study_id}": {
+    "/api/v1/admin/cases/{case_study_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -2094,7 +2142,7 @@
         }
       }
     },
-    "/admin/case-studies/{case_study_id}": {
+    "/api/v1/admin/case-studies/{case_study_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -2364,7 +2412,7 @@
         }
       }
     },
-    "/admin/cases/{case_study_id}:publish": {
+    "/api/v1/admin/cases/{case_study_id}:publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2432,7 +2480,7 @@
         }
       }
     },
-    "/admin/case-studies/{case_study_id}:publish": {
+    "/api/v1/admin/case-studies/{case_study_id}:publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2500,7 +2548,7 @@
         }
       }
     },
-    "/admin/case-studies/{case_study_id}/publish": {
+    "/api/v1/admin/case-studies/{case_study_id}/publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2568,7 +2616,7 @@
         }
       }
     },
-    "/admin/cases/{case_study_id}:schedule-publish": {
+    "/api/v1/admin/cases/{case_study_id}:schedule-publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2646,7 +2694,7 @@
         }
       }
     },
-    "/admin/case-studies/{case_study_id}:schedule-publish": {
+    "/api/v1/admin/case-studies/{case_study_id}:schedule-publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2724,7 +2772,7 @@
         }
       }
     },
-    "/admin/scheduled-publishes": {
+    "/api/v1/admin/scheduled-publishes": {
       "get": {
         "tags": [
           "Admin Content"
@@ -2796,7 +2844,7 @@
         }
       }
     },
-    "/admin/scheduled-publishes/{job_id}": {
+    "/api/v1/admin/scheduled-publishes/{job_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -2855,7 +2903,7 @@
         }
       }
     },
-    "/admin/scheduled-publishes/{job_id}:cancel": {
+    "/api/v1/admin/scheduled-publishes/{job_id}:cancel": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2923,7 +2971,7 @@
         }
       }
     },
-    "/admin/case-studies/{case_study_id}/archive": {
+    "/api/v1/admin/case-studies/{case_study_id}/archive": {
       "post": {
         "tags": [
           "Admin Content"
@@ -2991,7 +3039,7 @@
         }
       }
     },
-    "/admin/forbidden-topics": {
+    "/api/v1/admin/forbidden-topics": {
       "get": {
         "tags": [
           "Admin Content"
@@ -3136,7 +3184,7 @@
         }
       }
     },
-    "/admin/forbidden-topics/{topic_id}": {
+    "/api/v1/admin/forbidden-topics/{topic_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -3406,7 +3454,7 @@
         }
       }
     },
-    "/admin/forbidden-topics/{topic_id}/activate": {
+    "/api/v1/admin/forbidden-topics/{topic_id}/activate": {
       "post": {
         "tags": [
           "Admin Content"
@@ -3474,7 +3522,7 @@
         }
       }
     },
-    "/admin/forbidden-topics/{topic_id}/deactivate": {
+    "/api/v1/admin/forbidden-topics/{topic_id}/deactivate": {
       "post": {
         "tags": [
           "Admin Content"
@@ -3542,7 +3590,7 @@
         }
       }
     },
-    "/admin/cards": {
+    "/api/v1/admin/cards": {
       "get": {
         "tags": [
           "Admin Content"
@@ -3703,7 +3751,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}": {
+    "/api/v1/admin/cards/{card_id}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -3914,7 +3962,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/wecom-contact-way": {
+    "/api/v1/admin/cards/{card_id}/wecom-contact-way": {
       "get": {
         "tags": [
           "Admin Content"
@@ -4030,7 +4078,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/enterprise-template": {
+    "/api/v1/admin/cards/{card_id}/enterprise-template": {
       "get": {
         "tags": [
           "Admin Content"
@@ -4165,7 +4213,7 @@
         }
       }
     },
-    "/admin/card-composer/defaults/{card_kind}": {
+    "/api/v1/admin/card-composer/defaults/{card_kind}": {
       "get": {
         "tags": [
           "Admin Content"
@@ -4298,7 +4346,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}:publish": {
+    "/api/v1/admin/cards/{card_id}:publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -4366,7 +4414,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/publish": {
+    "/api/v1/admin/cards/{card_id}/publish": {
       "post": {
         "tags": [
           "Admin Content"
@@ -4434,7 +4482,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}:deactivate": {
+    "/api/v1/admin/cards/{card_id}:deactivate": {
       "post": {
         "tags": [
           "Admin Content"
@@ -4502,7 +4550,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/deactivate": {
+    "/api/v1/admin/cards/{card_id}/deactivate": {
       "post": {
         "tags": [
           "Admin Content"
@@ -4570,7 +4618,7 @@
         }
       }
     },
-    "/admin/card-assets": {
+    "/api/v1/admin/card-assets": {
       "post": {
         "tags": [
           "Card Assets"
@@ -4629,7 +4677,7 @@
         }
       }
     },
-    "/public/card-assets/{company_id}/{asset_id}.webp": {
+    "/api/v1/public/card-assets/{company_id}/{asset_id}.webp": {
       "get": {
         "tags": [
           "Card Assets"
@@ -4681,7 +4729,7 @@
         }
       }
     },
-    "/admin/content-distributions/{resource_type}/{resource_id}": {
+    "/api/v1/admin/content-distributions/{resource_type}/{resource_id}": {
       "get": {
         "tags": [
           "Enterprise Content Distribution"
@@ -4834,7 +4882,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/content-overrides": {
+    "/api/v1/admin/cards/{card_id}/content-overrides": {
       "get": {
         "tags": [
           "Enterprise Content Distribution"
@@ -4916,7 +4964,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}": {
+    "/api/v1/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}": {
       "put": {
         "tags": [
           "Enterprise Content Distribution"
@@ -5091,7 +5139,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}/revisions": {
+    "/api/v1/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}/revisions": {
       "get": {
         "tags": [
           "Enterprise Content Distribution"
@@ -5169,7 +5217,7 @@
         }
       }
     },
-    "/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}/rollback": {
+    "/api/v1/admin/cards/{card_id}/content-overrides/{resource_type}/{resource_id}/rollback": {
       "post": {
         "tags": [
           "Enterprise Content Distribution"
@@ -5266,7 +5314,7 @@
         }
       }
     },
-    "/admin/readiness": {
+    "/api/v1/admin/readiness": {
       "get": {
         "tags": [
           "Admin Readiness"
@@ -5315,7 +5363,7 @@
         }
       }
     },
-    "/admin/members": {
+    "/api/v1/admin/members": {
       "get": {
         "tags": [
           "Admin Members"
@@ -5444,7 +5492,7 @@
         }
       }
     },
-    "/admin/members/me/profile": {
+    "/api/v1/admin/members/me/profile": {
       "patch": {
         "tags": [
           "Admin Members"
@@ -5503,7 +5551,7 @@
         }
       }
     },
-    "/admin/members/{membership_id}": {
+    "/api/v1/admin/members/{membership_id}": {
       "get": {
         "tags": [
           "Admin Members"
@@ -5629,7 +5677,7 @@
         }
       }
     },
-    "/admin/members/{membership_id}/status": {
+    "/api/v1/admin/members/{membership_id}/status": {
       "put": {
         "tags": [
           "Admin Members"
@@ -5698,7 +5746,7 @@
         }
       }
     },
-    "/admin/members/{membership_id}/password:reset": {
+    "/api/v1/admin/members/{membership_id}/password:reset": {
       "post": {
         "tags": [
           "Admin Members"
@@ -5767,7 +5815,7 @@
         }
       }
     },
-    "/admin/members/bulk": {
+    "/api/v1/admin/members/bulk": {
       "post": {
         "tags": [
           "Admin Members"
@@ -5826,7 +5874,7 @@
         }
       }
     },
-    "/admin/members/bulk:csv": {
+    "/api/v1/admin/members/bulk:csv": {
       "post": {
         "tags": [
           "Admin Members"
@@ -5885,7 +5933,7 @@
         }
       }
     },
-    "/admin/knowledge/imports": {
+    "/api/v1/admin/knowledge/imports": {
       "post": {
         "tags": [
           "Knowledge Operations"
@@ -6014,7 +6062,7 @@
         }
       }
     },
-    "/admin/knowledge/imports/{batch_id}": {
+    "/api/v1/admin/knowledge/imports/{batch_id}": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6073,7 +6121,7 @@
         }
       }
     },
-    "/admin/faqs": {
+    "/api/v1/admin/faqs": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6202,7 +6250,7 @@
         }
       }
     },
-    "/admin/faqs/{faq_id}": {
+    "/api/v1/admin/faqs/{faq_id}": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6385,7 +6433,7 @@
         }
       }
     },
-    "/admin/faqs/{faq_id}:publish": {
+    "/api/v1/admin/faqs/{faq_id}:publish": {
       "post": {
         "tags": [
           "Knowledge Operations"
@@ -6444,7 +6492,7 @@
         }
       }
     },
-    "/admin/knowledge/documents/{document_id}/versions": {
+    "/api/v1/admin/knowledge/documents/{document_id}/versions": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6570,7 +6618,7 @@
         }
       }
     },
-    "/admin/knowledge/versions/{version_id}:publish": {
+    "/api/v1/admin/knowledge/versions/{version_id}:publish": {
       "post": {
         "tags": [
           "Knowledge Operations"
@@ -6629,7 +6677,7 @@
         }
       }
     },
-    "/admin/knowledge/index-jobs": {
+    "/api/v1/admin/knowledge/index-jobs": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6718,7 +6766,7 @@
         }
       }
     },
-    "/admin/knowledge/index-jobs/{job_id}:retry": {
+    "/api/v1/admin/knowledge/index-jobs/{job_id}:retry": {
       "post": {
         "tags": [
           "Knowledge Operations"
@@ -6777,7 +6825,7 @@
         }
       }
     },
-    "/admin/knowledge/chunks": {
+    "/api/v1/admin/knowledge/chunks": {
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6866,7 +6914,7 @@
         }
       }
     },
-    "/admin/knowledge:evaluate": {
+    "/api/v1/admin/knowledge:evaluate": {
       "post": {
         "tags": [
           "Knowledge Operations"
@@ -6915,7 +6963,7 @@
         }
       }
     },
-    "/platform/enterprises": {
+    "/api/v1/platform/enterprises": {
       "post": {
         "tags": [
           "Platform Administration"
@@ -7078,7 +7126,7 @@
         }
       }
     },
-    "/platform/enterprises/{company_id}/status": {
+    "/api/v1/platform/enterprises/{company_id}/status": {
       "put": {
         "tags": [
           "Platform Administration"
@@ -7147,7 +7195,7 @@
         }
       }
     },
-    "/platform/settings/llm/profiles": {
+    "/api/v1/platform/settings/llm/profiles": {
       "get": {
         "tags": [
           "Platform LLM Settings"
@@ -7253,7 +7301,7 @@
         }
       }
     },
-    "/platform/settings/llm/profiles/{profile_id}": {
+    "/api/v1/platform/settings/llm/profiles/{profile_id}": {
       "put": {
         "tags": [
           "Platform LLM Settings"
@@ -7322,7 +7370,7 @@
         }
       }
     },
-    "/platform/settings/llm/profiles/{profile_id}/test": {
+    "/api/v1/platform/settings/llm/profiles/{profile_id}/test": {
       "post": {
         "tags": [
           "Platform LLM Settings"
@@ -7391,7 +7439,7 @@
         }
       }
     },
-    "/platform/settings/llm/profiles/{profile_id}/activate": {
+    "/api/v1/platform/settings/llm/profiles/{profile_id}/activate": {
       "post": {
         "tags": [
           "Platform LLM Settings"
@@ -7460,7 +7508,7 @@
         }
       }
     },
-    "/platform/onboarding": {
+    "/api/v1/platform/onboarding": {
       "post": {
         "tags": [
           "Platform Onboarding"
@@ -7589,7 +7637,7 @@
         }
       }
     },
-    "/platform/onboarding/{onboarding_id}": {
+    "/api/v1/platform/onboarding/{onboarding_id}": {
       "get": {
         "tags": [
           "Platform Onboarding"
@@ -7648,7 +7696,7 @@
         }
       }
     },
-    "/platform/onboarding/{onboarding_id}/imports": {
+    "/api/v1/platform/onboarding/{onboarding_id}/imports": {
       "get": {
         "tags": [
           "Platform Onboarding"
@@ -7774,7 +7822,7 @@
         }
       }
     },
-    "/platform/onboarding/{onboarding_id}/suggestions": {
+    "/api/v1/platform/onboarding/{onboarding_id}/suggestions": {
       "post": {
         "tags": [
           "Platform Onboarding"
@@ -7843,7 +7891,7 @@
         }
       }
     },
-    "/platform/onboarding/{onboarding_id}/confirm": {
+    "/api/v1/platform/onboarding/{onboarding_id}/confirm": {
       "post": {
         "tags": [
           "Platform Onboarding"
@@ -7912,7 +7960,7 @@
         }
       }
     },
-    "/platform/onboarding/{onboarding_id}/cancel": {
+    "/api/v1/platform/onboarding/{onboarding_id}/cancel": {
       "post": {
         "tags": [
           "Platform Onboarding"
@@ -7981,7 +8029,7 @@
         }
       }
     },
-    "/platform/overview": {
+    "/api/v1/platform/overview": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8030,7 +8078,7 @@
         }
       }
     },
-    "/platform/enterprises/{company_id}": {
+    "/api/v1/platform/enterprises/{company_id}": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8089,7 +8137,7 @@
         }
       }
     },
-    "/platform/company-aggregates": {
+    "/api/v1/platform/company-aggregates": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8161,7 +8209,7 @@
         }
       }
     },
-    "/platform/tasks": {
+    "/api/v1/platform/tasks": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8233,7 +8281,7 @@
         }
       }
     },
-    "/platform/audit": {
+    "/api/v1/platform/audit": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8305,7 +8353,7 @@
         }
       }
     },
-    "/platform/health": {
+    "/api/v1/platform/health": {
       "get": {
         "tags": [
           "Platform Administration"
@@ -8354,7 +8402,7 @@
         }
       }
     },
-    "/public/cards/{slug}/leads": {
+    "/api/v1/public/cards/{slug}/leads": {
       "post": {
         "tags": [
           "Leads and Privacy"
@@ -8438,7 +8486,7 @@
         }
       }
     },
-    "/public/privacy-requests": {
+    "/api/v1/public/privacy-requests": {
       "post": {
         "tags": [
           "Leads and Privacy"
@@ -8513,7 +8561,7 @@
         }
       }
     },
-    "/public/privacy-requests/{privacy_request_id}": {
+    "/api/v1/public/privacy-requests/{privacy_request_id}": {
       "get": {
         "tags": [
           "Leads and Privacy"
@@ -8572,7 +8620,7 @@
         }
       }
     },
-    "/admin/leads": {
+    "/api/v1/admin/leads": {
       "get": {
         "tags": [
           "Leads and Privacy"
@@ -8661,7 +8709,7 @@
         }
       }
     },
-    "/admin/leads/{lead_id}": {
+    "/api/v1/admin/leads/{lead_id}": {
       "get": {
         "tags": [
           "Leads and Privacy"
@@ -8796,7 +8844,7 @@
         }
       }
     },
-    "/admin/leads/{lead_id}/followups": {
+    "/api/v1/admin/leads/{lead_id}/followups": {
       "post": {
         "tags": [
           "Leads and Privacy"
@@ -8865,7 +8913,7 @@
         }
       }
     },
-    "/admin/privacy-requests": {
+    "/api/v1/admin/privacy-requests": {
       "get": {
         "tags": [
           "Leads and Privacy"
@@ -8954,7 +9002,7 @@
         }
       }
     },
-    "/admin/privacy-requests/{privacy_request_id}": {
+    "/api/v1/admin/privacy-requests/{privacy_request_id}": {
       "patch": {
         "tags": [
           "Leads and Privacy"
@@ -9023,7 +9071,7 @@
         }
       }
     },
-    "/admin/exports/{export_type}": {
+    "/api/v1/admin/exports/{export_type}": {
       "post": {
         "tags": [
           "Data Exports"
@@ -9112,7 +9160,7 @@
         }
       }
     },
-    "/admin/leads:export": {
+    "/api/v1/admin/leads:export": {
       "post": {
         "tags": [
           "Data Exports"
@@ -9187,7 +9235,7 @@
         }
       }
     },
-    "/admin/exports": {
+    "/api/v1/admin/exports": {
       "get": {
         "tags": [
           "Data Exports"
@@ -9259,7 +9307,7 @@
         }
       }
     },
-    "/admin/exports/availability": {
+    "/api/v1/admin/exports/availability": {
       "get": {
         "tags": [
           "Data Exports"
@@ -9308,7 +9356,7 @@
         }
       }
     },
-    "/admin/exports/{export_id}": {
+    "/api/v1/admin/exports/{export_id}": {
       "get": {
         "tags": [
           "Data Exports"
@@ -9367,7 +9415,7 @@
         }
       }
     },
-    "/admin/exports/{export_id}/download": {
+    "/api/v1/admin/exports/{export_id}/download": {
       "get": {
         "tags": [
           "Data Exports"
@@ -9424,7 +9472,7 @@
         }
       }
     },
-    "/public/cards/{slug}": {
+    "/api/v1/public/cards/{slug}": {
       "get": {
         "tags": [
           "Public Conversation"
@@ -9466,7 +9514,7 @@
         }
       }
     },
-    "/public/cards/{slug}/visits": {
+    "/api/v1/public/cards/{slug}/visits": {
       "post": {
         "tags": [
           "Public Conversation"
@@ -9534,7 +9582,7 @@
         }
       }
     },
-    "/public/cards/{slug}/consents": {
+    "/api/v1/public/cards/{slug}/consents": {
       "post": {
         "tags": [
           "Public Conversation"
@@ -9618,7 +9666,7 @@
         }
       }
     },
-    "/public/cards/{slug}/conversations": {
+    "/api/v1/public/cards/{slug}/conversations": {
       "post": {
         "tags": [
           "Public Conversation"
@@ -9702,7 +9750,7 @@
         }
       }
     },
-    "/public/conversations/{conversation_id}/messages:stream": {
+    "/api/v1/public/conversations/{conversation_id}/messages:stream": {
       "post": {
         "tags": [
           "Public Conversation"
@@ -9785,7 +9833,7 @@
         }
       }
     },
-    "/public/cards/{slug}/recommendations": {
+    "/api/v1/public/cards/{slug}/recommendations": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -9861,7 +9909,7 @@
         }
       }
     },
-    "/public/cards/{slug}/products": {
+    "/api/v1/public/cards/{slug}/products": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -9929,7 +9977,7 @@
         }
       }
     },
-    "/public/cards/{slug}/products/{id}": {
+    "/api/v1/public/cards/{slug}/products/{id}": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -9986,7 +10034,7 @@
         }
       }
     },
-    "/public/cards/{slug}/cases": {
+    "/api/v1/public/cards/{slug}/cases": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -10054,7 +10102,7 @@
         }
       }
     },
-    "/public/cards/{slug}/case-studies": {
+    "/api/v1/public/cards/{slug}/case-studies": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -10122,7 +10170,7 @@
         }
       }
     },
-    "/public/cards/{slug}/cases/{id}": {
+    "/api/v1/public/cards/{slug}/cases/{id}": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -10179,7 +10227,7 @@
         }
       }
     },
-    "/public/cards/{slug}/case-studies/{id}": {
+    "/api/v1/public/cards/{slug}/case-studies/{id}": {
       "get": {
         "tags": [
           "Public Catalog"
@@ -10236,7 +10284,7 @@
         }
       }
     },
-    "/admin/dashboard": {
+    "/api/v1/admin/dashboard": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10297,7 +10345,7 @@
         }
       }
     },
-    "/admin/analytics/topics": {
+    "/api/v1/admin/analytics/topics": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10358,7 +10406,7 @@
         }
       }
     },
-    "/admin/analytics/topics:analyze": {
+    "/api/v1/admin/analytics/topics:analyze": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -10419,7 +10467,7 @@
         }
       }
     },
-    "/admin/analytics/employees": {
+    "/api/v1/admin/analytics/employees": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10538,7 +10586,7 @@
         }
       }
     },
-    "/admin/visits": {
+    "/api/v1/admin/visits": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10627,7 +10675,7 @@
         }
       }
     },
-    "/admin/conversations": {
+    "/api/v1/admin/conversations": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10750,7 +10798,7 @@
         }
       }
     },
-    "/admin/opportunities": {
+    "/api/v1/admin/opportunities": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10822,7 +10870,7 @@
         }
       }
     },
-    "/admin/conversations/{conversation_id}": {
+    "/api/v1/admin/conversations/{conversation_id}": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -10881,7 +10929,7 @@
         }
       }
     },
-    "/admin/conversations/{conversation_id}:summarize": {
+    "/api/v1/admin/conversations/{conversation_id}:summarize": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -10940,7 +10988,7 @@
         }
       }
     },
-    "/admin/conversations/{conversation_id}/summary:generate": {
+    "/api/v1/admin/conversations/{conversation_id}/summary:generate": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -10999,7 +11047,7 @@
         }
       }
     },
-    "/admin/summaries/{summary_id}": {
+    "/api/v1/admin/summaries/{summary_id}": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -11058,7 +11106,7 @@
         }
       }
     },
-    "/admin/summaries/{summary_id}:approve": {
+    "/api/v1/admin/summaries/{summary_id}:approve": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11117,7 +11165,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps": {
+    "/api/v1/admin/knowledge/gaps": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -11206,7 +11254,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps/{gap_id}": {
+    "/api/v1/admin/knowledge/gaps/{gap_id}": {
       "patch": {
         "tags": [
           "Business Workflow"
@@ -11275,7 +11323,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps/{gap_id}:approve": {
+    "/api/v1/admin/knowledge/gaps/{gap_id}:approve": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11334,7 +11382,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps/{gap_id}/approve": {
+    "/api/v1/admin/knowledge/gaps/{gap_id}/approve": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11393,7 +11441,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps/{gap_id}:reject": {
+    "/api/v1/admin/knowledge/gaps/{gap_id}:reject": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11452,7 +11500,7 @@
         }
       }
     },
-    "/admin/knowledge/gaps/{gap_id}/reject": {
+    "/api/v1/admin/knowledge/gaps/{gap_id}/reject": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11511,7 +11559,7 @@
         }
       }
     },
-    "/admin/notifications": {
+    "/api/v1/admin/notifications": {
       "get": {
         "tags": [
           "Business Workflow"
@@ -11582,7 +11630,7 @@
         }
       }
     },
-    "/admin/notifications/{notification_id}/read": {
+    "/api/v1/admin/notifications/{notification_id}/read": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11641,7 +11689,7 @@
         }
       }
     },
-    "/public/cards/{slug}/visits/{visit_id}/events": {
+    "/api/v1/public/cards/{slug}/visits/{visit_id}/events": {
       "post": {
         "tags": [
           "Business Workflow"
@@ -11719,7 +11767,7 @@
         }
       }
     },
-    "/admin/visitor-profiles": {
+    "/api/v1/admin/visitor-profiles": {
       "get": {
         "tags": [
           "Visitor Profiles"
@@ -11791,7 +11839,7 @@
         }
       }
     },
-    "/admin/visitor-profiles/{visitor_id}": {
+    "/api/v1/admin/visitor-profiles/{visitor_id}": {
       "get": {
         "tags": [
           "Visitor Profiles"
@@ -11850,7 +11898,7 @@
         }
       }
     },
-    "/admin/visitor-profiles/{visitor_id}/overview": {
+    "/api/v1/admin/visitor-profiles/{visitor_id}/overview": {
       "get": {
         "tags": [
           "Visitor Profiles"
@@ -11909,7 +11957,7 @@
         }
       }
     },
-    "/platform/integrations/wecom/status": {
+    "/api/v1/platform/integrations/wecom/status": {
       "get": {
         "tags": [
           "WeCom Integration"
@@ -11968,7 +12016,7 @@
         }
       }
     },
-    "/platform/integrations/wecom/test-message": {
+    "/api/v1/platform/integrations/wecom/test-message": {
       "post": {
         "tags": [
           "WeCom Integration"
@@ -12027,7 +12075,7 @@
         }
       }
     },
-    "/platform/integrations/wecom/departments": {
+    "/api/v1/platform/integrations/wecom/departments": {
       "get": {
         "tags": [
           "WeCom Integration"
@@ -12093,7 +12141,7 @@
         }
       }
     },
-    "/auth/wecom/login-url": {
+    "/api/v1/auth/wecom/login-url": {
       "get": {
         "tags": [
           "WeCom Authentication"
@@ -12138,7 +12186,7 @@
         }
       }
     },
-    "/auth/wecom/bind-url": {
+    "/api/v1/auth/wecom/bind-url": {
       "get": {
         "tags": [
           "WeCom Authentication"
@@ -12199,7 +12247,7 @@
         }
       }
     },
-    "/auth/wecom/login": {
+    "/api/v1/auth/wecom/login": {
       "post": {
         "tags": [
           "WeCom Authentication"
@@ -12240,7 +12288,7 @@
         }
       }
     },
-    "/auth/wecom/bind": {
+    "/api/v1/auth/wecom/bind": {
       "post": {
         "tags": [
           "WeCom Authentication"
@@ -12281,7 +12329,7 @@
         }
       }
     },
-    "/integrations/wecom/callback": {
+    "/api/v1/integrations/wecom/callback": {
       "get": {
         "tags": [
           "WeCom Callbacks"
@@ -12363,6 +12411,216 @@
         ],
         "summary": "Receive Wecom Callback",
         "operationId": "receiveWeComCallback",
+        "parameters": [
+          {
+            "name": "msg_signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40,
+              "title": "Msg Signature"
+            }
+          },
+          {
+            "name": "timestamp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "title": "Timestamp"
+            }
+          },
+          {
+            "name": "nonce",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Nonce"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/wecom/suite/install-url": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Create Wecom Suite Install Url",
+        "operationId": "createWeComSuiteInstallUrl",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeComOAuthUrlEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/wecom/suite/install-complete": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Complete Wecom Suite Install",
+        "operationId": "completeWeComSuiteInstall",
+        "parameters": [
+          {
+            "name": "auth_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 512,
+              "title": "Auth Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/wecom/suite/callback": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Verify Wecom Suite Callback Url",
+        "operationId": "verifyWeComSuiteCallbackUrl",
+        "parameters": [
+          {
+            "name": "msg_signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40,
+              "title": "Msg Signature"
+            }
+          },
+          {
+            "name": "timestamp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "title": "Timestamp"
+            }
+          },
+          {
+            "name": "nonce",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Nonce"
+            }
+          },
+          {
+            "name": "echostr",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Echostr"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Receive Wecom Suite Callback",
+        "operationId": "receiveWeComSuiteCallback",
         "parameters": [
           {
             "name": "msg_signature",
@@ -13033,6 +13291,10 @@
             "type": "string",
             "title": "Status"
           },
+          "onboarding_status": {
+            "type": "string",
+            "title": "Onboarding Status"
+          },
           "published_at": {
             "anyOf": [
               {
@@ -13065,6 +13327,7 @@
           "display_name",
           "title",
           "status",
+          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -13401,6 +13664,10 @@
             "type": "string",
             "title": "Status"
           },
+          "onboarding_status": {
+            "type": "string",
+            "title": "Onboarding Status"
+          },
           "version": {
             "type": "integer",
             "minimum": 1.0,
@@ -13420,6 +13687,7 @@
           "summary",
           "profile_personalization_policy_version",
           "status",
+          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -15586,6 +15854,41 @@
           "created_at"
         ],
         "title": "EnterpriseRecord"
+      },
+      "EnterpriseSetupEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseSetupResult"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "EnterpriseSetupEnvelope"
+      },
+      "EnterpriseSetupResult": {
+        "properties": {
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          },
+          "company": {
+            "$ref": "#/components/schemas/CompanyProfile"
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardProfile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "completed",
+          "company",
+          "card"
+        ],
+        "title": "EnterpriseSetupResult"
       },
       "EnterpriseTemplateBlock": {
         "properties": {
@@ -24948,11 +25251,5 @@
         "title": "WeComTestMessageRequest"
       }
     }
-  },
-  "servers": [
-    {
-      "url": "http://localhost:8000/api/v1",
-      "description": "Local"
-    }
-  ]
+  }
 }

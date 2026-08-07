@@ -9,6 +9,8 @@ from app.api.admin_schemas import (
     CardProfileEnvelope,
     CompanyProfileEnvelope,
     CreateKnowledgeDocumentRequest,
+    EnterpriseSetupEnvelope,
+    EnterpriseSetupResult,
     KnowledgeDocumentDetailEnvelope,
     KnowledgeDocumentEnvelope,
     KnowledgeDocumentListEnvelope,
@@ -344,6 +346,26 @@ async def update_card(
     )
     _set_etag(response, card.version)
     return CardProfileEnvelope(data=card)
+
+
+@router.post(
+    "/setup/complete",
+    response_model=EnterpriseSetupEnvelope,
+    operation_id="completeEnterpriseSetup",
+)
+async def complete_enterprise_setup(
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseSetupEnvelope:
+    _require_permission(principal, "company.write")
+    _require_permission(principal, "card.write")
+    company, card = await _store(request).complete_enterprise_setup(
+        scope=_scope(principal),
+        trace_id=request_id_ctx.get(),
+    )
+    return EnterpriseSetupEnvelope(
+        data=EnterpriseSetupResult(completed=True, company=company, card=card)
+    )
 
 
 @router.get(

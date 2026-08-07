@@ -63,6 +63,7 @@ REQUIRED_TABLES = {
     "knowledge_import_items",
     "wecom_user_bindings",
     "wecom_enterprise_scopes",
+    "wecom_enterprise_authorizations",
     "wecom_callback_events",
 }
 
@@ -75,6 +76,7 @@ COMPANY_SCOPED_TABLES = REQUIRED_TABLES - {
     "staff_credentials",
     "security_events",
     "wecom_enterprise_scopes",
+    "wecom_enterprise_authorizations",
 }
 
 
@@ -221,6 +223,26 @@ def test_wecom_first_login_bootstrap_uses_narrow_security_definer_boundary(
     assert "grant select" not in migration_sql.split(
         "create table wecom_enterprise_scopes", 1
     )[1].split("create function app.resolve_wecom_identity", 1)[0]
+
+
+def test_wecom_third_party_authorization_is_encrypted_and_function_only(
+    migration_sql: str,
+) -> None:
+    authorization = Base.metadata.tables["wecom_enterprise_authorizations"]
+    assert {
+        "suite_id_hmac",
+        "auth_corpid_ciphertext",
+        "auth_corpid_hmac",
+        "permanent_code_ciphertext",
+        "authorizer_user_id_ciphertext",
+        "encryption_key_ref",
+        "status",
+    } <= set(authorization.columns.keys())
+    assert "create function app.upsert_wecom_enterprise_authorization" in migration_sql
+    assert "create function app.get_wecom_enterprise_authorization" in migration_sql
+    assert "create function app.revoke_wecom_enterprise_authorization" in migration_sql
+    assert "revoke all on table wecom_enterprise_authorizations from public" in migration_sql
+    assert "grant execute on function app.get_wecom_enterprise_authorization" in migration_sql
 
 
 def test_active_document_requires_its_own_approved_version(migration_sql: str) -> None:

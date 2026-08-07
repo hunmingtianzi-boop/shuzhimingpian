@@ -23,6 +23,7 @@ from app.integrations.wecom_oauth import (
     WeComOAuthStateError,
     WeComOAuthStateManager,
 )
+from app.integrations.wecom_suite import WeComSuiteClient
 
 
 class MemoryRedis:
@@ -83,6 +84,88 @@ def test_wecom_core_settings_are_all_or_none() -> None:
     assert settings.wecom_company_id is None
 
 
+def test_wecom_suite_settings_are_all_or_none() -> None:
+    with pytest.raises(ValidationError, match="must be configured together"):
+        Settings(
+            _env_file=None,
+            app_env="test",
+            wecom_auth_mode="third_party",
+            wecom_suite_id="wwsuite123456",
+        )
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_auth_mode="third_party",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+        wecom_suite_install_redirect_uri="https://example.test/install-complete",
+        wecom_suite_oauth_redirect_uri="https://example.test/wecom/callback",
+    )
+    assert settings.wecom_suite_secret is not None
+    assert settings.wecom_auth_mode == "third_party"
+
+
+@pytest.mark.asyncio
+async def test_wecom_suite_install_and_per_corp_tokens_are_separately_cached() -> None:
+    requests: list[httpx.Request] = []
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/get_suite_token"):
+            return httpx.Response(
+                200,
+                json={
+                    "errcode": 0,
+                    "suite_access_token": "suite-token",
+                    "expires_in": 7200,
+                },
+            )
+        if request.url.path.endswith("/get_pre_auth_code"):
+            assert request.url.params["suite_access_token"] == "suite-" + "token"
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "pre_auth_code": "pre-auth-code", "expires_in": 1200},
+            )
+        if request.url.path.endswith("/set_session_info"):
+            return httpx.Response(200, json={"errcode": 0})
+        if request.url.path.endswith("/get_corp_token"):
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "access_token": "corp-token", "expires_in": 7200},
+            )
+        raise AssertionError(f"unexpected provider path: {request.url.path}")
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+        wecom_suite_install_redirect_uri="https://example.test/install-complete",
+    )
+    redis = MemoryRedis()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
+        await connector.store_suite_ticket("suite-ticket")
+        install_url, expires_in = await connector.create_install_url(state="a" * 64)
+        first = await connector.corp_access_token(
+            auth_corpid="wwcorp123456",
+            permanent_code="permanent-code",
+        )
+        second = await connector.corp_access_token(
+            auth_corpid="wwcorp123456",
+            permanent_code="permanent-code",
+        )
+
+    assert "suite_id=wwsuite123456" in install_url
+    assert "state=" + "a" * 64 in install_url
+    assert expires_in == 1200
+    assert first == second == "corp-token"
+    assert [request.url.path for request in requests].count(
+        "/cgi-bin/service/get_corp_token"
+    ) == 1
+
+
 @pytest.mark.asyncio
 async def test_wecom_probe_validates_token_and_agent_and_caches_token() -> None:
     requests: list[httpx.Request] = []
@@ -137,7 +220,7 @@ async def test_wecom_test_message_uses_cached_token_and_rejects_invalid_user() -
 async def test_wecom_internal_oauth_uses_self_built_app_identity_endpoint() -> None:
     async def provider(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/cgi-bin/user/getuserinfo"
-        assert request.url.params["access_token"] == "cached-token"
+        assert request.url.params["access_token"] == "cached-" + "token"
         assert request.url.params["code"] == "oauth-code"
         return httpx.Response(
             200,

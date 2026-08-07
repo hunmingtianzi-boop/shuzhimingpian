@@ -35,6 +35,7 @@ class CompanyProfile(AdminStrictModel):
     logo_url: str | None = None
     profile_personalization_policy_version: str
     status: str
+    onboarding_status: str
     version: int = Field(ge=1)
     updated_at: datetime
 
@@ -66,6 +67,7 @@ class CardProfile(AdminStrictModel):
     suggested_questions: list[str] = Field(default_factory=list, max_length=6)
     policy_versions: dict[str, str] = Field(default_factory=dict)
     status: str
+    onboarding_status: str
     published_at: datetime | None = None
     version: int = Field(ge=1)
     updated_at: datetime
@@ -73,6 +75,16 @@ class CardProfile(AdminStrictModel):
 
 class CardProfileEnvelope(AdminStrictModel):
     data: CardProfile
+
+
+class EnterpriseSetupResult(AdminStrictModel):
+    completed: bool
+    company: CompanyProfile
+    card: CardProfile
+
+
+class EnterpriseSetupEnvelope(AdminStrictModel):
+    data: EnterpriseSetupResult
 
 
 class UpdateCardRequest(AdminStrictModel):
