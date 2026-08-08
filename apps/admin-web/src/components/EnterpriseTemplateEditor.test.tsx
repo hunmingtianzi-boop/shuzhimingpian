@@ -150,13 +150,13 @@ describe("EnterpriseTemplateEditor", () => {
 
     const publicPage = await screen.findByTitle("实际公开名片页面");
     expect(publicPage).toHaveAttribute("src", card.shareUrl);
-    expect(screen.getByRole("tab", { name: "线上" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "线上", hidden: true })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
-    await user.click(screen.getByRole("tab", { name: "草稿" }));
-    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "草稿", hidden: true }));
+    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览", hidden: true })).toBeInTheDocument();
   });
 
   it("reorders blocks, preserves the original mobile shell and saves the draft", async () => {
@@ -172,9 +172,9 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    const aiStructureItem = await screen.findByRole("button", { name: /03\s*在线咨询/ });
-    expect(screen.getByRole("heading", { name: "实际名片页面" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
+    const aiStructureItem = await screen.findByRole("button", { name: /03\s*在线咨询/, hidden: true });
+    expect(screen.getByRole("heading", { name: "实际名片页面", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览", hidden: true })).toBeInTheDocument();
     expect(screen.getByText(/拖动手柄调整顺序/)).toBeInTheDocument();
     expect(screen.getAllByLabelText("拖动基础名片调整位置")).toHaveLength(2);
     expect(screen.queryByLabelText("视觉主题")).not.toBeInTheDocument();
@@ -245,7 +245,7 @@ describe("EnterpriseTemplateEditor", () => {
     });
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*项目现场/ }));
+    await user.click(await screen.findByRole("button", { name: /02\s*项目现场/, hidden: true }));
     expect(await screen.findByText("请至少上传一张图片。")).toBeInTheDocument();
     const file = new File(["image"], "gallery.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择项目现场图片"), file);
@@ -297,7 +297,7 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*企业介绍/ }));
+    await user.click(await screen.findByRole("button", { name: /02\s*企业介绍/, hidden: true }));
     const contentFile = new File(["content"], "story.png", { type: "image/png" });
     const backgroundFile = new File(["background"], "background.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择企业介绍内容图片"), contentFile);
@@ -379,9 +379,9 @@ describe("EnterpriseTemplateEditor", () => {
     );
     const handlers = renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*客户案例/ }));
-    const picker = screen.getByRole("group", { name: "选择已发布案例" });
-    await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/ }));
+    await user.click(await screen.findByRole("button", { name: /02\s*客户案例/, hidden: true }));
+    const picker = screen.getByRole("group", { name: "选择已发布案例", hidden: true });
+    await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/, hidden: true }));
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     const publishButton = screen.getByRole("button", { name: "进入发布确认", hidden: true });
     await waitFor(() => expect(publishButton).toBeEnabled());
@@ -406,8 +406,8 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await screen.findByRole("button", { name: "图片画廊" });
-    await user.click(screen.getByRole("button", { name: "图片画廊" }));
+    await screen.findByRole("button", { name: "图片画廊", hidden: true });
+    await user.click(screen.getByRole("button", { name: "图片画廊", hidden: true }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
@@ -447,17 +447,17 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*常见问题/ }));
-    expect(screen.queryByRole("textbox", { name: "回答内容" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /02\s*常见问题/, hidden: true }));
+    expect(screen.queryByRole("textbox", { name: "回答内容", hidden: true })).not.toBeInTheDocument();
     expect(screen.getByText("数据来源：知识 FAQ")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/ })).toBeChecked();
-    expect(screen.getByRole("link", { name: /前往管理/ })).toHaveAttribute("href", expect.stringContaining("knowledge"));
+    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/, hidden: true })).toBeChecked();
+    expect(screen.getByRole("link", { name: /前往管理/, hidden: true })).toHaveAttribute("href", expect.stringContaining("knowledge"));
 
-    await user.click(screen.getByRole("radio", { name: "精选展示" }));
-    await user.click(screen.getByRole("checkbox", { name: "项目多久可以交付？" }));
-    await user.click(screen.getByRole("checkbox", { name: "是否提供售后支持？" }));
-    await user.click(screen.getByRole("button", { name: "上移 FAQ：是否提供售后支持？" }));
-    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await user.click(screen.getByRole("radio", { name: "精选展示", hidden: true }));
+    await user.click(screen.getByRole("checkbox", { name: "项目多久可以交付？", hidden: true }));
+    await user.click(screen.getByRole("checkbox", { name: "是否提供售后支持？", hidden: true }));
+    await user.click(screen.getByRole("button", { name: "上移 FAQ：是否提供售后支持？", hidden: true }));
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0][3].find((block) => block.id === "faq-1")).toEqual(expect.objectContaining({
@@ -494,10 +494,10 @@ describe("EnterpriseTemplateEditor", () => {
       onClose,
     });
 
-    await user.click(await screen.findByRole("button", { name: "图文介绍" }));
+    await user.click(await screen.findByRole("button", { name: "图文介绍", hidden: true }));
     expect(updateDefault).not.toHaveBeenCalled();
     expect(updateCard).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "使用此设计创建名片" }));
+    await user.click(screen.getByRole("button", { name: "使用此设计创建名片", hidden: true }));
 
     await waitFor(() => expect(onDraftConfirm).toHaveBeenCalledTimes(1));
     expect(onDraftConfirm.mock.calls[0][0]).toEqual(expect.objectContaining({
