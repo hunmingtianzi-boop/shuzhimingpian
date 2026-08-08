@@ -16128,6 +16128,58 @@
               }
             ],
             "title": "Cta Url"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text_tone": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Text Tone",
+            "default": "auto"
+          },
+          "content_image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateContentImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "size_preset": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "compact",
+              "standard",
+              "tall"
+            ],
+            "title": "Size Preset",
+            "default": "auto"
+          },
+          "padding_y": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "compact",
+              "standard",
+              "spacious"
+            ],
+            "title": "Padding Y",
+            "default": "auto"
           }
         },
         "additionalProperties": false,
@@ -16138,6 +16190,90 @@
         ],
         "title": "EnterpriseTemplateBlock",
         "description": "A deliberately small, safe block contract for public enterprise cards."
+      },
+      "EnterpriseTemplateBlockBackground": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "color",
+              "image"
+            ],
+            "title": "Kind",
+            "default": "none"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "cover",
+              "contain"
+            ],
+            "title": "Fit",
+            "default": "cover"
+          },
+          "position_x": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Position X",
+            "default": 50
+          },
+          "position_y": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Position Y",
+            "default": 50
+          },
+          "overlay_color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overlay Color",
+            "default": "#000000"
+          },
+          "overlay_opacity": {
+            "type": "number",
+            "maximum": 0.85,
+            "minimum": 0.0,
+            "title": "Overlay Opacity",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EnterpriseTemplateBlockBackground"
       },
       "EnterpriseTemplateCaseItem": {
         "properties": {
@@ -16204,6 +16340,92 @@
         ],
         "title": "EnterpriseTemplateCaseItem"
       },
+      "EnterpriseTemplateContentImage": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "alt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "top",
+              "bottom",
+              "left",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "top"
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "cover",
+              "contain"
+            ],
+            "title": "Fit",
+            "default": "cover"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "square",
+              "standard",
+              "wide"
+            ],
+            "title": "Aspect Ratio",
+            "default": "wide"
+          },
+          "width_percent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 30.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Percent"
+          },
+          "position_x": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Position X",
+            "default": 50
+          },
+          "position_y": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Position Y",
+            "default": 50
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "EnterpriseTemplateContentImage"
+      },
       "EnterpriseTemplateDocument": {
         "properties": {
           "schema_version": {
@@ -16221,6 +16443,26 @@
             ],
             "title": "Theme Key",
             "default": "brand"
+          },
+          "page_background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_text_tone": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Page Text Tone",
+            "default": "auto"
           },
           "blocks": {
             "items": {
@@ -23016,6 +23258,26 @@
             "title": "Theme Key",
             "default": "brand"
           },
+          "page_background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_text_tone": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Page Text Tone",
+            "default": "auto"
+          },
           "blocks": {
             "items": {
               "$ref": "#/components/schemas/EnterpriseTemplateBlock"
@@ -23310,6 +23572,26 @@
             ],
             "title": "Theme Key",
             "default": "brand"
+          },
+          "page_background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_text_tone": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Page Text Tone",
+            "default": "auto"
           },
           "blocks": {
             "items": {

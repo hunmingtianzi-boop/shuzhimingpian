@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import {
   CardPageBlocksRenderer,
@@ -59,6 +59,28 @@ export type CardPageFaqItem = {
   sourceLabel?: string;
 };
 
+export type CardPageBlockBackground = {
+  kind: "none" | "color" | "image";
+  color?: string;
+  imageUrl?: string;
+  fit?: "cover" | "contain";
+  positionX?: number;
+  positionY?: number;
+  overlayColor?: string;
+  overlayOpacity?: number;
+};
+
+export type CardPageContentImage = {
+  url: string;
+  alt?: string;
+  placement: "top" | "bottom" | "left" | "right";
+  fit?: "cover" | "contain";
+  aspectRatio?: "auto" | "square" | "standard" | "wide";
+  widthPercent?: number;
+  positionX?: number;
+  positionY?: number;
+};
+
 export type CardPageBlock = {
   id: string;
   type: CardPageBlockType;
@@ -78,6 +100,11 @@ export type CardPageBlock = {
   faqDocumentIds?: string[];
   ctaLabel?: string;
   ctaUrl?: string;
+  background?: CardPageBlockBackground;
+  textTone?: "auto" | "light" | "dark";
+  contentImage?: CardPageContentImage;
+  sizePreset?: "auto" | "compact" | "standard" | "tall";
+  paddingY?: "auto" | "compact" | "standard" | "spacious";
 };
 
 export type CardPageResolvedData = {
@@ -107,6 +134,8 @@ export type CardPageDirectoryOptions = {
 
 export type CardPageExperienceProps = {
   blocks: CardPageBlock[];
+  pageBackground?: CardPageBlockBackground;
+  pageTextTone?: "auto" | "light" | "dark";
   data?: CardPageResolvedData;
   actions?: CardPageExperienceActions;
   identityContent?: ReactNode;
@@ -230,6 +259,69 @@ function SectionHeading({ block }: { block: CardPageBlock }) {
   return (
     <div className="bp-section-title cpr-section-title">
       <h2>{block.title}</h2>
+    </div>
+  );
+}
+
+function isDarkColor(value?: string) {
+  const match = value?.match(/^#([0-9a-f]{6})$/i);
+  if (!match) return false;
+  const numeric = Number.parseInt(match[1], 16);
+  const red = (numeric >> 16) & 255;
+  const green = (numeric >> 8) & 255;
+  const blue = numeric & 255;
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 142;
+}
+
+function blockTone(block: CardPageBlock) {
+  if (block.textTone === "light" || block.textTone === "dark") return block.textTone;
+  if (block.background?.kind === "image" && block.background.imageUrl) return "light";
+  if (block.background?.kind === "color") {
+    return isDarkColor(block.background.color) ? "light" : "dark";
+  }
+  return undefined;
+}
+
+function RichTextContent({
+  block,
+  resolveResourceUrl,
+}: {
+  block: CardPageBlock;
+  resolveResourceUrl: (url: string) => string;
+}) {
+  const intro = block.body?.trim();
+  const contentImage = block.contentImage;
+  const widthPercent = Math.min(100, Math.max(30, contentImage?.widthPercent ?? 100));
+  const sideWidthPercent = Math.min(60, widthPercent);
+  const aspectRatio = contentImage?.aspectRatio === "square"
+    ? "1 / 1"
+    : contentImage?.aspectRatio === "standard"
+      ? "4 / 3"
+      : contentImage?.aspectRatio === "auto"
+        ? "auto"
+        : "16 / 9";
+  const copy = intro
+    ? <div className="cpr-rich-text"><p>{intro}</p></div>
+    : <div className="cpr-empty"><strong>内容待补充</strong></div>;
+  if (!contentImage?.url) return copy;
+  return (
+    <div
+      className={`cpr-rich-media cpr-rich-media--${contentImage.placement}`}
+      style={{
+        "--cpr-rich-media-width": `${widthPercent}%`,
+        "--cpr-rich-media-side-width": `${sideWidthPercent}%`,
+      } as CSSProperties}
+    >
+      {copy}
+      <img
+        src={resolveResourceUrl(contentImage.url)}
+        alt={contentImage.alt || ""}
+        style={{
+          objectFit: contentImage.fit === "contain" ? "contain" : "cover",
+          objectPosition: `${contentImage.positionX ?? 50}% ${contentImage.positionY ?? 50}%`,
+          aspectRatio,
+        }}
+      />
     </div>
   );
 }
@@ -425,7 +517,7 @@ function renderBlockContent({
         </div>
       ) : <div className="cpr-empty"><strong>企业定位待补充</strong></div>;
     }
-    return intro ? <div className="cpr-rich-text"><p>{intro}</p></div> : <div className="cpr-empty"><strong>内容待补充</strong></div>;
+    return <RichTextContent block={block} resolveResourceUrl={resolveResourceUrl} />;
   }
 
   if (block.type === "business_collection") {
@@ -496,6 +588,8 @@ function renderBlockContent({
 
 export function CardPageExperience({
   blocks,
+  pageBackground,
+  pageTextTone,
   data = {},
   actions = {},
   identityContent,
@@ -522,6 +616,24 @@ export function CardPageExperience({
   const remainingBlocks = leadingIdentity
     ? blocks.filter((block) => block.id !== leadingIdentity.id)
     : blocks;
+  const pageBackgroundImageUrl = pageBackground?.kind === "image" && pageBackground.imageUrl
+    ? resolveResourceUrl(pageBackground.imageUrl)
+    : undefined;
+  const hasPageBackground = pageBackground?.kind === "color" || Boolean(pageBackgroundImageUrl);
+  const pageTone = pageTextTone === "light" || pageTextTone === "dark"
+    ? pageTextTone
+    : pageBackground?.kind === "image" && pageBackground.imageUrl
+      ? "light"
+      : pageBackground?.kind === "color"
+        ? isDarkColor(pageBackground.color) ? "light" : "dark"
+        : undefined;
+  const pageBackgroundStyle: CSSProperties = {
+    backgroundColor: pageBackground?.color || undefined,
+    backgroundImage: pageBackgroundImageUrl ? `url(${JSON.stringify(pageBackgroundImageUrl)})` : undefined,
+    backgroundSize: pageBackground?.fit === "contain" ? "contain" : "cover",
+    backgroundPosition: `${pageBackground?.positionX ?? 50}% ${pageBackground?.positionY ?? 50}%`,
+    backgroundRepeat: "no-repeat",
+  };
 
   useEffect(() => {
     if (!directoryItems.some((item) => item.id === activeDirectoryBlockId)) {
@@ -585,42 +697,95 @@ export function CardPageExperience({
         editorAdapter?.getBlockClassName?.(block) || "",
       ].filter(Boolean).join(" ")}
       getBlockDataType={(block) => block.type}
-      renderBlock={(block) => (
-        <div
-          className="cpr-block-inner"
-          onClick={editorAdapter?.onSelectBlock ? () => editorAdapter.onSelectBlock?.(block.id) : undefined}
-        >
-          {editorAdapter?.renderBlockHandle && (
-            <div className="cpr-editor-affordance">{editorAdapter.renderBlockHandle(block)}</div>
-          )}
-          {block.type !== "identity" && block.type !== "ai_assistant" && !isOverviewBlock(block) && <SectionHeading block={block} />}
-          <div className="enterprise-template-block-content cpr-block-content">
-            {renderBlockContent({ block, data, actions, identityContent, resolveResourceUrl })}
+      renderBlock={(block) => {
+        const background = block.background;
+        const backgroundImageUrl = background?.kind === "image" && background.imageUrl
+          ? resolveResourceUrl(background.imageUrl)
+          : undefined;
+        const hasBackground = background?.kind === "color" || Boolean(backgroundImageUrl);
+        const tone = blockTone(block);
+        const backgroundStyle: CSSProperties = {
+          backgroundColor: background?.color || undefined,
+          backgroundImage: backgroundImageUrl ? `url(${JSON.stringify(backgroundImageUrl)})` : undefined,
+          backgroundSize: background?.fit === "contain" ? "contain" : "cover",
+          backgroundPosition: `${background?.positionX ?? 50}% ${background?.positionY ?? 50}%`,
+          backgroundRepeat: "no-repeat",
+        };
+        return (
+          <div
+            className={[
+              "cpr-block-inner",
+              hasBackground ? "cpr-block-inner--has-background" : "",
+              tone ? `cpr-block-inner--tone-${tone}` : "",
+              block.sizePreset && block.sizePreset !== "auto" ? `cpr-block-inner--size-${block.sizePreset}` : "",
+              block.paddingY && block.paddingY !== "auto" ? `cpr-block-inner--padding-${block.paddingY}` : "",
+            ].filter(Boolean).join(" ")}
+            onClick={editorAdapter?.onSelectBlock ? () => editorAdapter.onSelectBlock?.(block.id) : undefined}
+          >
+            {hasBackground ? (
+              <div className="cpr-block-background" style={backgroundStyle} aria-hidden="true">
+                {(background?.overlayOpacity ?? 0) > 0 ? (
+                  <span style={{
+                    backgroundColor: background?.overlayColor || "#000000",
+                    opacity: background?.overlayOpacity ?? 0,
+                  }} />
+                ) : null}
+              </div>
+            ) : null}
+            <div className="cpr-block-foreground">
+              {editorAdapter?.renderBlockHandle && (
+                <div className="cpr-editor-affordance">{editorAdapter.renderBlockHandle(block)}</div>
+              )}
+              {block.type !== "identity" && block.type !== "ai_assistant" && !isOverviewBlock(block) && <SectionHeading block={block} />}
+              <div className="enterprise-template-block-content cpr-block-content">
+                {renderBlockContent({ block, data, actions, identityContent, resolveResourceUrl })}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      }}
     />
   );
 
   return (
-    <div className={["cpr-experience", className].filter(Boolean).join(" ")} data-card-page-experience>
-      {leadingIdentity && renderBlocks([leadingIdentity], "cpr-blocks cpr-blocks--leading enterprise-template-public")}
-      {directory && directoryItems.length > 0 && (
-        <nav className="cpr-directory" aria-label={directoryOptions?.ariaLabel || "名片内容导航"}>
-          {directoryItems.map((item, index) => (
-            <button
-              type="button"
-              key={item.id}
-              aria-current={activeDirectoryBlockId === item.id ? "location" : undefined}
-              onClick={() => navigateToBlock(item.id)}
-            >
-              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-              {item.title}
-            </button>
-          ))}
-        </nav>
-      )}
-      {renderBlocks(remainingBlocks, "cpr-blocks enterprise-template-public")}
+    <div
+      className={[
+        "cpr-experience",
+        hasPageBackground ? "cpr-experience--has-background" : "",
+        pageTone ? `cpr-experience--tone-${pageTone}` : "",
+        className,
+      ].filter(Boolean).join(" ")}
+      data-card-page-experience
+    >
+      {hasPageBackground ? (
+        <div className="cpr-page-background" style={pageBackgroundStyle} aria-hidden="true">
+          {(pageBackground?.overlayOpacity ?? 0) > 0 ? (
+            <span style={{
+              backgroundColor: pageBackground?.overlayColor || "#000000",
+              opacity: pageBackground?.overlayOpacity ?? 0,
+            }} />
+          ) : null}
+        </div>
+      ) : null}
+      <div className="cpr-page-foreground">
+        {leadingIdentity && renderBlocks([leadingIdentity], "cpr-blocks cpr-blocks--leading enterprise-template-public")}
+        {directory && directoryItems.length > 0 && (
+          <nav className="cpr-directory" aria-label={directoryOptions?.ariaLabel || "名片内容导航"}>
+            {directoryItems.map((item, index) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-current={activeDirectoryBlockId === item.id ? "location" : undefined}
+                onClick={() => navigateToBlock(item.id)}
+              >
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                {item.title}
+              </button>
+            ))}
+          </nav>
+        )}
+        {renderBlocks(remainingBlocks, "cpr-blocks enterprise-template-public")}
+      </div>
     </div>
   );
 }

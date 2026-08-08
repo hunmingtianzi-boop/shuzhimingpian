@@ -74,6 +74,67 @@ describe("EnterpriseTemplateBlocks", () => {
     expect(onAssistant).toHaveBeenCalledOnce();
   });
 
+  it("renders published block backgrounds and rich-text content images", () => {
+    const { container } = render(
+      <EnterpriseTemplateBlocks
+        pageBackground={{
+          kind: "image",
+          image_url: "/api/v1/public/card-assets/company-1/page.webp",
+          position_x: 36,
+          position_y: 64,
+          overlay_color: "#000000",
+          overlay_opacity: 0.38,
+        }}
+        pageTextTone="light"
+        blocks={[{
+          id: "story",
+          type: "rich_text",
+          title: "品牌故事",
+          body: "持续更新的企业内容入口。",
+          background: {
+            kind: "image",
+            image_url: "/api/v1/public/card-assets/company-1/background.webp",
+            fit: "cover",
+            position_x: 24,
+            position_y: 68,
+            overlay_color: "#102b2f",
+            overlay_opacity: 0.5,
+          },
+          text_tone: "light",
+          content_image: {
+            url: "/api/v1/public/card-assets/company-1/story.webp",
+            alt: "团队共创",
+            placement: "right",
+            fit: "contain",
+            aspect_ratio: "standard",
+            width_percent: 42,
+            position_x: 28,
+            position_y: 72,
+          },
+          size_preset: "tall",
+          padding_y: "spacious",
+        }]}
+      />,
+    );
+
+    expect(screen.getByAltText("团队共创")).toHaveAttribute(
+      "src",
+      "/api/v1/public/card-assets/company-1/story.webp",
+    );
+    expect(container.querySelector(".cpr-rich-media--right")).toBeInTheDocument();
+    expect(container.querySelector(".cpr-block-inner--tone-light")).toBeInTheDocument();
+    expect(container.querySelector(".cpr-block-background"))
+      .toHaveStyle({ backgroundPosition: "24% 68%" });
+    expect(container.querySelector(".cpr-page-background"))
+      .toHaveStyle({ backgroundPosition: "36% 64%" });
+    expect(container.querySelector(".cpr-block-inner--size-tall"))
+      .toHaveClass("cpr-block-inner--padding-spacious");
+    expect(screen.getByAltText("团队共创")).toHaveStyle({
+      aspectRatio: "4 / 3",
+      objectPosition: "28% 72%",
+    });
+  });
+
   it("filters selected FAQ records by canonical document id and keeps the configured order", () => {
     const { container } = render(
       <EnterpriseTemplateBlocks

@@ -135,6 +135,23 @@ function normalizeCard(payload: unknown): CardSettings {
   };
 }
 
+function normalizeTemplateBackground(value: unknown): EnterpriseTemplateBlock["background"] {
+  if (!isRecord(value)) return undefined;
+  const kind = ["none", "color", "image"].includes(optionalString(value.kind))
+    ? optionalString(value.kind) as NonNullable<EnterpriseTemplateBlock["background"]>["kind"]
+    : "none";
+  return {
+    kind,
+    color: optionalString(value.color) || undefined,
+    imageUrl: optionalString(value.image_url) || undefined,
+    fit: optionalString(value.fit) === "contain" ? "contain" : "cover",
+    positionX: optionalNumber(value.position_x) ?? 50,
+    positionY: optionalNumber(value.position_y) ?? 50,
+    overlayColor: optionalString(value.overlay_color) || undefined,
+    overlayOpacity: optionalNumber(value.overlay_opacity) ?? 0,
+  };
+}
+
 function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undefined {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.type !== "string") return undefined;
   const type = value.type;
@@ -144,6 +161,10 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
   const strings = (raw: unknown) => Array.isArray(raw)
     ? raw.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : undefined;
+  const rawContentImage = isRecord(value.content_image) ? value.content_image : undefined;
+  const contentPlacement = rawContentImage && ["top", "bottom", "left", "right"].includes(optionalString(rawContentImage.placement))
+    ? optionalString(rawContentImage.placement) as NonNullable<EnterpriseTemplateBlock["contentImage"]>["placement"]
+    : "top";
   return {
     id: value.id,
     type: type as EnterpriseTemplateBlock["type"],
@@ -161,6 +182,28 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
     faqDocumentIds: type === "faq" ? strings(value.faq_document_ids) : undefined,
     ctaLabel: optionalString(value.cta_label) || undefined,
     ctaUrl: optionalString(value.cta_url) || undefined,
+    background: normalizeTemplateBackground(value.background),
+    textTone: ["auto", "light", "dark"].includes(optionalString(value.text_tone))
+      ? optionalString(value.text_tone) as NonNullable<EnterpriseTemplateBlock["textTone"]>
+      : "auto",
+    contentImage: rawContentImage && optionalString(rawContentImage.url) ? {
+      url: optionalString(rawContentImage.url),
+      alt: optionalString(rawContentImage.alt) || undefined,
+      placement: contentPlacement,
+      fit: optionalString(rawContentImage.fit) === "contain" ? "contain" : "cover",
+      aspectRatio: ["auto", "square", "standard", "wide"].includes(optionalString(rawContentImage.aspect_ratio))
+        ? optionalString(rawContentImage.aspect_ratio) as NonNullable<EnterpriseTemplateBlock["contentImage"]>["aspectRatio"]
+        : "wide",
+      widthPercent: optionalNumber(rawContentImage.width_percent),
+      positionX: optionalNumber(rawContentImage.position_x) ?? 50,
+      positionY: optionalNumber(rawContentImage.position_y) ?? 50,
+    } : undefined,
+    sizePreset: ["auto", "compact", "standard", "tall"].includes(optionalString(value.size_preset))
+      ? optionalString(value.size_preset) as NonNullable<EnterpriseTemplateBlock["sizePreset"]>
+      : "auto",
+    paddingY: ["auto", "compact", "standard", "spacious"].includes(optionalString(value.padding_y))
+      ? optionalString(value.padding_y) as NonNullable<EnterpriseTemplateBlock["paddingY"]>
+      : "auto",
   };
 }
 
@@ -173,6 +216,10 @@ function normalizeEnterpriseTemplate(payload: unknown): EnterpriseTemplate {
       themeKey: ["brand", "clean", "warm"].includes(optionalString(record.theme_key))
         ? optionalString(record.theme_key) as EnterpriseTemplateThemeKey
         : "brand",
+      pageBackground: normalizeTemplateBackground(record.page_background),
+      pageTextTone: ["auto", "light", "dark"].includes(optionalString(record.page_text_tone))
+        ? optionalString(record.page_text_tone) as "auto" | "light" | "dark"
+        : "auto",
       blocks: Array.isArray(record.blocks)
         ? record.blocks.flatMap((item) => {
             const block = normalizeTemplateBlock(item);
@@ -206,10 +253,25 @@ function normalizeCardComposerDefault(payload: unknown): CardComposerDefault {
 function enterpriseTemplatePayload(
   themeKey: EnterpriseTemplateThemeKey,
   blocks: EnterpriseTemplateBlock[],
+  pageBackground?: EnterpriseTemplateBlock["background"],
+  pageTextTone?: "auto" | "light" | "dark",
 ) {
   return {
     schema_version: 1,
     theme_key: themeKey,
+    ...(pageBackground && pageBackground.kind !== "none" ? {
+      page_background: {
+        kind: pageBackground.kind,
+        ...(pageBackground.color?.trim() ? { color: pageBackground.color.trim() } : {}),
+        ...(pageBackground.imageUrl?.trim() ? { image_url: pageBackground.imageUrl.trim() } : {}),
+        fit: pageBackground.fit === "contain" ? "contain" : "cover",
+        position_x: pageBackground.positionX ?? 50,
+        position_y: pageBackground.positionY ?? 50,
+        ...(pageBackground.overlayColor?.trim() ? { overlay_color: pageBackground.overlayColor.trim() } : {}),
+        overlay_opacity: pageBackground.overlayOpacity ?? 0,
+      },
+    } : {}),
+    ...(pageTextTone && pageTextTone !== "auto" ? { page_text_tone: pageTextTone } : {}),
     blocks: blocks.map((block, index) => ({
       id: block.id,
       type: block.type,
@@ -231,6 +293,33 @@ function enterpriseTemplatePayload(
       } : {}),
       ...(block.ctaLabel?.trim() ? { cta_label: block.ctaLabel.trim() } : {}),
       ...(block.ctaUrl?.trim() ? { cta_url: block.ctaUrl.trim() } : {}),
+      ...(block.background && block.background.kind !== "none" ? {
+        background: {
+          kind: block.background.kind,
+          ...(block.background.color?.trim() ? { color: block.background.color.trim() } : {}),
+          ...(block.background.imageUrl?.trim() ? { image_url: block.background.imageUrl.trim() } : {}),
+          fit: block.background.fit === "contain" ? "contain" : "cover",
+          position_x: block.background.positionX ?? 50,
+          position_y: block.background.positionY ?? 50,
+          ...(block.background.overlayColor?.trim() ? { overlay_color: block.background.overlayColor.trim() } : {}),
+          overlay_opacity: block.background.overlayOpacity ?? 0,
+        },
+      } : {}),
+      ...(block.textTone && block.textTone !== "auto" ? { text_tone: block.textTone } : {}),
+      ...(block.type === "rich_text" && block.contentImage?.url.trim() ? {
+        content_image: {
+          url: block.contentImage.url.trim(),
+          ...(block.contentImage.alt?.trim() ? { alt: block.contentImage.alt.trim() } : {}),
+          placement: block.contentImage.placement,
+          fit: block.contentImage.fit === "contain" ? "contain" : "cover",
+          aspect_ratio: block.contentImage.aspectRatio ?? "wide",
+          ...(block.contentImage.widthPercent !== undefined ? { width_percent: block.contentImage.widthPercent } : {}),
+          position_x: block.contentImage.positionX ?? 50,
+          position_y: block.contentImage.positionY ?? 50,
+        },
+      } : {}),
+      ...(block.sizePreset && block.sizePreset !== "auto" ? { size_preset: block.sizePreset } : {}),
+      ...(block.paddingY && block.paddingY !== "auto" ? { padding_y: block.paddingY } : {}),
     })),
   };
 }
@@ -631,6 +720,8 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
           template_document: enterpriseTemplatePayload(
             input.templateDocument.themeKey,
             input.templateDocument.blocks,
+            input.templateDocument.pageBackground,
+            input.templateDocument.pageTextTone,
           ),
         }
       : !requireOwner && input.templateSourceCardId?.trim()
@@ -990,11 +1081,13 @@ export function createAdminApi(client: ApiClient) {
     version: number,
     themeKey: EnterpriseTemplateThemeKey,
     blocks: EnterpriseTemplateBlock[],
+    pageBackground?: EnterpriseTemplateBlock["background"],
+    pageTextTone?: "auto" | "light" | "dark",
   ): Promise<EnterpriseTemplate> {
     return normalizeEnterpriseTemplate(
       await client.put(
         `/admin/cards/${encodeURIComponent(id)}/enterprise-template`,
-        enterpriseTemplatePayload(themeKey, blocks),
+        enterpriseTemplatePayload(themeKey, blocks, pageBackground, pageTextTone),
         { version },
       ),
     );
@@ -1011,11 +1104,13 @@ export function createAdminApi(client: ApiClient) {
     version: number,
     themeKey: EnterpriseTemplateThemeKey,
     blocks: EnterpriseTemplateBlock[],
+    pageBackground?: EnterpriseTemplateBlock["background"],
+    pageTextTone?: "auto" | "light" | "dark",
   ): Promise<CardComposerDefault> {
     return normalizeCardComposerDefault(
       await client.put(
         `/admin/card-composer/defaults/${encodeURIComponent(cardKind)}`,
-        enterpriseTemplatePayload(themeKey, blocks),
+        enterpriseTemplatePayload(themeKey, blocks, pageBackground, pageTextTone),
         { version },
       ),
     );

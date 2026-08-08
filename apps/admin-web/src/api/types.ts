@@ -629,6 +629,28 @@ export type EnterpriseTemplateBlockType =
   | "cta"
   | "ai_assistant";
 
+export type EnterpriseTemplateBlockBackground = {
+  kind: "none" | "color" | "image";
+  color?: string;
+  imageUrl?: string;
+  fit?: "cover" | "contain";
+  positionX?: number;
+  positionY?: number;
+  overlayColor?: string;
+  overlayOpacity?: number;
+};
+
+export type EnterpriseTemplateContentImage = {
+  url: string;
+  alt?: string;
+  placement: "top" | "bottom" | "left" | "right";
+  fit?: "cover" | "contain";
+  aspectRatio?: "auto" | "square" | "standard" | "wide";
+  widthPercent?: number;
+  positionX?: number;
+  positionY?: number;
+};
+
 export type EnterpriseTemplateBlock = {
   id: string;
   type: EnterpriseTemplateBlockType;
@@ -648,6 +670,11 @@ export type EnterpriseTemplateBlock = {
   faqDocumentIds?: string[];
   ctaLabel?: string;
   ctaUrl?: string;
+  background?: EnterpriseTemplateBlockBackground;
+  textTone?: "auto" | "light" | "dark";
+  contentImage?: EnterpriseTemplateContentImage;
+  sizePreset?: "auto" | "compact" | "standard" | "tall";
+  paddingY?: "auto" | "compact" | "standard" | "spacious";
 };
 
 export type EnterpriseTemplate = {
@@ -656,11 +683,15 @@ export type EnterpriseTemplate = {
   draft: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
+    pageBackground?: EnterpriseTemplateBlockBackground;
+    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
   };
   published?: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
+    pageBackground?: EnterpriseTemplateBlockBackground;
+    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
   };
 };

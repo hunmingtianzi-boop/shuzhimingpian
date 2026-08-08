@@ -1225,6 +1225,8 @@ export const BusinessCardPrototypeApp = forwardRef<
   const composedTemplatePage = hasComposableStandalonePage ? (
     <EnterpriseTemplateBlocks
       blocks={effectiveTemplateBlocks}
+      pageBackground={card?.enterprise_template?.page_background}
+      pageTextTone={card?.enterprise_template?.page_text_tone}
       directory={{
         ariaLabel: isStandaloneEmployee ? "员工名片内容导航" : "企业名片内容导航",
       }}

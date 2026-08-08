@@ -359,6 +359,32 @@ class EnterpriseTemplateProductItem(CatalogStrictModel):
     _validate_image = field_validator("image_url")(validate_safe_asset_url)
 
 
+class EnterpriseTemplateBlockBackground(CatalogStrictModel):
+    kind: Literal["none", "color", "image"] = "none"
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    image_url: str | None = Field(default=None, max_length=2_048)
+    fit: Literal["cover", "contain"] = "cover"
+    position_x: int = Field(default=50, ge=0, le=100)
+    position_y: int = Field(default=50, ge=0, le=100)
+    overlay_color: str | None = Field(default="#000000", pattern=r"^#[0-9a-fA-F]{6}$")
+    overlay_opacity: float = Field(default=0, ge=0, le=0.85)
+
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
+
+
+class EnterpriseTemplateContentImage(CatalogStrictModel):
+    url: str = Field(min_length=1, max_length=2_048)
+    alt: str | None = Field(default=None, max_length=300)
+    placement: Literal["top", "bottom", "left", "right"] = "top"
+    fit: Literal["cover", "contain"] = "cover"
+    aspect_ratio: Literal["auto", "square", "standard", "wide"] = "wide"
+    width_percent: int | None = Field(default=None, ge=30, le=100)
+    position_x: int = Field(default=50, ge=0, le=100)
+    position_y: int = Field(default=50, ge=0, le=100)
+
+    _validate_image = field_validator("url")(validate_safe_asset_url)
+
+
 class EnterpriseTemplateBlock(CatalogStrictModel):
     """A deliberately small, safe block contract for public enterprise cards."""
 
@@ -380,6 +406,11 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     faq_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
     cta_label: str | None = Field(default=None, max_length=80)
     cta_url: str | None = Field(default=None, max_length=2_048)
+    background: EnterpriseTemplateBlockBackground | None = None
+    text_tone: Literal["auto", "light", "dark"] = "auto"
+    content_image: EnterpriseTemplateContentImage | None = None
+    size_preset: Literal["auto", "compact", "standard", "tall"] = "auto"
+    padding_y: Literal["auto", "compact", "standard", "spacious"] = "auto"
 
     _validate_images = field_validator("image_urls")(
         lambda values: [validate_safe_asset_url(value) for value in values]
@@ -414,12 +445,16 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
                 self.faq_document_ids = []
         elif self.faq_mode is not None or self.faq_document_ids:
             raise ValueError("faq selection fields are only valid for faq blocks")
+        if self.content_image is not None and self.type != "rich_text":
+            raise ValueError("content image is only valid for rich text blocks")
         return self
 
 
 class EnterpriseTemplateDocument(CatalogStrictModel):
     schema_version: Literal[1] = 1
     theme_key: Literal["brand", "clean", "warm"] = "brand"
+    page_background: EnterpriseTemplateBlockBackground | None = None
+    page_text_tone: Literal["auto", "light", "dark"] = "auto"
     blocks: list[EnterpriseTemplateBlock] = Field(default_factory=list, max_length=24)
 
     @model_validator(mode="after")

@@ -261,6 +261,90 @@ describe("EnterpriseTemplateEditor", () => {
     ]);
   }, 15_000);
 
+  it("adds a shared block background and a rich-text content image", async () => {
+    const user = userEvent.setup();
+    const richTemplate = template();
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(richTemplate);
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    const upload = vi.spyOn(adminApi, "uploadCardAsset")
+      .mockResolvedValueOnce({
+        url: "/api/v1/public/card-assets/company-1/story.webp",
+        contentType: "image/webp",
+        width: 1200,
+        height: 800,
+        sizeBytes: 18_000,
+      })
+      .mockResolvedValueOnce({
+        url: "/api/v1/public/card-assets/company-1/background.webp",
+        contentType: "image/webp",
+        width: 1600,
+        height: 900,
+        sizeBytes: 24_000,
+      })
+      .mockResolvedValueOnce({
+        url: "/api/v1/public/card-assets/company-1/page-background.webp",
+        contentType: "image/webp",
+        width: 1800,
+        height: 1200,
+        sizeBytes: 28_000,
+      });
+    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
+      async (_id, _version, themeKey, blocks) => template({
+        version: 8,
+        draft: { schemaVersion: 1, themeKey, blocks },
+      }),
+    );
+    renderEditor();
+
+    await user.click(await screen.findByRole("button", { name: /02\s*企业介绍/ }));
+    const contentFile = new File(["content"], "story.png", { type: "image/png" });
+    const backgroundFile = new File(["background"], "background.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择企业介绍内容图片"), contentFile);
+    await waitFor(() => expect(screen.getByAltText("内容图片预览")).toBeInTheDocument());
+    await user.click(screen.getByRole("radio", { name: "左侧", hidden: true }));
+    await user.click(screen.getByRole("radio", { name: "1:1", hidden: true }));
+    await user.click(screen.getByRole("radio", { name: "高版", hidden: true }));
+    await user.click(screen.getByRole("radio", { name: "多", hidden: true }));
+    const blockBackgroundSettings = screen.getByRole("region", { name: "板块背景", hidden: true });
+    await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "图片", hidden: true }));
+    await user.upload(screen.getByLabelText("选择企业介绍背景图片"), backgroundFile);
+    await waitFor(() => expect(screen.getByAltText("板块背景预览")).toBeInTheDocument());
+    await user.click(screen.getByRole("radio", { name: "浅色字", hidden: true }));
+    const pageSettings = screen.getByRole("region", { name: "页面外观", hidden: true });
+    await user.click(within(pageSettings).getByRole("radio", { name: "图片", hidden: true }));
+    const pageBackgroundFile = new File(["page"], "page-background.png", { type: "image/png" });
+    await user.upload(within(pageSettings).getByLabelText("选择整体背景图片"), pageBackgroundFile);
+    await waitFor(() => expect(screen.getByAltText("整体背景预览")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(upload).toHaveBeenNthCalledWith(1, contentFile);
+    expect(upload).toHaveBeenNthCalledWith(2, backgroundFile);
+    expect(upload).toHaveBeenNthCalledWith(3, pageBackgroundFile);
+    expect(update.mock.calls[0][3].find((block) => block.id === "rich-1")).toEqual(
+      expect.objectContaining({
+        textTone: "light",
+        background: expect.objectContaining({
+          kind: "image",
+          imageUrl: "/api/v1/public/card-assets/company-1/background.webp",
+          overlayOpacity: 0.42,
+        }),
+        contentImage: expect.objectContaining({
+          url: "/api/v1/public/card-assets/company-1/story.webp",
+          placement: "left",
+          aspectRatio: "square",
+        }),
+        sizePreset: "tall",
+        paddingY: "spacious",
+      }),
+    );
+    expect(update.mock.calls[0][4]).toEqual(expect.objectContaining({
+      kind: "image",
+      imageUrl: "/api/v1/public/card-assets/company-1/page-background.webp",
+    }));
+  }, 15_000);
+
   it("selects published cases and enters the existing publish confirmation", async () => {
     const user = userEvent.setup();
     const caseTemplate = template({

@@ -33,6 +33,29 @@ export type PublicEnterpriseTemplateBlock = {
   faq_document_ids?: string[];
   cta_label?: string;
   cta_url?: string;
+  background?: {
+    kind: "none" | "color" | "image";
+    color?: string;
+    image_url?: string;
+    fit?: "cover" | "contain";
+    position_x?: number;
+    position_y?: number;
+    overlay_color?: string;
+    overlay_opacity?: number;
+  };
+  text_tone?: "auto" | "light" | "dark";
+  content_image?: {
+    url: string;
+    alt?: string;
+    placement: "top" | "bottom" | "left" | "right";
+    fit?: "cover" | "contain";
+    aspect_ratio?: "auto" | "square" | "standard" | "wide";
+    width_percent?: number;
+    position_x?: number;
+    position_y?: number;
+  };
+  size_preset?: "auto" | "compact" | "standard" | "tall";
+  padding_y?: "auto" | "compact" | "standard" | "spacious";
 };
 
 export type PublicCardData = {
@@ -81,7 +104,13 @@ export type PublicCardData = {
     lead_consent: string;
     profile_personalization: string;
   };
-  enterprise_template?: { schema_version: 1; theme_key?: "brand" | "clean" | "warm"; blocks: PublicEnterpriseTemplateBlock[] } | null;
+  enterprise_template?: {
+    schema_version: 1;
+    theme_key?: "brand" | "clean" | "warm";
+    page_background?: PublicEnterpriseTemplateBlock["background"];
+    page_text_tone?: "auto" | "light" | "dark";
+    blocks: PublicEnterpriseTemplateBlock[];
+  } | null;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -101,6 +130,11 @@ function requiredString(record: JsonRecord, key: string) {
 function optionalString(record: JsonRecord, key: string) {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalNumber(record: JsonRecord, key: string) {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function stringRecordList(value: unknown): PublicLinkItem[] {
@@ -145,10 +179,104 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
     const faqMode: PublicEnterpriseTemplateBlock["faq_mode"] = raw.type === "faq"
       ? raw.faq_mode === "selected" ? "selected" : "all_published"
       : undefined;
-    return [{ id: raw.id, type: raw.type as PublicEnterpriseTemplateBlock["type"], visible: raw.visible !== false, directory_enabled: raw.directory_enabled !== false, sort_order: typeof raw.sort_order === "number" ? raw.sort_order : 0, title: optionalString(raw, "title"), body: optionalString(raw, "body"), image_urls: strings(raw.image_urls), video_url: optionalString(raw, "video_url"), video_cover_url: optionalString(raw, "video_cover_url"), product_ids: strings(raw.product_ids), product_items: productItems, case_ids: strings(raw.case_ids), case_items: caseItems, faq_mode: faqMode, faq_document_ids: strings(raw.faq_document_ids), cta_label: optionalString(raw, "cta_label"), cta_url: optionalString(raw, "cta_url") }];
+    const rawBackground = isRecord(raw.background) ? raw.background : undefined;
+    const backgroundKind: NonNullable<PublicEnterpriseTemplateBlock["background"]>["kind"] = rawBackground && (
+      rawBackground.kind === "color" || rawBackground.kind === "image"
+    ) ? rawBackground.kind : "none";
+    const backgroundFit: NonNullable<PublicEnterpriseTemplateBlock["background"]>["fit"] =
+      rawBackground?.fit === "contain" ? "contain" : "cover";
+    const rawContentImage = isRecord(raw.content_image) ? raw.content_image : undefined;
+    const contentImageUrl = rawContentImage ? optionalString(rawContentImage, "url") : undefined;
+    const contentPlacement: NonNullable<PublicEnterpriseTemplateBlock["content_image"]>["placement"] = rawContentImage && (
+      rawContentImage.placement === "bottom"
+      || rawContentImage.placement === "left"
+      || rawContentImage.placement === "right"
+    ) ? rawContentImage.placement : "top";
+    const contentFit: NonNullable<PublicEnterpriseTemplateBlock["content_image"]>["fit"] =
+      rawContentImage?.fit === "contain" ? "contain" : "cover";
+    const contentAspectRatio: NonNullable<PublicEnterpriseTemplateBlock["content_image"]>["aspect_ratio"] =
+      rawContentImage && ["auto", "square", "standard", "wide"].includes(optionalString(rawContentImage, "aspect_ratio") ?? "")
+        ? optionalString(rawContentImage, "aspect_ratio") as NonNullable<PublicEnterpriseTemplateBlock["content_image"]>["aspect_ratio"]
+        : "wide";
+    const textTone: PublicEnterpriseTemplateBlock["text_tone"] =
+      raw.text_tone === "light" || raw.text_tone === "dark" ? raw.text_tone : "auto";
+    const sizePreset: PublicEnterpriseTemplateBlock["size_preset"] =
+      raw.size_preset === "compact" || raw.size_preset === "standard" || raw.size_preset === "tall"
+        ? raw.size_preset
+        : "auto";
+    const paddingY: PublicEnterpriseTemplateBlock["padding_y"] =
+      raw.padding_y === "compact" || raw.padding_y === "standard" || raw.padding_y === "spacious"
+        ? raw.padding_y
+        : "auto";
+    return [{
+      id: raw.id,
+      type: raw.type as PublicEnterpriseTemplateBlock["type"],
+      visible: raw.visible !== false,
+      directory_enabled: raw.directory_enabled !== false,
+      sort_order: typeof raw.sort_order === "number" ? raw.sort_order : 0,
+      title: optionalString(raw, "title"),
+      body: optionalString(raw, "body"),
+      image_urls: strings(raw.image_urls),
+      video_url: optionalString(raw, "video_url"),
+      video_cover_url: optionalString(raw, "video_cover_url"),
+      product_ids: strings(raw.product_ids),
+      product_items: productItems,
+      case_ids: strings(raw.case_ids),
+      case_items: caseItems,
+      faq_mode: faqMode,
+      faq_document_ids: strings(raw.faq_document_ids),
+      cta_label: optionalString(raw, "cta_label"),
+      cta_url: optionalString(raw, "cta_url"),
+      background: rawBackground ? {
+        kind: backgroundKind,
+        color: optionalString(rawBackground, "color"),
+        image_url: optionalString(rawBackground, "image_url"),
+        fit: backgroundFit,
+        position_x: optionalNumber(rawBackground, "position_x") ?? 50,
+        position_y: optionalNumber(rawBackground, "position_y") ?? 50,
+        overlay_color: optionalString(rawBackground, "overlay_color"),
+        overlay_opacity: optionalNumber(rawBackground, "overlay_opacity") ?? 0,
+      } : undefined,
+      text_tone: textTone,
+      content_image: contentImageUrl ? {
+        url: contentImageUrl,
+        alt: rawContentImage ? optionalString(rawContentImage, "alt") : undefined,
+        placement: contentPlacement,
+        fit: contentFit,
+        aspect_ratio: contentAspectRatio,
+        width_percent: rawContentImage ? optionalNumber(rawContentImage, "width_percent") : undefined,
+        position_x: rawContentImage ? optionalNumber(rawContentImage, "position_x") ?? 50 : 50,
+        position_y: rawContentImage ? optionalNumber(rawContentImage, "position_y") ?? 50 : 50,
+      } : undefined,
+      size_preset: sizePreset,
+      padding_y: paddingY,
+    }];
   });
   const theme = value.theme_key;
-  return { schema_version: 1, theme_key: theme === "clean" || theme === "warm" ? theme : "brand", blocks };
+  const rawPageBackground = isRecord(value.page_background) ? value.page_background : undefined;
+  const pageBackgroundKind: NonNullable<
+    NonNullable<PublicCardData["enterprise_template"]>["page_background"]
+  >["kind"] = rawPageBackground?.kind === "color" || rawPageBackground?.kind === "image"
+      ? rawPageBackground.kind
+      : "none";
+  const pageTextTone: NonNullable<PublicCardData["enterprise_template"]>["page_text_tone"] =
+    value.page_text_tone === "light" || value.page_text_tone === "dark" ? value.page_text_tone : "auto";
+  return {
+    schema_version: 1,
+    theme_key: theme === "clean" || theme === "warm" ? theme : "brand",
+    page_background: rawPageBackground ? {
+      kind: pageBackgroundKind,
+      color: optionalString(rawPageBackground, "color"),
+      image_url: optionalString(rawPageBackground, "image_url"),
+      fit: rawPageBackground.fit === "contain" ? "contain" : "cover",
+      position_x: optionalNumber(rawPageBackground, "position_x") ?? 50,
+      position_y: optionalNumber(rawPageBackground, "position_y") ?? 50,
+      overlay_color: optionalString(rawPageBackground, "overlay_color"),
+      overlay_opacity: optionalNumber(rawPageBackground, "overlay_opacity") ?? 0,
+    } : undefined,
+    page_text_tone: pageTextTone,
+    blocks,
+  };
 }
 
 function parsePublicCard(value: unknown): PublicCardData {

@@ -9,7 +9,7 @@ import {
 } from "@cf/card-page-renderer";
 import type { ReactNode } from "react";
 
-import type { PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
+import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import type { PublicCaseStudy, PublicProduct } from "../lib/publicExperienceApi";
 import { resolvePublicResourceUrl } from "../lib/publicResourceUrl";
 
@@ -86,11 +86,36 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
     faqDocumentIds: block.faq_document_ids,
     ctaLabel: block.cta_label,
     ctaUrl: block.cta_url,
+    background: block.background ? {
+      kind: block.background.kind,
+      color: block.background.color,
+      imageUrl: block.background.image_url,
+      fit: block.background.fit,
+      positionX: block.background.position_x,
+      positionY: block.background.position_y,
+      overlayColor: block.background.overlay_color,
+      overlayOpacity: block.background.overlay_opacity,
+    } : undefined,
+    textTone: block.text_tone,
+    contentImage: block.content_image ? {
+      url: block.content_image.url,
+      alt: block.content_image.alt,
+      placement: block.content_image.placement,
+      fit: block.content_image.fit,
+      aspectRatio: block.content_image.aspect_ratio,
+      widthPercent: block.content_image.width_percent,
+      positionX: block.content_image.position_x,
+      positionY: block.content_image.position_y,
+    } : undefined,
+    sizePreset: block.size_preset,
+    paddingY: block.padding_y,
   };
 }
 
 export function EnterpriseTemplateBlocks({
   blocks,
+  pageBackground,
+  pageTextTone,
   directory,
   identity,
   identityData,
@@ -102,6 +127,8 @@ export function EnterpriseTemplateBlocks({
   onOpenProduct,
 }: {
   blocks: PublicEnterpriseTemplateBlock[];
+  pageBackground?: NonNullable<PublicCardData["enterprise_template"]>["page_background"];
+  pageTextTone?: NonNullable<PublicCardData["enterprise_template"]>["page_text_tone"];
   directory?: boolean | CardPageDirectoryOptions;
   identity?: ReactNode;
   identityData?: CardPageIdentity;
@@ -122,6 +149,17 @@ export function EnterpriseTemplateBlocks({
     <CardPageExperience
       className="public-shared-card-page"
       blocks={blocks.map(toCardPageBlock)}
+      pageBackground={pageBackground ? {
+        kind: pageBackground.kind,
+        color: pageBackground.color,
+        imageUrl: pageBackground.image_url,
+        fit: pageBackground.fit,
+        positionX: pageBackground.position_x,
+        positionY: pageBackground.position_y,
+        overlayColor: pageBackground.overlay_color,
+        overlayOpacity: pageBackground.overlay_opacity,
+      } : undefined}
+      pageTextTone={pageTextTone}
       data={{
         identity: identityData,
         products: products.map(toCardPageProduct),

@@ -8,11 +8,22 @@ import { adminLightTheme } from "./theme";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Application root element is missing");
+const applicationRoot = createRoot(root);
 
-createRoot(root).render(
-  <StrictMode>
-    <FluentProvider theme={adminLightTheme} className="fluent-root">
-      <App />
-    </FluentProvider>
-  </StrictMode>,
-);
+async function renderApplication() {
+  const content = import.meta.env.DEV && window.location.pathname === "/__dev/card-editor"
+    ? await import("./dev/StandaloneCardEditor").then(({ StandaloneCardEditor }) => (
+        <StandaloneCardEditor />
+      ))
+    : <App />;
+
+  applicationRoot.render(
+    <StrictMode>
+      <FluentProvider theme={adminLightTheme} className="fluent-root">
+        {content}
+      </FluentProvider>
+    </StrictMode>,
+  );
+}
+
+void renderApplication();

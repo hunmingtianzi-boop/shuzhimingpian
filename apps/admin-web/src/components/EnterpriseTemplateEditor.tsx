@@ -40,6 +40,7 @@ import type {
   CaseStudy,
   CompanyProfile,
   EnterpriseTemplateBlock,
+  EnterpriseTemplateBlockBackground,
   EnterpriseTemplateBlockType,
   EnterpriseTemplateThemeKey,
   ManagedCard,
@@ -49,6 +50,7 @@ import type {
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
 import { TemplateBlockInspector } from "./enterprise-template/TemplateBlockInspector";
 import { TemplateCanvas } from "./enterprise-template/TemplateCanvas";
+import { TemplatePageSettings } from "./enterprise-template/TemplatePageSettings";
 import { FormFeedback } from "./FormFeedback";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -265,9 +267,25 @@ type EnterpriseTemplateEditorProps = {
   onDraftConfirm?: (document: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
+    pageBackground?: EnterpriseTemplateBlockBackground;
+    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
   }) => void | Promise<void>;
+  dataSource?: EnterpriseTemplateEditorDataSource;
 };
+
+export type EnterpriseTemplateEditorDataSource = Pick<
+  typeof adminApi,
+  | "getEnterpriseTemplate"
+  | "getCardComposerDefault"
+  | "listProducts"
+  | "listCaseStudies"
+  | "getCompanyProfile"
+  | "listSelectableFaqDocuments"
+  | "uploadCardAsset"
+  | "updateEnterpriseTemplate"
+  | "updateCardComposerDefault"
+>;
 
 export function EnterpriseTemplateEditor({
   card,
@@ -279,6 +297,7 @@ export function EnterpriseTemplateEditor({
   onRequestPublish,
   onSaved,
   onDraftConfirm,
+  dataSource = adminApi,
 }: EnterpriseTemplateEditorProps) {
   const [blocks, setBlocks] = useState<EnterpriseTemplateBlock[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -287,6 +306,8 @@ export function EnterpriseTemplateEditor({
   const [company, setCompany] = useState<CompanyProfile>();
   const [version, setVersion] = useState<number>();
   const [themeKey, setThemeKey] = useState<EnterpriseTemplateThemeKey>("brand");
+  const [pageBackground, setPageBackground] = useState<EnterpriseTemplateBlockBackground>();
+  const [pageTextTone, setPageTextTone] = useState<"auto" | "light" | "dark">("auto");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string>();
@@ -295,8 +316,12 @@ export function EnterpriseTemplateEditor({
   const [error, setError] = useState<ApiError>();
   const [previewMode, setPreviewMode] = useState<"draft" | "published">("draft");
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
+  const [mobilePane, setMobilePane] = useState<"structure" | "preview" | "content">("structure");
   const galleryInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const coverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const backgroundInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const contentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pageBackgroundInputRef = useRef<HTMLInputElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -311,16 +336,16 @@ export function EnterpriseTemplateEditor({
     setDirty(false);
     void Promise.all([
       card
-        ? adminApi.getEnterpriseTemplate(card.id)
+        ? dataSource.getEnterpriseTemplate(card.id)
         : creationDraft?.sourceCardId
-          ? adminApi.getEnterpriseTemplate(creationDraft.sourceCardId)
-          : adminApi.getCardComposerDefault(
+          ? dataSource.getEnterpriseTemplate(creationDraft.sourceCardId)
+          : dataSource.getCardComposerDefault(
               creationDraft?.cardKind ?? defaultKind as ManagedCard["cardKind"],
             ),
-      adminApi.listProducts(),
-      adminApi.listCaseStudies(),
-      adminApi.getCompanyProfile(),
-      adminApi.listSelectableFaqDocuments(),
+      dataSource.listProducts(),
+      dataSource.listCaseStudies(),
+      dataSource.getCompanyProfile(),
+      dataSource.listSelectableFaqDocuments(),
     ])
       .then(([template, productResult, caseResult, companyProfile, faqResult]) => {
         if (!active) return;
@@ -328,6 +353,8 @@ export function EnterpriseTemplateEditor({
         setBlocks(document.blocks);
         setVersion(template.version);
         setThemeKey(document.themeKey);
+        setPageBackground(document.pageBackground);
+        setPageTextTone(document.pageTextTone ?? "auto");
         setProducts(productResult);
         setCases(caseResult);
         setCompany(companyProfile);
@@ -350,7 +377,7 @@ export function EnterpriseTemplateEditor({
     return () => {
       active = false;
     };
-  }, [card, creationDraft, defaultKind, open]);
+  }, [card, creationDraft, dataSource, defaultKind, open]);
 
   const mutateBlocks = (
     updater: (current: EnterpriseTemplateBlock[]) => EnterpriseTemplateBlock[],
@@ -370,6 +397,18 @@ export function EnterpriseTemplateEditor({
     );
   };
 
+  const updatePageAppearance = (
+    background: EnterpriseTemplateBlockBackground | undefined,
+    textTone = pageTextTone,
+  ) => {
+    setPageBackground(background);
+    setPageTextTone(background ? textTone : "auto");
+    setPreviewMode("draft");
+    setDirty(true);
+    setSavedNotice(undefined);
+    setError(undefined);
+  };
+
   const moveBlock = (index: number, direction: -1 | 1) => {
     mutateBlocks((current) => moveEnterpriseTemplateBlock(current, index, direction));
   };
@@ -387,6 +426,18 @@ export function EnterpriseTemplateEditor({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     moveBlockById(String(active.id), String(over.id));
+  };
+
+  const showMobilePane = (
+    pane: "structure" | "preview" | "content",
+    targetId: string,
+  ) => {
+    setMobilePane(pane);
+    document.getElementById(targetId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "start",
+    });
   };
 
   const duplicateBlock = (index: number) => {
@@ -440,7 +491,7 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     try {
       const uploaded = [];
-      for (const file of files) uploaded.push(await adminApi.uploadCardAsset(file));
+      for (const file of files) uploaded.push(await dataSource.uploadCardAsset(file));
       updateBlock(index, {
         imageUrls: [...(block.imageUrls ?? []), ...uploaded.map((item) => item.url)],
       });
@@ -468,10 +519,114 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:cover`);
     setError(undefined);
     try {
-      const uploaded = await adminApi.uploadCardAsset(file);
+      const uploaded = await dataSource.uploadCardAsset(file);
       updateBlock(index, { videoCoverUrl: uploaded.url });
     } catch (cause) {
       setError(toApiError(cause, "上传视频封面失败。", "TEMPLATE_COVER_UPLOAD_FAILED"));
+    } finally {
+      setUploadingKey(undefined);
+    }
+  };
+
+  const uploadBackgroundImage = async (
+    index: number,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateImage(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    const block = blocks[index];
+    if (!block) return;
+    setUploadingKey(`${block.id}:background`);
+    setError(undefined);
+    try {
+      const uploaded = await dataSource.uploadCardAsset(file);
+      updateBlock(index, {
+        background: {
+          kind: "image",
+          imageUrl: uploaded.url,
+          color: block.background?.color ?? "#eef3f4",
+          fit: block.background?.fit ?? "cover",
+          positionX: block.background?.positionX ?? 50,
+          positionY: block.background?.positionY ?? 50,
+          overlayColor: block.background?.overlayColor ?? "#000000",
+          overlayOpacity: block.background?.overlayOpacity ?? 0.42,
+        },
+      });
+    } catch (cause) {
+      setError(toApiError(cause, "上传板块背景失败。", "TEMPLATE_BACKGROUND_UPLOAD_FAILED"));
+    } finally {
+      setUploadingKey(undefined);
+    }
+  };
+
+  const uploadContentImage = async (
+    index: number,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateImage(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    const block = blocks[index];
+    if (!block || block.type !== "rich_text") return;
+    setUploadingKey(`${block.id}:content-image`);
+    setError(undefined);
+    try {
+      const uploaded = await dataSource.uploadCardAsset(file);
+      updateBlock(index, {
+        contentImage: {
+          url: uploaded.url,
+          alt: block.contentImage?.alt,
+          placement: block.contentImage?.placement ?? "top",
+          fit: block.contentImage?.fit ?? "cover",
+          aspectRatio: block.contentImage?.aspectRatio ?? "wide",
+          widthPercent: block.contentImage?.widthPercent ?? 100,
+          positionX: block.contentImage?.positionX ?? 50,
+          positionY: block.contentImage?.positionY ?? 50,
+        },
+      });
+    } catch (cause) {
+      setError(toApiError(cause, "上传内容图片失败。", "TEMPLATE_CONTENT_IMAGE_UPLOAD_FAILED"));
+    } finally {
+      setUploadingKey(undefined);
+    }
+  };
+
+  const uploadPageBackground = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateImage(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setUploadingKey("page:background");
+    setError(undefined);
+    try {
+      const uploaded = await dataSource.uploadCardAsset(file);
+      updatePageAppearance({
+        kind: "image",
+        imageUrl: uploaded.url,
+        color: pageBackground?.color ?? "#eef3f4",
+        fit: pageBackground?.fit ?? "cover",
+        positionX: pageBackground?.positionX ?? 50,
+        positionY: pageBackground?.positionY ?? 50,
+        overlayColor: pageBackground?.overlayColor ?? "#000000",
+        overlayOpacity: pageBackground?.overlayOpacity ?? 0.42,
+      });
+    } catch (cause) {
+      setError(toApiError(cause, "上传整体背景失败。", "TEMPLATE_PAGE_BACKGROUND_UPLOAD_FAILED"));
     } finally {
       setUploadingKey(undefined);
     }
@@ -486,12 +641,16 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     try {
       const template = card
-        ? await adminApi.updateEnterpriseTemplate(card.id, version, themeKey, nextBlocks)
-        : await adminApi.updateCardComposerDefault(defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks);
+        ? await dataSource.updateEnterpriseTemplate(card.id, version, themeKey, nextBlocks, pageBackground, pageTextTone)
+        : await dataSource.updateCardComposerDefault(
+            defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks, pageBackground, pageTextTone,
+          );
       const document = "draft" in template ? template.draft : template.document;
       setBlocks(document.blocks);
       setVersion(template.version);
       setThemeKey(document.themeKey);
+      setPageBackground(document.pageBackground);
+      setPageTextTone(document.pageTextTone ?? "auto");
       setDirty(false);
       setSavedNotice(savedNotice);
       const updatedCard = card ? { ...card, version: template.version } : undefined;
@@ -520,6 +679,8 @@ export function EnterpriseTemplateEditor({
       await onDraftConfirm({
         schemaVersion: 1,
         themeKey,
+        pageBackground,
+        pageTextTone,
         blocks: normalizeEnterpriseTemplateBlockOrder(blocks),
       });
       onClose();
@@ -630,7 +791,25 @@ export function EnterpriseTemplateEditor({
                   <span>正在读取页面结构与真实业务数据…</span>
                 </div>
               ) : (card || defaultKind || creationDraft) ? (
-                <div className="enterprise-template-composer">
+                <>
+                  <nav className="template-mobile-pane-tabs" aria-label="编辑器区域切换">
+                    <button
+                      type="button"
+                      aria-current={mobilePane === "structure" ? "page" : undefined}
+                      onClick={() => showMobilePane("structure", "template-editor-structure")}
+                    >结构</button>
+                    <button
+                      type="button"
+                      aria-current={mobilePane === "preview" ? "page" : undefined}
+                      onClick={() => showMobilePane("preview", "template-editor-preview")}
+                    >画布</button>
+                    <button
+                      type="button"
+                      aria-current={mobilePane === "content" ? "page" : undefined}
+                      onClick={() => showMobilePane("content", "template-editor-content")}
+                    >属性</button>
+                  </nav>
+                  <div className="enterprise-template-composer">
                   <aside
                     className="template-composer-pane template-structure-pane"
                     id="template-editor-structure"
@@ -641,6 +820,16 @@ export function EnterpriseTemplateEditor({
                       <strong>{blocks.length}/24</strong>
                     </header>
                     <p className="template-pane-hint">拖动手柄调整顺序；点击模块后，中间页面和右侧属性会同步选中。</p>
+
+                    <TemplatePageSettings
+                      background={pageBackground}
+                      textTone={pageTextTone}
+                      busy={busy}
+                      uploading={uploadingKey === "page:background"}
+                      inputRef={pageBackgroundInputRef}
+                      onChange={updatePageAppearance}
+                      onUpload={(event) => void uploadPageBackground(event)}
+                    />
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStructureDragEnd}>
                       <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
@@ -735,6 +924,8 @@ export function EnterpriseTemplateEditor({
                         ) : (
                           <TemplateCanvas
                             blocks={blocks}
+                            pageBackground={pageBackground}
+                            pageTextTone={pageTextTone}
                             products={publishedProducts}
                             cases={publishedCases}
                             faqItems={selectableFaqs}
@@ -782,12 +973,16 @@ export function EnterpriseTemplateEditor({
                         labels={enterpriseTemplateBlockLabels}
                         galleryInputRefs={galleryInputRefs}
                         coverInputRefs={coverInputRefs}
+                        backgroundInputRefs={backgroundInputRefs}
+                        contentImageInputRefs={contentImageInputRefs}
                         onUpdate={(patch) => updateBlock(selectedIndex >= 0 ? selectedIndex : 0, patch)}
                         onMove={(direction) => moveBlock(selectedIndex >= 0 ? selectedIndex : 0, direction)}
                         onDuplicate={() => duplicateBlock(selectedIndex >= 0 ? selectedIndex : 0)}
                         onRemove={() => removeBlock(selectedIndex >= 0 ? selectedIndex : 0)}
                         onGalleryUpload={(event) => void uploadGalleryImages(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onCoverUpload={(event) => void uploadVideoCover(selectedIndex >= 0 ? selectedIndex : 0, event)}
+                        onBackgroundUpload={(event) => void uploadBackgroundImage(selectedIndex >= 0 ? selectedIndex : 0, event)}
+                        onContentImageUpload={(event) => void uploadContentImage(selectedIndex >= 0 ? selectedIndex : 0, event)}
                       />
                     ) : <p className="template-inspector-empty">请从左侧结构或中间页面选择一个模块。</p>}
 
@@ -805,7 +1000,8 @@ export function EnterpriseTemplateEditor({
                       </section>
                     ) : null}
                   </aside>
-                </div>
+                  </div>
+                </>
               ) : null}
             </DialogContent>
             <DialogActions className="enterprise-template-actions enterprise-template-actions-v2">

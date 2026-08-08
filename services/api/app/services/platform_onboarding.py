@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any, Literal, Mapping, cast
 
 from sqlalchemy import func, insert, select, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai import (
@@ -21,7 +18,6 @@ from app.ai import (
     ProviderCredentials,
     StructuredOutputMode,
 )
-from app.ai.prompts import DEFAULT_PROMPT_VERSION, PromptRegistry
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ConfirmPlatformOnboardingRequest,
@@ -42,18 +38,19 @@ from app.db.models import (
     LifecycleStatus,
     Membership,
     MembershipRole,
-    ModelConfig,
     OutboxEvent,
     OutboxStatus,
     PlatformOnboardingSession,
-    PromptStatus,
-    PromptVersion,
     StaffCredential,
     Tenant,
     TenantType,
     User,
 )
 from app.db.session import set_rls_context
+from app.services.ai_configuration import (
+    ENVIRONMENT_LLM_SECRET_REF,
+    provision_chat_configuration,
+)
 from app.services.audit import append_audit
 from app.services.knowledge_import_store import KnowledgeImportScope, KnowledgeImportStore
 from app.services.platform_llm_profiles import (
@@ -766,12 +763,15 @@ class PlatformOnboardingService:
                 actor_user_id=actor.user_id,
                 actor_session_id=actor.session_id,
             )
-            await self._provision_chat_configuration(
+            await provision_chat_configuration(
                 session,
                 tenant_id=row.tenant_id,
                 company_id=row.company_id,
                 published_by=row.admin_user_id,
                 published_at=now,
+                settings=self._settings,
+                secret_ref=ENVIRONMENT_LLM_SECRET_REF,
+                change_summary="Provisioned with enterprise onboarding",
             )
             await session.flush()
             await self._set_platform_scope(session, actor)
@@ -836,87 +836,6 @@ class PlatformOnboardingService:
             await session.flush()
             await session.refresh(row)
             return self._record(row)
-
-    async def _provision_chat_configuration(
-        self,
-        session: AsyncSession,
-        *,
-        tenant_id: uuid.UUID,
-        company_id: uuid.UUID,
-        published_by: uuid.UUID,
-        published_at: datetime,
-    ) -> None:
-        prompt = PromptRegistry().get(DEFAULT_PROMPT_VERSION)
-        prompt_id = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"{company_id}:rag-prompt:{prompt.version}",
-        )
-        await session.execute(
-            pg_insert(PromptVersion)
-            .values(
-                id=prompt_id,
-                tenant_id=tenant_id,
-                company_id=company_id,
-                name=prompt.version,
-                purpose="rag_answer",
-                version_number=1,
-                content=prompt.system_text,
-                content_hash=hashlib.sha256(prompt.system_text.encode("utf-8")).hexdigest(),
-                change_summary="Provisioned with enterprise onboarding",
-                evaluation_result={"status": "requires_pilot_evaluation"},
-                status=PromptStatus.PUBLISHED,
-                published_by=published_by,
-                published_at=published_at,
-            )
-            .on_conflict_do_nothing(constraint="uq_prompt_versions_name_version")
-        )
-
-        model_config_id = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"{company_id}:chat:{self._settings.llm_provider}",
-        )
-        await session.execute(
-            pg_insert(ModelConfig)
-            .values(
-                id=model_config_id,
-                tenant_id=tenant_id,
-                company_id=company_id,
-                purpose="chat",
-                provider=self._settings.llm_provider,
-                model_name=self._settings.llm_model,
-                endpoint_region=None,
-                secret_ref="environment-variable:LLM_API_KEY",  # noqa: S106
-                timeout_ms=round(self._settings.llm_timeout_seconds * 1_000),
-                max_retries=self._settings.llm_max_retries,
-                max_concurrency=self._settings.llm_max_concurrency,
-                daily_budget_cny=Decimal(str(self._settings.model_daily_budget_cny)),
-                data_retention="no_training",
-                enabled=True,
-                parameters={
-                    "thinking": self._settings.llm_thinking,
-                    "reasoning_effort": self._settings.llm_reasoning_effort,
-                    "temperature": self._settings.llm_temperature,
-                    "max_tokens": self._settings.llm_max_output_tokens,
-                },
-            )
-            .on_conflict_do_update(
-                constraint="uq_model_configs_purpose_provider",
-                set_={
-                    "model_name": self._settings.llm_model,
-                    "timeout_ms": round(self._settings.llm_timeout_seconds * 1_000),
-                    "max_retries": self._settings.llm_max_retries,
-                    "max_concurrency": self._settings.llm_max_concurrency,
-                    "daily_budget_cny": Decimal(str(self._settings.model_daily_budget_cny)),
-                    "enabled": True,
-                    "parameters": {
-                        "thinking": self._settings.llm_thinking,
-                        "reasoning_effort": self._settings.llm_reasoning_effort,
-                        "temperature": self._settings.llm_temperature,
-                        "max_tokens": self._settings.llm_max_output_tokens,
-                    },
-                },
-            )
-        )
 
     @staticmethod
     async def _require_imports_settled(

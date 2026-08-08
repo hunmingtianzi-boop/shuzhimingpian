@@ -25,6 +25,7 @@ import { useState } from "react";
 import type {
   CaseStudy,
   EnterpriseTemplateBlock,
+  EnterpriseTemplateBlockBackground,
   ManagedCard,
   Product,
   SelectableFaqDocument,
@@ -33,6 +34,8 @@ import { resolveApiResourceUrl } from "../../lib/resourceUrl";
 
 export type TemplateCanvasProps = {
   blocks: EnterpriseTemplateBlock[];
+  pageBackground?: EnterpriseTemplateBlockBackground;
+  pageTextTone?: "auto" | "light" | "dark";
   products: Product[];
   cases: CaseStudy[];
   faqItems: SelectableFaqDocument[];
@@ -151,6 +154,8 @@ function CanvasAssistantView({
 
 export function TemplateCanvas({
   blocks,
+  pageBackground,
+  pageTextTone,
   products,
   cases,
   faqItems,
@@ -190,6 +195,8 @@ export function TemplateCanvas({
         ) : (
           <CardPageExperience
             blocks={blocks}
+            pageBackground={pageBackground}
+            pageTextTone={pageTextTone}
             className="template-shared-card-page"
             data={{
               identity: {

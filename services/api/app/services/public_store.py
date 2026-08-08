@@ -15,7 +15,6 @@ from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.ai.prompts import DEFAULT_PROMPT_VERSION, PromptRegistry
 from app.ai.schemas import AIAnswer, ChatMessage, ForbiddenTopicPolicy, RefusalCode
 from app.api.catalog_schemas import EnterpriseTemplateDocument
 from app.api.errors import ApiError
@@ -84,6 +83,11 @@ from app.db.models import (
     VisitSummary,
     WeComCardContactWay,
 )
+from app.services.ai_configuration import (
+    ENVIRONMENT_LLM_SECRET_REF,
+    provision_chat_configuration,
+)
+from app.services.enterprise_template_defaults import merge_default_template_blocks
 
 
 @dataclass(frozen=True, slots=True)
@@ -849,15 +853,6 @@ class PublicStore:
         by a contradictory configuration error.
         """
 
-        prompt = PromptRegistry().get(DEFAULT_PROMPT_VERSION)
-        prompt_id = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"{principal.company_id}:rag-prompt:{prompt.version}",
-        )
-        model_config_id = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"{principal.company_id}:chat:{runtime_settings.llm_provider}",
-        )
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal)
             card = await session.get(Card, principal.card_id)
@@ -886,83 +881,19 @@ class PublicStore:
                     "企业 AI 配置尚未完成，请联系管理员",
                 )
 
-            await session.execute(
-                pg_insert(PromptVersion)
-                .values(
-                    id=prompt_id,
-                    tenant_id=principal.tenant_id,
-                    company_id=principal.company_id,
-                    name=prompt.version,
-                    purpose="rag_answer",
-                    version_number=1,
-                    content=prompt.system_text,
-                    content_hash=hashlib.sha256(
-                        prompt.system_text.encode("utf-8")
-                    ).hexdigest(),
-                    change_summary="Auto-provisioned for the active enterprise AI runtime",
-                    evaluation_result={"status": "requires_pilot_evaluation"},
-                    status=PromptStatus.PUBLISHED,
-                    published_by=publisher_id,
-                    published_at=datetime.now(UTC),
-                )
-                .on_conflict_do_nothing(constraint="uq_prompt_versions_name_version")
-            )
-            await session.execute(
-                pg_insert(ModelConfig)
-                .values(
-                    id=model_config_id,
-                    tenant_id=principal.tenant_id,
-                    company_id=principal.company_id,
-                    purpose="chat",
-                    provider=runtime_settings.llm_provider,
-                    model_name=runtime_settings.llm_model,
-                    endpoint_region=None,
-                    secret_ref=(
-                        f"platform-llm-profile:{profile_id}"
-                        if profile_id is not None
-                        else "environment-variable:LLM_API_KEY"
-                    ),
-                    timeout_ms=round(runtime_settings.llm_timeout_seconds * 1_000),
-                    max_retries=runtime_settings.llm_max_retries,
-                    max_concurrency=runtime_settings.llm_max_concurrency,
-                    daily_budget_cny=Decimal(
-                        str(runtime_settings.model_daily_budget_cny)
-                    ),
-                    data_retention="no_training",
-                    enabled=True,
-                    parameters={
-                        "thinking": runtime_settings.llm_thinking,
-                        "reasoning_effort": runtime_settings.llm_reasoning_effort,
-                        "temperature": runtime_settings.llm_temperature,
-                        "max_tokens": runtime_settings.llm_max_output_tokens,
-                    },
-                )
-                .on_conflict_do_update(
-                    constraint="uq_model_configs_purpose_provider",
-                    set_={
-                        "model_name": runtime_settings.llm_model,
-                        "secret_ref": (
-                            f"platform-llm-profile:{profile_id}"
-                            if profile_id is not None
-                            else "environment-variable:LLM_API_KEY"
-                        ),
-                        "timeout_ms": round(
-                            runtime_settings.llm_timeout_seconds * 1_000
-                        ),
-                        "max_retries": runtime_settings.llm_max_retries,
-                        "max_concurrency": runtime_settings.llm_max_concurrency,
-                        "daily_budget_cny": Decimal(
-                            str(runtime_settings.model_daily_budget_cny)
-                        ),
-                        "enabled": True,
-                        "parameters": {
-                            "thinking": runtime_settings.llm_thinking,
-                            "reasoning_effort": runtime_settings.llm_reasoning_effort,
-                            "temperature": runtime_settings.llm_temperature,
-                            "max_tokens": runtime_settings.llm_max_output_tokens,
-                        },
-                    },
-                )
+            await provision_chat_configuration(
+                session,
+                tenant_id=principal.tenant_id,
+                company_id=principal.company_id,
+                published_by=publisher_id,
+                published_at=datetime.now(UTC),
+                settings=runtime_settings,
+                secret_ref=(
+                    f"platform-llm-profile:{profile_id}"
+                    if profile_id is not None
+                    else ENVIRONMENT_LLM_SECRET_REF
+                ),
+                change_summary="Auto-provisioned for the active enterprise AI runtime",
             )
 
     async def load_forbidden_topic_rules(
@@ -1933,102 +1864,10 @@ async def _public_enterprise_template(
 ) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
-    default_blocks = [
-        {
-            "id": "identity",
-            "type": "identity",
-            "visible": True,
-            "directory_enabled": False,
-            "sort_order": 0,
-            "title": "基础名片",
-        },
-        {"id": "overview", "type": "rich_text", "visible": True, "sort_order": 1, "title": "概览"},
-        {"id": "intro", "type": "rich_text", "visible": True, "sort_order": 2, "title": "企业介绍"},
-        {
-            "id": "business",
-            "type": "business_collection",
-            "visible": True,
-            "sort_order": 3,
-            "title": "核心业务",
-        },
-        {
-            "id": "cases",
-            "type": "case_collection",
-            "visible": True,
-            "sort_order": 4,
-            "title": "代表案例",
-        },
-        {
-            "id": "trust",
-            "type": "trust_panel",
-            "visible": True,
-            "sort_order": 5,
-            "title": "企业资料",
-        },
-        {"id": "faq", "type": "faq", "visible": True, "sort_order": 6, "title": "常见问题"},
-        {
-            "id": "ai",
-            "type": "ai_assistant",
-            "visible": True,
-            "sort_order": 7,
-            "title": "企业 AI 助手",
-        },
-    ]
     raw_blocks = value.get("blocks") if isinstance(value.get("blocks"), list) else []
-    indexed = [(index, block) for index, block in enumerate(raw_blocks) if isinstance(block, dict)]
-    merged = [
-        block
-        for _, block in sorted(
-            indexed,
-            key=lambda item: (
-                item[1].get("sort_order")
-                if isinstance(item[1].get("sort_order"), int)
-                else item[0],
-                item[0],
-            ),
-        )
-    ]
-    matched_default_ids: set[str] = set()
-
-    def matches_default(block: dict[str, Any], default_block: dict[str, Any]) -> bool:
-        return bool(
-            block.get("id") == default_block["id"]
-            or (default_block["type"] != "rich_text" and block.get("type") == default_block["type"])
-            or (
-                default_block["type"] == "rich_text"
-                and block.get("type") == "rich_text"
-                and block.get("title") == default_block.get("title")
-            )
-        )
-
-    for index, block in enumerate(merged):
-        match = next(
-            (
-                default_block
-                for default_block in default_blocks
-                if default_block["id"] not in matched_default_ids
-                and matches_default(block, default_block)
-            ),
-            None,
-        )
-        if match is None:
-            continue
-        matched_default_ids.add(match["id"])
-        if match["type"] == "identity":
-            merged[index] = {
-                **block,
-                "visible": True,
-                "directory_enabled": block.get("directory_enabled", match["directory_enabled"]),
-            }
-
-    for default_block in default_blocks:
-        if default_block["id"] in matched_default_ids:
-            continue
-        insert_at = min(int(default_block["sort_order"]), len(merged))
-        merged.insert(insert_at, default_block)
     candidate = {
         **value,
-        "blocks": [{**block, "sort_order": index} for index, block in enumerate(merged)],
+        "blocks": merge_default_template_blocks(raw_blocks),
     }
     try:
         document = EnterpriseTemplateDocument.model_validate(candidate)
@@ -2085,6 +1924,10 @@ async def _public_enterprise_template(
         asset_urls = [*block.image_urls]
         if block.video_cover_url:
             asset_urls.append(block.video_cover_url)
+        if block.background and block.background.image_url:
+            asset_urls.append(block.background.image_url)
+        if block.content_image:
+            asset_urls.append(block.content_image.url)
         if any(not _is_scoped_card_asset(url, company_id) for url in asset_urls):
             continue
         if block.type == "business_collection" and set(block.product_ids) - set(public_products):
@@ -2119,9 +1962,20 @@ async def _public_enterprise_template(
                 if (case_study := public_cases.get(case_id)) is not None
             ]
         blocks.append(payload)
+    page_background = document.page_background
+    if (
+        page_background
+        and page_background.image_url
+        and not _is_scoped_card_asset(page_background.image_url, company_id)
+    ):
+        page_background = None
     return {
         "schema_version": document.schema_version,
         "theme_key": document.theme_key,
+        "page_background": (
+            page_background.model_dump(mode="json") if page_background else None
+        ),
+        "page_text_tone": document.page_text_tone,
         "blocks": blocks,
     }
 
