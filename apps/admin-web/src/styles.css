@@ -5270,6 +5270,13 @@ a:hover {
   border-radius: 4px;
 }
 
+.template-custom-text-color {
+  display: grid;
+  align-items: end;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 @media (max-width: 640px) {
   .template-overlay-controls {
     grid-template-columns: 1fr;

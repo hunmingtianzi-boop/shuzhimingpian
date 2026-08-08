@@ -401,7 +401,7 @@ export function TemplateBlockInspector({
         <div className="template-media-heading">
           <div>
             <strong id={`block-background-${block.id}`}>板块背景</strong>
-            <span>背景不会改变内容来源，只影响当前板块的展示。</span>
+            <span>选择“无”会透出整体页面背景；单独设置纯色或图片时则以当前板块为准。</span>
           </div>
         </div>
         <RadioGroup
@@ -544,6 +544,25 @@ export function TemplateBlockInspector({
             <Radio value="light" label="浅色字" disabled={busy} />
           </RadioGroup>
         ) : null}
+
+        <div className="template-custom-text-color">
+          <Field label="自定义文字颜色">
+            <input
+              className="template-color-input"
+              type="color"
+              aria-label="自定义文字颜色"
+              value={block.textColor ?? (block.textTone === "light" ? "#f7fbfc" : "#18233a")}
+              disabled={busy}
+              onChange={(event) => onUpdate({ textColor: event.target.value })}
+            />
+          </Field>
+          <Button
+            appearance="subtle"
+            size="small"
+            disabled={busy || !block.textColor}
+            onClick={() => onUpdate({ textColor: undefined })}
+          >恢复自动</Button>
+        </div>
       </section>
 
       {block.type === "image_gallery" ? (

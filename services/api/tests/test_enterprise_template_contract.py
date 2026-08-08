@@ -95,6 +95,7 @@ def test_template_accepts_block_backgrounds_and_rich_text_content_images() -> No
                         "overlay_opacity": 0.48,
                     },
                     "text_tone": "light",
+                    "text_color": "#F4C36A",
                     "content_image": {
                         "url": "https://cdn.example.com/story.webp",
                         "alt": "团队共创",
@@ -117,6 +118,7 @@ def test_template_accepts_block_backgrounds_and_rich_text_content_images() -> No
     assert story.background.position_x == 38
     assert story.background.overlay_opacity == 0.48
     assert story.text_tone == "light"
+    assert story.text_color == "#F4C36A"
     assert story.content_image is not None
     assert story.content_image.placement == "left"
     assert story.content_image.aspect_ratio == "square"

@@ -914,7 +914,7 @@ button.cpr-case-item:focus-visible {
   padding: 0 10px;
   justify-content: center;
   gap: 5px;
-  color: #758294;
+  color: var(--cpr-text-soft);
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -955,7 +955,7 @@ button.cpr-case-item:focus-visible {
 
 .cpr-section-title h2 {
   padding-left: 13px;
-  color: #263247;
+  color: var(--cpr-text);
   font-size: 17px;
   font-weight: 750;
   letter-spacing: -0.03em;
@@ -1088,16 +1088,16 @@ button.cpr-case-item:focus-visible {
 
 .cpr-tags span {
   padding: 5px 9px;
-  color: #677386;
-  background: #f7f8fb;
-  border-color: #dce2eb;
+  color: var(--cpr-text-soft);
+  background: var(--cpr-surface-raised);
+  border-color: var(--cpr-line);
   border-radius: 7px;
   font-size: 11px;
 }
 
 .cpr-block-intro,
 .cpr-rich-text p {
-  color: #445568;
+  color: var(--cpr-text-soft);
   font-size: 14px;
   line-height: 1.78;
 }
@@ -1129,7 +1129,7 @@ button.cpr-case-item:focus-visible {
 }
 
 .cpr-positioning strong {
-  color: #27384a;
+  color: var(--cpr-text);
   font-size: 16px;
   line-height: 1.55;
   letter-spacing: -0.02em;
@@ -1149,7 +1149,11 @@ button.cpr-case-item:focus-visible {
 
 .cpr-product-list--single .cpr-product-item {
   min-height: 152px;
-  background: linear-gradient(130deg, #eef8f8, #f8fbfb);
+  background: linear-gradient(
+    130deg,
+    color-mix(in srgb, var(--cpr-accent-soft) 75%, var(--cpr-surface)),
+    var(--cpr-surface-raised)
+  );
 }
 
 .cpr-product-item {
@@ -1344,12 +1348,28 @@ button.cpr-case-item:focus-visible {
   --cpr-line-strong: rgba(247, 251, 252, 0.38);
 }
 
+/* The compact mobile layer above re-declares the renderer variables. Reapply
+ * the page tone after that layer so a dark page cannot fall back to dark text. */
+.cpr-experience--tone-light {
+  --cpr-text: #f7fbfc;
+  --cpr-text-soft: rgba(247, 251, 252, 0.82);
+  --cpr-text-faint: rgba(247, 251, 252, 0.68);
+  --cpr-line: rgba(247, 251, 252, 0.24);
+  --cpr-line-strong: rgba(247, 251, 252, 0.38);
+}
+
 .cpr-block-inner--tone-dark {
   --cpr-text: var(--text, #172131);
   --cpr-text-soft: var(--text-soft, #586979);
   --cpr-text-faint: var(--text-faint, #76858e);
   --cpr-line: var(--line, rgba(23, 33, 49, 0.13));
   --cpr-line-strong: var(--line-strong, rgba(23, 33, 49, 0.22));
+}
+
+.cpr-block-inner--custom-text {
+  --cpr-text: var(--cpr-block-text-color);
+  --cpr-text-soft: color-mix(in srgb, var(--cpr-block-text-color) 78%, transparent);
+  --cpr-text-faint: color-mix(in srgb, var(--cpr-block-text-color) 62%, transparent);
 }
 
 .cpr-block-inner--tone-light .cpr-section-title h2,
@@ -1403,6 +1423,21 @@ button.cpr-case-item:focus-visible {
   backdrop-filter: blur(10px);
 }
 
+.cpr-experience--tone-light .cpr-rich-text,
+.cpr-experience--tone-light .cpr-positioning,
+.cpr-experience--tone-light .cpr-tags span,
+.cpr-experience--tone-light .cpr-identity--enterprise .cpr-identity-portrait {
+  background: rgb(7 20 27 / 48%);
+  border-color: rgb(247 251 252 / 22%);
+  backdrop-filter: blur(10px);
+}
+
+.public-shared-card-page.cpr-experience--tone-light .cpr-directory {
+  background: rgb(7 20 27 / 92%);
+  border-color: rgb(247 251 252 / 18%);
+  box-shadow: 0 7px 16px rgb(0 0 0 / 18%);
+}
+
 .cpr-experience--tone-light .cpr-product-copy p,
 .cpr-experience--tone-light .cpr-case-item > p,
 .cpr-experience--tone-light .cpr-case-meta small,
@@ -1421,11 +1456,44 @@ button.cpr-case-item:focus-visible {
   backdrop-filter: none;
 }
 
+.cpr-experience--tone-light .cpr-block-inner--tone-dark .cpr-rich-text,
+.cpr-experience--tone-light .cpr-block-inner--tone-dark .cpr-positioning,
+.cpr-experience--tone-light .cpr-block-inner--tone-dark .cpr-tags span,
+.cpr-experience--tone-light .cpr-block-inner--tone-dark .cpr-identity--enterprise .cpr-identity-portrait {
+  background: var(--cpr-surface-raised);
+  border-color: var(--cpr-line);
+  backdrop-filter: none;
+}
+
 .cpr-experience--tone-light .cpr-block-inner--tone-dark .cpr-cta-panel {
   color: var(--cpr-surface);
   background: var(--cpr-text);
   border-color: transparent;
   backdrop-filter: none;
+}
+
+/* A user-selected block color is the final authority over theme/tone presets. */
+.cpr-block-inner--custom-text .cpr-block-foreground :where(
+  h1,
+  h2,
+  h3,
+  p,
+  strong,
+  small,
+  summary,
+  .cpr-block-intro,
+  .cpr-item-link,
+  .cpr-faq-answer button,
+  .cpr-trust-grid span,
+  .cpr-trust-grid b,
+  .cpr-tags span,
+  .cpr-identity-kicker > span,
+  .cpr-ai-mark,
+  .cpr-ai-panel > button,
+  .cpr-cta-panel a,
+  .cpr-cta-disabled
+) {
+  color: var(--cpr-block-text-color);
 }
 
 .cpr-rich-media {

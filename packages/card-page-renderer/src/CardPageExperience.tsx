@@ -102,6 +102,7 @@ export type CardPageBlock = {
   ctaUrl?: string;
   background?: CardPageBlockBackground;
   textTone?: "auto" | "light" | "dark";
+  textColor?: string;
   contentImage?: CardPageContentImage;
   sizePreset?: "auto" | "compact" | "standard" | "tall";
   paddingY?: "auto" | "compact" | "standard" | "spacious";
@@ -704,6 +705,9 @@ export function CardPageExperience({
           : undefined;
         const hasBackground = background?.kind === "color" || Boolean(backgroundImageUrl);
         const tone = blockTone(block);
+        const customTextStyle = block.textColor ? {
+          "--cpr-block-text-color": block.textColor,
+        } as CSSProperties : undefined;
         const backgroundStyle: CSSProperties = {
           backgroundColor: background?.color || undefined,
           backgroundImage: backgroundImageUrl ? `url(${JSON.stringify(backgroundImageUrl)})` : undefined,
@@ -717,9 +721,11 @@ export function CardPageExperience({
               "cpr-block-inner",
               hasBackground ? "cpr-block-inner--has-background" : "",
               tone ? `cpr-block-inner--tone-${tone}` : "",
+              block.textColor ? "cpr-block-inner--custom-text" : "",
               block.sizePreset && block.sizePreset !== "auto" ? `cpr-block-inner--size-${block.sizePreset}` : "",
               block.paddingY && block.paddingY !== "auto" ? `cpr-block-inner--padding-${block.paddingY}` : "",
             ].filter(Boolean).join(" ")}
+            style={customTextStyle}
             onClick={editorAdapter?.onSelectBlock ? () => editorAdapter.onSelectBlock?.(block.id) : undefined}
           >
             {hasBackground ? (

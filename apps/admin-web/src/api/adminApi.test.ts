@@ -60,6 +60,7 @@ describe("adminApi real contract", () => {
             overlay_opacity: 0,
           },
           text_tone: "light",
+          text_color: "#F4C36A",
           case_items: [{ id: "server-only" }],
         }],
       },
@@ -92,6 +93,7 @@ describe("adminApi real contract", () => {
           imageUrls: ["/api/v1/public/card-assets/company-1/a.webp"],
           background: { kind: "color", color: "#173b40" },
           textTone: "light",
+          textColor: "#F4C36A",
         }],
       },
     });
@@ -142,7 +144,7 @@ describe("adminApi real contract", () => {
       },
       page_text_tone: "light",
       blocks: [
-        { id: "gallery-1", visible: false, sort_order: 0 },
+        { id: "gallery-1", visible: false, sort_order: 0, text_color: "#F4C36A" },
         { id: "ai-1", visible: true, sort_order: 1 },
         {
           id: "story-1",

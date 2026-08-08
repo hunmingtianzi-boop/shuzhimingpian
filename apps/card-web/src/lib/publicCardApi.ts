@@ -44,6 +44,7 @@ export type PublicEnterpriseTemplateBlock = {
     overlay_opacity?: number;
   };
   text_tone?: "auto" | "light" | "dark";
+  text_color?: string;
   content_image?: {
     url: string;
     alt?: string;
@@ -238,6 +239,7 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
         overlay_opacity: optionalNumber(rawBackground, "overlay_opacity") ?? 0,
       } : undefined,
       text_tone: textTone,
+      text_color: optionalString(raw, "text_color"),
       content_image: contentImageUrl ? {
         url: contentImageUrl,
         alt: rawContentImage ? optionalString(rawContentImage, "alt") : undefined,

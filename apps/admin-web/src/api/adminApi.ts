@@ -186,6 +186,7 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
     textTone: ["auto", "light", "dark"].includes(optionalString(value.text_tone))
       ? optionalString(value.text_tone) as NonNullable<EnterpriseTemplateBlock["textTone"]>
       : "auto",
+    textColor: optionalString(value.text_color) || undefined,
     contentImage: rawContentImage && optionalString(rawContentImage.url) ? {
       url: optionalString(rawContentImage.url),
       alt: optionalString(rawContentImage.alt) || undefined,
@@ -306,6 +307,7 @@ function enterpriseTemplatePayload(
         },
       } : {}),
       ...(block.textTone && block.textTone !== "auto" ? { text_tone: block.textTone } : {}),
+      ...(block.textColor?.trim() ? { text_color: block.textColor.trim() } : {}),
       ...(block.type === "rich_text" && block.contentImage?.url.trim() ? {
         content_image: {
           url: block.contentImage.url.trim(),

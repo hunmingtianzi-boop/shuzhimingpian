@@ -314,6 +314,9 @@ describe("EnterpriseTemplateEditor", () => {
     await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "铺满裁切", hidden: true }));
     expect(blockBackgroundPreview).toHaveStyle({ objectFit: "cover" });
     await user.click(screen.getByRole("radio", { name: "浅色字", hidden: true }));
+    fireEvent.input(within(blockBackgroundSettings).getByLabelText("自定义文字颜色"), {
+      target: { value: "#f4c36a" },
+    });
     const pageSettings = screen.getByRole("region", { name: "页面外观", hidden: true });
     await user.click(within(pageSettings).getByRole("radio", { name: "图片", hidden: true }));
     const pageBackgroundFile = new File(["page"], "page-background.png", { type: "image/png" });
@@ -331,6 +334,7 @@ describe("EnterpriseTemplateEditor", () => {
     expect(update.mock.calls[0][3].find((block) => block.id === "rich-1")).toEqual(
       expect.objectContaining({
         textTone: "light",
+        textColor: "#f4c36a",
         background: expect.objectContaining({
           kind: "image",
           imageUrl: "/api/v1/public/card-assets/company-1/background.webp",
@@ -353,7 +357,7 @@ describe("EnterpriseTemplateEditor", () => {
     }));
   }, 15_000);
 
-  it("selects published cases and enters the existing publish confirmation", async () => {
+  it("saves pending changes and enters publish confirmation in one action", async () => {
     const user = userEvent.setup();
     const caseTemplate = template({
       draft: {
@@ -390,11 +394,11 @@ describe("EnterpriseTemplateEditor", () => {
     await user.click(await screen.findByRole("button", { name: /02\s*客户案例/, hidden: true }));
     const picker = screen.getByRole("group", { name: "选择已发布案例", hidden: true });
     await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/, hidden: true }));
-    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
-    const publishButton = screen.getByRole("button", { name: "进入发布确认", hidden: true });
+    const publishButton = screen.getByRole("button", { name: "保存并进入发布确认", hidden: true });
     await waitFor(() => expect(publishButton).toBeEnabled());
-    fireEvent.click(publishButton);
+    await user.click(publishButton);
 
+    await waitFor(() => expect(adminApi.updateEnterpriseTemplate).toHaveBeenCalledTimes(1));
     expect(handlers.onRequestPublish).toHaveBeenCalledWith(expect.objectContaining({
       id: card.id,
       version: 8,

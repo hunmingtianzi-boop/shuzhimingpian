@@ -101,6 +101,7 @@ describe("EnterpriseTemplateBlocks", () => {
             overlay_opacity: 0.5,
           },
           text_tone: "light",
+          text_color: "#F4C36A",
           content_image: {
             url: "/api/v1/public/card-assets/company-1/story.webp",
             alt: "团队共创",
@@ -123,6 +124,9 @@ describe("EnterpriseTemplateBlocks", () => {
     );
     expect(container.querySelector(".cpr-rich-media--right")).toBeInTheDocument();
     expect(container.querySelector(".cpr-block-inner--tone-light")).toBeInTheDocument();
+    const customTextBlock = container.querySelector<HTMLElement>(".cpr-block-inner--custom-text");
+    expect(customTextBlock).toBeInTheDocument();
+    expect(customTextBlock?.style.getPropertyValue("--cpr-block-text-color")).toBe("#F4C36A");
     expect(container.querySelector(".cpr-block-background"))
       .toHaveStyle({ backgroundPosition: "24% 68%" });
     expect(container.querySelector(".cpr-page-background"))

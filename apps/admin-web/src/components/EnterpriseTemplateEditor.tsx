@@ -736,8 +736,16 @@ export function EnterpriseTemplateEditor({
     );
   };
 
-  const requestPublish = () => {
-    if (!card || !version || dirty || !draftValid) return;
+  const requestPublish = async () => {
+    if (!card || !version || !draftValid || !publishReady || saving) return;
+    if (dirty) {
+      const updatedCard = await persistDraft(
+        blocks,
+        "草稿已保存，可以确认发布。",
+      );
+      if (updatedCard) onRequestPublish(updatedCard);
+      return;
+    }
     onRequestPublish({ ...card, version });
   };
 
@@ -1053,9 +1061,9 @@ export function EnterpriseTemplateEditor({
                   <Button
                     appearance="primary"
                     icon={<Send24Regular />}
-                    onClick={requestPublish}
-                    disabled={busy || dirty || !publishReady || !card}
-                  >进入发布确认</Button>
+                    onClick={() => void requestPublish()}
+                    disabled={busy || !publishReady || !card}
+                  >{dirty ? "保存并进入发布确认" : "进入发布确认"}</Button>
                 </>
               )}
             </DialogActions>

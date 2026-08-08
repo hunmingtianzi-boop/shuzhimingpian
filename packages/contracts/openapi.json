@@ -16208,6 +16208,18 @@
             "title": "Text Tone",
             "default": "auto"
           },
+          "text_color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Color"
+          },
           "content_image": {
             "anyOf": [
               {

@@ -97,6 +97,7 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
       overlayOpacity: block.background.overlay_opacity,
     } : undefined,
     textTone: block.text_tone,
+    textColor: block.text_color,
     contentImage: block.content_image ? {
       url: block.content_image.url,
       alt: block.content_image.alt,

@@ -672,6 +672,7 @@ export type EnterpriseTemplateBlock = {
   ctaUrl?: string;
   background?: EnterpriseTemplateBlockBackground;
   textTone?: "auto" | "light" | "dark";
+  textColor?: string;
   contentImage?: EnterpriseTemplateContentImage;
   sizePreset?: "auto" | "compact" | "standard" | "tall";
   paddingY?: "auto" | "compact" | "standard" | "spacious";

@@ -408,6 +408,7 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     cta_url: str | None = Field(default=None, max_length=2_048)
     background: EnterpriseTemplateBlockBackground | None = None
     text_tone: Literal["auto", "light", "dark"] = "auto"
+    text_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     content_image: EnterpriseTemplateContentImage | None = None
     size_preset: Literal["auto", "compact", "standard", "tall"] = "auto"
     padding_y: Literal["auto", "compact", "standard", "spacious"] = "auto"
