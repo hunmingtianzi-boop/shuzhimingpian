@@ -13,6 +13,17 @@ describe("resolveApiResourceUrl", () => {
     );
   });
 
+  it("preserves a deployment prefix from a relative API base URL", () => {
+    vi.stubEnv("VITE_API_BASE_URL", "/c/api/v1");
+
+    expect(resolveApiResourceUrl("/api/v1/public/card-assets/company/logo.webp")).toBe(
+      new URL(
+        "/c/api/v1/public/card-assets/company/logo.webp",
+        globalThis.location.origin,
+      ).toString(),
+    );
+  });
+
   it("keeps public HTTPS resources unchanged", () => {
     vi.stubEnv("VITE_API_BASE_URL", "https://api.example.test/api/v1");
 

@@ -8,7 +8,11 @@ export function resolvePublicResourceUrl(value?: string | null): string | undefi
 
   try {
     const base = new URL(apiBaseUrl, globalThis.location?.origin ?? "http://localhost");
-    return new URL(resource, base.origin).toString();
+    const apiMarkerIndex = base.pathname.indexOf("/api/");
+    const deploymentPrefix = apiMarkerIndex >= 0
+      ? base.pathname.slice(0, apiMarkerIndex)
+      : "";
+    return new URL(`${deploymentPrefix}${resource}`, base.origin).toString();
   } catch {
     return resource;
   }
