@@ -10,9 +10,11 @@ RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/card-web/package.json apps/card-web/package.json
 COPY apps/admin-web/package.json apps/admin-web/package.json
+COPY packages/card-page-renderer/package.json packages/card-page-renderer/package.json
 RUN pnpm install --frozen-lockfile --filter @cf/admin-web...
 
 COPY apps/admin-web apps/admin-web
+COPY packages/card-page-renderer packages/card-page-renderer
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_PUBLIC_BASE=${VITE_PUBLIC_BASE}
 RUN pnpm --filter @cf/admin-web exec vite build --base "${VITE_PUBLIC_BASE}"
