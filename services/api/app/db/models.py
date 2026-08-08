@@ -470,6 +470,11 @@ class WeComEnterpriseScope(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ["companies.tenant_id", "companies.id"],
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["provisioned_by_user_id"],
+            ["users.id"],
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("corp_id_hmac", name="uq_wecom_enterprise_scopes_corp"),
         UniqueConstraint(
             "tenant_id",

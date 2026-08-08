@@ -123,7 +123,7 @@ async function mockVisitorApi(page: Page) {
     if (method === "POST" && path === "/public/cards/tuotu/visits") {
       return json(route, {
         data: {
-          id: IDS.visit,
+          visit_id: IDS.visit,
           visitor_id: IDS.visitor,
           visitor_session_token: "e2e-visitor-token",
           expires_at: "2026-07-11T10:00:00Z",
