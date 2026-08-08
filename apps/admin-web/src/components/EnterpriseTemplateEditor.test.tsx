@@ -505,6 +505,39 @@ describe("EnterpriseTemplateEditor", () => {
     }));
   }, 15_000);
 
+  it("allows publishing an all-published FAQ block before the first public FAQ exists", async () => {
+    const faqTemplate = template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [identityBlock, {
+          id: "faq-1",
+          type: "faq",
+          visible: true,
+          directoryEnabled: true,
+          sortOrder: 1,
+          title: "常见问题",
+          faqMode: "all_published",
+          faqDocumentIds: [],
+        }, {
+          id: "ai-1",
+          type: "ai_assistant",
+          visible: true,
+          sortOrder: 2,
+          title: "在线咨询",
+        }],
+      },
+    });
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(faqTemplate);
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+
+    const publishButton = await screen.findByRole("button", { name: "进入发布确认", hidden: true });
+    await waitFor(() => expect(publishButton).toBeEnabled());
+    expect(screen.getByText("全部内容区块完整").closest("li")).toHaveClass("is-ready");
+  });
+
   it("keeps customize-before-create changes local until explicit confirmation", async () => {
     const user = userEvent.setup();
     const onDraftConfirm = vi.fn().mockResolvedValue(undefined);

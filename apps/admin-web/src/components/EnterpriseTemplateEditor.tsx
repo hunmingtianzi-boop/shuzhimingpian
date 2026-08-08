@@ -125,6 +125,11 @@ export function getEnterpriseTemplateBlockIssue(
   block: EnterpriseTemplateBlock,
   selectableFaqs?: SelectableFaqDocument[],
 ) {
+  // The API deliberately ignores incomplete hidden blocks when publishing.
+  // Keep the editor's gate aligned so a hidden draft module cannot silently
+  // disable the publish action.
+  if (!block.visible) return undefined;
+
   switch (block.type) {
     case "image_gallery":
       return block.imageUrls?.length ? undefined : "请至少上传一张图片。";
@@ -137,9 +142,6 @@ export function getEnterpriseTemplateBlockIssue(
     case "case_collection":
       return block.id === "cases" || block.caseIds?.length ? undefined : "请至少选择一个已发布案例。";
     case "faq": {
-      if (selectableFaqs && selectableFaqs.length === 0) {
-        return "暂无已发布且公开的 FAQ，请先到知识 FAQ 管理中发布内容。";
-      }
       if (block.faqMode !== "selected") return undefined;
       const selectedIds = block.faqDocumentIds ?? [];
       if (!selectedIds.length) return "精选展示模式下请至少选择一条 FAQ。";
@@ -169,6 +171,7 @@ export function getEnterpriseTemplatePublishChecks(
   card: ManagedCard,
   blocks: EnterpriseTemplateBlock[],
   company?: CompanyProfile,
+  selectableFaqs?: SelectableFaqDocument[],
 ): EnterpriseTemplatePublishCheck[] {
   const hasContactRoute = blocks.some(
     (block) =>
@@ -179,7 +182,7 @@ export function getEnterpriseTemplatePublishChecks(
     { key: "name", label: "企业名称", ready: Boolean(card.displayName.trim()) },
     { key: "positioning", label: "业务定位或品牌标语", ready: Boolean(card.title.trim()) },
     { key: "brand", label: "企业 Logo", ready: Boolean(card.avatarUrl.trim() || company?.logoUrl.trim()) },
-    { key: "blocks", label: "全部内容区块完整", ready: blocks.every((block) => !getEnterpriseTemplateBlockIssue(block)) },
+    { key: "blocks", label: "全部内容区块完整", ready: blocks.every((block) => !getEnterpriseTemplateBlockIssue(block, selectableFaqs)) },
     { key: "contact", label: "至少一个联系入口（官网、行动按钮或 AI 助手）", ready: hasContactRoute || Boolean(company?.website.trim()) },
   ];
 }
@@ -775,7 +778,9 @@ export function EnterpriseTemplateEditor({
 
   const publishedProducts = products.filter((item) => item.status === "published");
   const publishedCases = cases.filter((item) => item.status === "published");
-  const publishChecks = card?.cardKind === "enterprise" ? getEnterpriseTemplatePublishChecks(card, blocks, company) : [];
+  const publishChecks = card?.cardKind === "enterprise"
+    ? getEnterpriseTemplatePublishChecks(card, blocks, company, selectableFaqs)
+    : [];
   const blockIssues = blocks.map((block) => getEnterpriseTemplateBlockIssue(block, selectableFaqs));
   const draftValid = blockIssues.every((issue) => !issue);
   const publishReady = draftValid && publishChecks.every((item) => item.ready);
