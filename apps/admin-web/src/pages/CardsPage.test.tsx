@@ -17,11 +17,14 @@ import { adminLightTheme } from "../theme";
 
 vi.mock("../components/EnterpriseTemplateEditor", () => ({
   EnterpriseTemplateEditor: ({
+    card,
     open,
     creationDraft,
     onClose,
     onDraftConfirm,
+    onRequestPublish,
   }: {
+    card?: ManagedCard;
     open: boolean;
     creationDraft?: {
       cardKind: ManagedCard["cardKind"];
@@ -29,8 +32,20 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
     };
     onClose: () => void;
     onDraftConfirm?: (document: EnterpriseTemplate["draft"]) => void | Promise<void>;
+    onRequestPublish?: (card: ManagedCard) => void | Promise<void>;
   }) => {
-    if (!open || !creationDraft) return null;
+    if (!open) return null;
+    if (card) {
+      return (
+        <div role="dialog" aria-label="编辑名片内容">
+          <span>{card.displayName}</span>
+          <button type="button" onClick={() => void onRequestPublish?.(card)}>
+            确认发布页面
+          </button>
+        </div>
+      );
+    }
+    if (!creationDraft) return null;
     const document = {
       schemaVersion: 1 as const,
       themeKey: "brand" as EnterpriseTemplateThemeKey,
@@ -151,6 +166,25 @@ describe("CardsPage", () => {
     await waitFor(() =>
       expect(publishDialog).not.toBeInTheDocument(),
     );
+  });
+
+  it("publishes the confirmed template directly without opening a second dialog", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
+    const publish = vi
+      .spyOn(adminApi, "publishManagedCard")
+      .mockResolvedValue({ ...draftCard, status: "published", version: 7 });
+    renderPage();
+
+    await screen.findByText("林顾问");
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const editor = await screen.findByRole("dialog", { name: "编辑名片内容" });
+    await user.click(within(editor).getByRole("button", { name: "确认发布页面" }));
+
+    await waitFor(() => expect(publish).toHaveBeenCalledWith("card-1", 6));
+    await waitFor(() => expect(editor).not.toBeInTheDocument());
+    expect(await screen.findByText("名片已由服务端确认发布。公开链接现在可访问。"))
+      .toBeInTheDocument();
   });
 
   it("copies the server share value", async () => {

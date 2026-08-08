@@ -331,7 +331,7 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
 
 export function StandaloneCardEditor() {
   const [open, setOpen] = useState(true);
-  const [notice, setNotice] = useState("这是独立的本地预览，修改只保存在当前页面内存中。");
+  const [notice, setNotice] = useState("这是独立的本地演示，修改只保存在当前页面内存中；真实发布请使用正式后台。");
   const dataSource = useMemo(createPreviewDataSource, []);
 
   return (
@@ -339,7 +339,7 @@ export function StandaloneCardEditor() {
       <section aria-labelledby="standalone-editor-title">
         <span>本地开发预览</span>
         <h1 id="standalone-editor-title">名片页面编辑器</h1>
-        <p>后端未启动时，可在这里独立体验页面结构、实时画布、属性编辑、拖动、上传和草稿保存。</p>
+        <p>后端未启动时，可在这里独立体验页面结构、实时画布、属性编辑、拖动、上传和草稿保存。本页不会修改线上名片。</p>
         <MessageBar intent="info">
           <MessageBarBody>
             <MessageBarTitle>当前状态</MessageBarTitle>
@@ -357,7 +357,7 @@ export function StandaloneCardEditor() {
         dataSource={dataSource}
         onClose={() => setOpen(false)}
         onEditBasicSettings={() => setNotice("基础资料属于外层名片管理功能，独立预览不写入真实企业数据。")}
-        onRequestPublish={() => setNotice("发布检查已通过。独立预览不会执行真实发布。")}
+        onRequestPublish={() => setNotice("模拟发布已确认。本页不连接线上数据；请在正式后台的“企业与员工名片”中执行真实发布。")}
         onSaved={() => setNotice("草稿已保存到当前页面内存，刷新页面后会重置。")}
       />
     </main>

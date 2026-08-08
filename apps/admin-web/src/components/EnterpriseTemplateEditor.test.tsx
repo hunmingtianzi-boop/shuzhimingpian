@@ -399,6 +399,8 @@ describe("EnterpriseTemplateEditor", () => {
     await user.click(publishButton);
 
     await waitFor(() => expect(adminApi.updateEnterpriseTemplate).toHaveBeenCalledTimes(1));
+    const publishDialog = await screen.findByRole("dialog", { name: "确认发布名片" });
+    await user.click(within(publishDialog).getByRole("button", { name: "确认发布" }));
     expect(handlers.onRequestPublish).toHaveBeenCalledWith(expect.objectContaining({
       id: card.id,
       version: 8,

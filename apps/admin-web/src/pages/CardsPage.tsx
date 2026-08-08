@@ -350,6 +350,23 @@ export function CardsPage() {
     }
   };
 
+  const publishFromTemplateEditor = async (card: ManagedCard) => {
+    setActionError(undefined);
+    try {
+      await adminApi.publishManagedCard(card.id, card.version);
+      setTemplateTarget(undefined);
+      setDefaultTemplateKind(undefined);
+      setNotice("名片已由服务端确认发布。公开链接现在可访问。");
+      resource.reload();
+    } catch (caught) {
+      throw caught instanceof ApiError
+        ? caught
+        : new ApiError("发布名片时发生未知错误。", {
+            code: "UNKNOWN_ERROR",
+          });
+    }
+  };
+
   const copy = async (value: string, label: string) => {
     setCopyNotice(undefined);
     setCopyError(undefined);
@@ -579,13 +596,8 @@ export function CardsPage() {
           setDefaultTemplateKind(undefined);
           edit(card);
         }}
-        onRequestPublish={(card) => {
-          setTemplateTarget(undefined);
-          setDefaultTemplateKind(undefined);
-          requestAction("publish", card);
-        }}
+        onRequestPublish={publishFromTemplateEditor}
         onSaved={(card) => {
-          if (card) setTemplateTarget(card);
           setNotice(card ? "名片内容草稿已保存；公开页仍保持上一次发布内容。" : "默认配置已保存；之后新建的同类名片会自动使用它。");
           resource.reload();
         }}

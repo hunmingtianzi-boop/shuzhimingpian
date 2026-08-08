@@ -278,7 +278,7 @@ type EnterpriseTemplateEditorProps = {
   open: boolean;
   onClose: () => void;
   onEditBasicSettings: (card: ManagedCard) => void;
-  onRequestPublish: (card: ManagedCard) => void;
+  onRequestPublish: (card: ManagedCard) => void | Promise<void>;
   onSaved: (card?: ManagedCard) => void;
   onDraftConfirm?: (document: {
     schemaVersion: 1;
@@ -333,6 +333,9 @@ export function EnterpriseTemplateEditor({
   const [previewMode, setPreviewMode] = useState<"draft" | "published">("draft");
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
   const [removeTarget, setRemoveTarget] = useState<EnterpriseTemplateBlock>();
+  const [publishTarget, setPublishTarget] = useState<ManagedCard>();
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<ApiError>();
   const [mobilePane, setMobilePane] = useState<"structure" | "preview" | "content">("structure");
   const galleryInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const coverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -351,6 +354,8 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     setSavedNotice(undefined);
     setDirty(false);
+    setPublishTarget(undefined);
+    setPublishError(undefined);
     void Promise.all([
       card
         ? dataSource.getEnterpriseTemplate(card.id)
@@ -743,10 +748,29 @@ export function EnterpriseTemplateEditor({
         blocks,
         "草稿已保存，可以确认发布。",
       );
-      if (updatedCard) onRequestPublish(updatedCard);
+      if (updatedCard) {
+        setPublishError(undefined);
+        setPublishTarget(updatedCard);
+      }
       return;
     }
-    onRequestPublish({ ...card, version });
+    setPublishError(undefined);
+    setPublishTarget({ ...card, version });
+  };
+
+  const confirmPublish = async () => {
+    if (!publishTarget || publishing) return;
+    setPublishing(true);
+    setPublishError(undefined);
+    try {
+      await onRequestPublish(publishTarget);
+      setPublishTarget(undefined);
+      setSavedNotice("名片已发布，公开页现在使用本次确认的内容。");
+    } catch (cause) {
+      setPublishError(toApiError(cause, "发布名片失败。", "CARD_PUBLISH_FAILED"));
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const publishedProducts = products.filter((item) => item.status === "published");
@@ -1070,6 +1094,31 @@ export function EnterpriseTemplateEditor({
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      <ActionConfirmDialog
+        open={Boolean(publishTarget)}
+        title="确认发布名片"
+        description="发布后，公开链接会立即使用当前已保存的页面内容。"
+        confirmLabel="确认发布"
+        pendingLabel="正在发布"
+        pending={publishing}
+        error={publishError}
+        detail={publishTarget ? (
+          <div className="publish-target">
+            <strong>{publishTarget.displayName || "未命名名片"}</strong>
+            <span>待发布版本：{publishTarget.version}</span>
+            <ul className="publish-checklist-summary">
+              <li>企业名称、业务定位和 Logo 已复核</li>
+              <li>当前草稿中的区块、图片、视频和案例将冻结为公开快照</li>
+              <li>确认后公开页会立即更新</li>
+            </ul>
+          </div>
+        ) : undefined}
+        onCancel={() => {
+          setPublishTarget(undefined);
+          setPublishError(undefined);
+        }}
+        onConfirm={() => void confirmPublish()}
+      />
       <ActionConfirmDialog
         open={Boolean(removeTarget)}
         title="删除名片板块"
