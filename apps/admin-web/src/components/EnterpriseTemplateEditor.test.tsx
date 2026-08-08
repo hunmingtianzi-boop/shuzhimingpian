@@ -309,13 +309,19 @@ describe("EnterpriseTemplateEditor", () => {
     const blockBackgroundSettings = screen.getByRole("region", { name: "板块背景", hidden: true });
     await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "图片", hidden: true }));
     await user.upload(screen.getByLabelText("选择企业介绍背景图片"), backgroundFile);
-    await waitFor(() => expect(screen.getByAltText("板块背景预览")).toBeInTheDocument());
+    const blockBackgroundPreview = await screen.findByAltText("板块背景预览");
+    expect(blockBackgroundPreview).toHaveStyle({ objectFit: "cover", objectPosition: "50% 50%" });
+    await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "完整显示", hidden: true }));
+    expect(blockBackgroundPreview).toHaveStyle({ objectFit: "contain" });
     await user.click(screen.getByRole("radio", { name: "浅色字", hidden: true }));
     const pageSettings = screen.getByRole("region", { name: "页面外观", hidden: true });
     await user.click(within(pageSettings).getByRole("radio", { name: "图片", hidden: true }));
     const pageBackgroundFile = new File(["page"], "page-background.png", { type: "image/png" });
     await user.upload(within(pageSettings).getByLabelText("选择整体背景图片"), pageBackgroundFile);
-    await waitFor(() => expect(screen.getByAltText("整体背景预览")).toBeInTheDocument());
+    const pageBackgroundPreview = await screen.findByAltText("整体背景预览");
+    expect(pageBackgroundPreview).toHaveStyle({ objectFit: "cover", objectPosition: "50% 50%" });
+    await user.click(within(pageSettings).getByRole("radio", { name: "完整显示", hidden: true }));
+    expect(pageBackgroundPreview).toHaveStyle({ objectFit: "contain" });
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
@@ -328,6 +334,7 @@ describe("EnterpriseTemplateEditor", () => {
         background: expect.objectContaining({
           kind: "image",
           imageUrl: "/api/v1/public/card-assets/company-1/background.webp",
+          fit: "contain",
           overlayOpacity: 0.42,
         }),
         contentImage: expect.objectContaining({
@@ -342,6 +349,7 @@ describe("EnterpriseTemplateEditor", () => {
     expect(update.mock.calls[0][4]).toEqual(expect.objectContaining({
       kind: "image",
       imageUrl: "/api/v1/public/card-assets/company-1/page-background.webp",
+      fit: "contain",
     }));
   }, 15_000);
 

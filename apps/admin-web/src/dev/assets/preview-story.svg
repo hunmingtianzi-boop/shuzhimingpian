@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-labelledby="title desc">
+  <title id="title">企业团队示例图片</title>
+  <desc id="desc">团队围绕数字化名片共同工作的抽象插图</desc>
+  <defs>
+    <linearGradient id="bg" x1="60" y1="42" x2="846" y2="562" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7F3F2"/>
+      <stop offset="1" stop-color="#B7D5D5"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="600" fill="url(#bg)"/>
+  <circle cx="450" cy="300" r="226" fill="#FBFFFF" fill-opacity=".55"/>
+  <ellipse cx="450" cy="462" rx="300" ry="46" fill="#214A4E" fill-opacity=".12"/>
+  <rect x="323" y="157" width="254" height="230" rx="26" fill="#F9FFFF" stroke="#4D9799" stroke-width="5"/>
+  <rect x="350" y="187" width="200" height="116" rx="17" fill="#D4EBEA"/>
+  <path d="m376 270 48-43 43 30 57-50" fill="none" stroke="#3A8589" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="350" y="326" width="122" height="12" rx="6" fill="#406F73"/>
+  <rect x="350" y="352" width="180" height="9" rx="4.5" fill="#9ABFC0"/>
+  <g>
+    <circle cx="241" cy="278" r="57" fill="#D9A477"/>
+    <path d="M178 463c0-88 27-137 63-137s64 49 64 137" fill="#23666B"/>
+    <path d="M196 250c7-50 82-61 101-3-38-5-63-20-78-43-4 19-12 34-23 46Z" fill="#3A2D2C"/>
+    <circle cx="659" cy="278" r="57" fill="#C98964"/>
+    <path d="M595 463c0-88 28-137 64-137s63 49 63 137" fill="#D78B56"/>
+    <path d="M603 258c1-64 101-73 113 1-29-14-47-33-59-57-11 24-29 43-54 56Z" fill="#243A3D"/>
+  </g>
+  <path d="m299 390 84-46M601 390l-84-46" stroke="#D39B72" stroke-width="20" stroke-linecap="round"/>
+</svg>

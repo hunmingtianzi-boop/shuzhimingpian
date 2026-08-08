@@ -95,7 +95,15 @@ export function TemplatePageSettings({
             <div className="template-background-image-controls">
               {value.imageUrl ? (
                 <figure className="template-cover-preview template-page-background-preview">
-                  <img src={resolveApiResourceUrl(value.imageUrl)} alt="整体背景预览" />
+                  <img
+                    src={resolveApiResourceUrl(value.imageUrl)}
+                    alt="整体背景预览"
+                    style={{
+                      objectFit: value.fit === "contain" ? "contain" : "cover",
+                      objectPosition: `${value.positionX ?? 50}% ${value.positionY ?? 50}%`,
+                      backgroundColor: value.color ?? "#eef3f4",
+                    }}
+                  />
                   <Button
                     appearance="subtle"
                     size="small"

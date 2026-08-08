@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" role="img" aria-labelledby="title desc">
+  <title id="title">开始合作背景图</title>
+  <desc id="desc">深青色空间中的连接节点与光带</desc>
+  <defs>
+    <linearGradient id="bg" x1="78" y1="48" x2="914" y2="654" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102D34"/>
+      <stop offset=".56" stop-color="#205C61"/>
+      <stop offset="1" stop-color="#4C9A99"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(738 154) rotate(139) scale(510 396)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C5FFF8" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#C5FFF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1000" height="700" fill="url(#bg)"/>
+  <rect width="1000" height="700" fill="url(#glow)"/>
+  <g fill="none" stroke="#C8F6F2" stroke-opacity=".32" stroke-width="3">
+    <path d="M-22 582C210 395 278 504 424 345c152-166 289-102 603-306"/>
+    <path d="M-34 644C191 468 304 582 468 415c167-171 335-102 570-267"/>
+    <path d="M116 88c206 118 337 89 458-16 102-89 233-79 426 40"/>
+  </g>
+  <g fill="#D9FFFB">
+    <circle cx="158" cy="466" r="9"/><circle cx="424" cy="345" r="12"/><circle cx="622" cy="230" r="8"/><circle cx="797" cy="155" r="11"/><circle cx="281" cy="132" r="7"/>
+  </g>
+  <g transform="translate(612 344)">
+    <rect width="242" height="157" rx="28" fill="#F5FFFF" fill-opacity=".9"/>
+    <rect x="30" y="31" width="58" height="58" rx="18" fill="#2D8588"/>
+    <path d="M47 52h24M47 68h17" stroke="#EDFFFF" stroke-width="7" stroke-linecap="round"/>
+    <rect x="109" y="38" width="91" height="13" rx="6.5" fill="#1C444A"/>
+    <rect x="109" y="66" width="68" height="9" rx="4.5" fill="#7FA9AB"/>
+    <rect x="30" y="116" width="170" height="10" rx="5" fill="#9EC5C6"/>
+  </g>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-labelledby="title desc">
+  <title id="title">数智名片示例图片</title>
+  <desc id="desc">展示移动名片与数据连接的抽象插图</desc>
+  <defs>
+    <linearGradient id="bg" x1="92" y1="46" x2="824" y2="558" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DFF5F3"/>
+      <stop offset="1" stop-color="#8FC8CA"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#17474C" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect width="900" height="600" fill="url(#bg)"/>
+  <circle cx="118" cy="94" r="118" fill="#FFF" fill-opacity=".28"/>
+  <circle cx="802" cy="532" r="168" fill="#1D7277" fill-opacity=".12"/>
+  <g fill="none" stroke="#397F84" stroke-opacity=".38" stroke-width="3">
+    <path d="M88 426c128-84 206-11 308-82 106-74 185-57 414-212"/>
+    <circle cx="88" cy="426" r="9" fill="#397F84"/><circle cx="396" cy="344" r="9" fill="#397F84"/><circle cx="810" cy="132" r="9" fill="#397F84"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="294" y="78" width="312" height="444" rx="42" fill="#F8FFFF"/>
+    <rect x="313" y="98" width="274" height="404" rx="29" fill="#EDF8F7" stroke="#3C8E92" stroke-width="4"/>
+    <rect x="346" y="136" width="82" height="82" rx="25" fill="#2F8589"/>
+    <path d="M367 167h40M367 187h26" stroke="#E9FFFF" stroke-width="8" stroke-linecap="round"/>
+    <rect x="450" y="145" width="98" height="12" rx="6" fill="#193D42"/>
+    <rect x="450" y="174" width="72" height="9" rx="4.5" fill="#8AB3B5"/>
+    <rect x="346" y="251" width="202" height="18" rx="9" fill="#1F5358"/>
+    <rect x="346" y="286" width="166" height="10" rx="5" fill="#A0C7C8"/>
+    <rect x="346" y="310" width="190" height="10" rx="5" fill="#A0C7C8"/>
+    <rect x="346" y="357" width="202" height="108" rx="22" fill="#D5ECEB"/>
+    <path d="M377 430c27-38 51-46 73-23 22-40 45-44 68-10" fill="none" stroke="#438E92" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-labelledby="title desc">
+  <title id="title">服务案例示例图片</title>
+  <desc id="desc">展示增长图表与协作成果的抽象插图</desc>
+  <defs>
+    <linearGradient id="bg" x1="48" y1="36" x2="842" y2="562" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2E8D8"/>
+      <stop offset="1" stop-color="#D7A96F"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#5B3A23" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect width="900" height="600" fill="url(#bg)"/>
+  <path d="M0 460c164-93 284-79 411-24 141 60 274 56 489-63v227H0V460Z" fill="#8E5937" fill-opacity=".18"/>
+  <g filter="url(#shadow)">
+    <rect x="128" y="96" width="644" height="410" rx="38" fill="#FFFCF6"/>
+    <rect x="172" y="139" width="264" height="24" rx="12" fill="#442E2B"/>
+    <rect x="172" y="183" width="172" height="12" rx="6" fill="#C4A184"/>
+    <path d="M184 413h530M184 413V239" stroke="#D8C1AD" stroke-width="4"/>
+    <path d="m213 378 109-76 94 38 102-114 89 54 80-72" fill="none" stroke="#2E7F7F" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#2E7F7F" stroke="#F9FFFF" stroke-width="7">
+      <circle cx="213" cy="378" r="13"/><circle cx="322" cy="302" r="13"/><circle cx="416" cy="340" r="13"/><circle cx="518" cy="226" r="13"/><circle cx="607" cy="280" r="13"/><circle cx="687" cy="208" r="13"/>
+    </g>
+    <rect x="184" y="442" width="132" height="18" rx="9" fill="#E6D4C3"/>
+    <rect x="334" y="442" width="96" height="18" rx="9" fill="#E6D4C3"/>
+  </g>
+</svg>

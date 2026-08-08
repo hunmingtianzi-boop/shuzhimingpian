@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">创非凡数智名片示例标识</title>
+  <desc id="desc">青绿色渐变背景上的抽象名片标识</desc>
+  <defs>
+    <linearGradient id="bg" x1="28" y1="18" x2="292" y2="302" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123E43"/>
+      <stop offset="1" stop-color="#63AFB1"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="88" y1="72" x2="232" y2="248" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FFFF"/>
+      <stop offset="1" stop-color="#C9EEEE"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="320" rx="78" fill="url(#bg)"/>
+  <circle cx="160" cy="160" r="112" fill="none" stroke="#D9F4F3" stroke-opacity=".26" stroke-width="2"/>
+  <path d="M91 108c0-13 10-23 23-23h92c13 0 23 10 23 23v104c0 13-10 23-23 23h-92c-13 0-23-10-23-23V108Z" fill="#0D3034" fill-opacity=".35" stroke="url(#mark)" stroke-width="6"/>
+  <path d="M121 137h78M121 160h52M121 183h65" stroke="url(#mark)" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="202" cy="184" r="18" fill="#E9FFFF"/>
+  <path d="m194 184 6 6 11-13" fill="none" stroke="#267C80" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -444,7 +444,15 @@ export function TemplateBlockInspector({
           <div className="template-background-image-controls">
             {background.imageUrl ? (
               <figure className="template-cover-preview template-background-preview">
-                <img src={resolveApiResourceUrl(background.imageUrl)} alt="板块背景预览" />
+                <img
+                  src={resolveApiResourceUrl(background.imageUrl)}
+                  alt="板块背景预览"
+                  style={{
+                    objectFit: background.fit === "contain" ? "contain" : "cover",
+                    objectPosition: `${background.positionX ?? 50}% ${background.positionY ?? 50}%`,
+                    backgroundColor: background.color ?? "#eef3f4",
+                  }}
+                />
                 <Button
                   appearance="subtle"
                   size="small"

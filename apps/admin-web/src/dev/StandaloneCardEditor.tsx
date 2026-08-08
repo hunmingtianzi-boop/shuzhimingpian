@@ -17,6 +17,12 @@ import {
   EnterpriseTemplateEditor,
   type EnterpriseTemplateEditorDataSource,
 } from "../components/EnterpriseTemplateEditor";
+import previewAiUrl from "./assets/preview-ai.svg";
+import previewAvatarUrl from "./assets/preview-avatar.svg";
+import previewCaseUrl from "./assets/preview-case.svg";
+import previewContactUrl from "./assets/preview-contact.svg";
+import previewSmartCardUrl from "./assets/preview-smart-card.svg";
+import previewStoryUrl from "./assets/preview-story.svg";
 
 const previewCard: ManagedCard = {
   id: "local-preview-card",
@@ -24,7 +30,7 @@ const previewCard: ManagedCard = {
   slug: "local-preview",
   displayName: "创非凡数智名片",
   title: "企业智能名片与 AI 接待",
-  avatarUrl: "https://picsum.photos/seed/cf-card-logo/320/320",
+  avatarUrl: previewAvatarUrl,
   assistantName: "企业 AI 助手",
   welcomeMessage: "欢迎了解企业业务、产品与合作方式。",
   suggestedQuestions: ["可以解决哪些业务问题？", "如何开始合作？"],
@@ -61,7 +67,7 @@ const previewProducts: Product[] = [
     detail: "示例内容，仅用于本地编辑器预览。",
     audience: "企业市场与销售团队",
     priceBoundary: "需结合接入范围评估",
-    imageUrl: "https://picsum.photos/seed/cf-smart-card/900/600",
+    imageUrl: previewSmartCardUrl,
     visibility: "public",
     sortOrder: 0,
     settings: {},
@@ -77,7 +83,7 @@ const previewProducts: Product[] = [
     detail: "示例内容，仅用于本地编辑器预览。",
     audience: "客户服务与销售团队",
     priceBoundary: "需结合知识量与用量评估",
-    imageUrl: "https://picsum.photos/seed/cf-ai-reception/900/600",
+    imageUrl: previewAiUrl,
     visibility: "public",
     sortOrder: 1,
     settings: {},
@@ -96,7 +102,7 @@ const previewCases: CaseStudy[] = [
     solution: "通过统一名片页面维护品牌、业务、案例与咨询入口。",
     result: "示例结果，仅用于本地编辑器交互预览。",
     clientDisplayName: "本地预览企业",
-    imageUrl: "https://picsum.photos/seed/cf-enterprise-case/900/600",
+    imageUrl: previewCaseUrl,
     visibility: "public",
     sortOrder: 0,
     settings: {},
@@ -140,7 +146,7 @@ const initialBlocks: EnterpriseTemplateBlock[] = [
     title: "企业介绍",
     body: "让每一张企业名片都能持续更新内容、接待访客并沉淀业务机会。",
     contentImage: {
-      url: "https://picsum.photos/seed/cf-editor-story/900/600",
+      url: previewStoryUrl,
       alt: "企业团队讨论数智名片方案",
       placement: "top",
       fit: "cover",
@@ -193,7 +199,7 @@ const initialBlocks: EnterpriseTemplateBlock[] = [
     background: {
       kind: "image",
       color: "#183438",
-      imageUrl: "https://picsum.photos/seed/cf-editor-contact/1000/700",
+      imageUrl: previewContactUrl,
       fit: "cover",
       positionX: 50,
       positionY: 52,
@@ -223,6 +229,21 @@ function cloneBlocks(blocks: EnterpriseTemplateBlock[]) {
     background: block.background ? { ...block.background } : undefined,
     contentImage: block.contentImage ? { ...block.contentImage } : undefined,
   }));
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("无法读取图片内容。"));
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("无法读取图片内容。")));
+    reader.readAsDataURL(file);
+  });
 }
 
 function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
@@ -290,7 +311,7 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
     },
     async uploadCardAsset(file) {
       return {
-        url: URL.createObjectURL(file),
+        url: await readFileAsDataUrl(file),
         contentType: "image/webp",
         width: 0,
         height: 0,
