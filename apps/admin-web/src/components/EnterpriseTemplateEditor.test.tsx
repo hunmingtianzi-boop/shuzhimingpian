@@ -179,7 +179,7 @@ describe("EnterpriseTemplateEditor", () => {
     expect(screen.getAllByLabelText("拖动基础名片调整位置")).toHaveLength(2);
     expect(screen.queryByLabelText("视觉主题")).not.toBeInTheDocument();
     await user.click(aiStructureItem);
-    await user.click(screen.getByRole("button", { name: "上移" }));
+    await user.click(screen.getByRole("button", { name: "上移", hidden: true }));
     // Tabster can temporarily mark the portal surface aria-hidden in jsdom after
     // a focus change. Keep exercising the rendered controls instead of relying
     // on that browser-only focus state in this unit test.
