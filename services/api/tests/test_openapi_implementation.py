@@ -40,6 +40,10 @@ def test_implemented_vertical_slice_uses_contract_operation_ids() -> None:
             "put",
         ): "putKnowledgeDocumentDraft",
         (
+            "/api/v1/admin/knowledge/documents/{document_id}",
+            "delete",
+        ): "deleteKnowledgeDocument",
+        (
             "/api/v1/admin/knowledge/documents/{document_id}/publish",
             "post",
         ): "publishKnowledgeDocument",

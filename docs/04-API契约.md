@@ -114,7 +114,7 @@ CRUD 更新使用 `If-Match` 或请求体 `version` 实现乐观锁；冲突返�
 | 方法 | 路径 | 功能 |
 |---|---|---|
 | GET/POST | `/admin/knowledge/documents` | 知识对象列表/创建 |
-| GET | `/admin/knowledge/documents/{id}` | 版本、状态、失败信息 |
+| GET/DELETE | `/admin/knowledge/documents/{id}` | 版本、状态、失败信息 / 从管理端与 AI 检索范围删除 |
 | POST | `/admin/knowledge/documents/{id}/versions` | 创建草稿版本 |
 | POST | `/admin/knowledge/versions/{id}:publish` | 审核发布并投递索引 |
 | GET | `/admin/knowledge/index-jobs` | 索引任务状态 |

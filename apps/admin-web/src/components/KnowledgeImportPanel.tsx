@@ -12,7 +12,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@fluentui/react-components";
-import { ArrowClockwise24Regular, ArrowUpload24Regular } from "@fluentui/react-icons";
+import { ArrowClockwise24Regular, ArrowUpload24Regular, Delete24Regular } from "@fluentui/react-icons";
 import { useContext, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client";
@@ -93,7 +93,13 @@ function isActive(batch: KnowledgeImportBatch): boolean {
   return batch.status === "pending" || batch.status === "processing";
 }
 
-function ImportDetail({ batch }: { batch: KnowledgeImportBatch }) {
+function ImportDetail({
+  batch,
+  onRequestDeleteDocument,
+}: {
+  batch: KnowledgeImportBatch;
+  onRequestDeleteDocument?: (documentId: string) => void;
+}) {
   const completed = batch.succeededItems + batch.failedItems;
   const progress = batch.totalItems > 0 ? completed / batch.totalItems : 0;
   return (
@@ -122,7 +128,19 @@ function ImportDetail({ batch }: { batch: KnowledgeImportBatch }) {
                     <span>{stageCopy("发布", item.publishStatus)}</span>
                   </div>
                 </TableCell>
-                <TableCell>{item.errorCode ? `错误码：${item.errorCode}` : item.documentId ? item.publishStatus === "completed" ? "已更新并发布" : <a href="#knowledge-documents">已生成待审核草稿，去审核</a> : "—"}</TableCell>
+                <TableCell>{item.errorCode ? `错误码：${item.errorCode}` : item.documentId ? (
+                  <div className="row-actions">
+                    {item.publishStatus === "completed" ? <span>已更新并发布</span> : <a href="#knowledge-documents">已生成待审核草稿，去审核</a>}
+                    {onRequestDeleteDocument ? (
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<Delete24Regular />}
+                        onClick={() => onRequestDeleteDocument(item.documentId!)}
+                      >删除内容</Button>
+                    ) : null}
+                  </div>
+                ) : "—"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -132,7 +150,11 @@ function ImportDetail({ batch }: { batch: KnowledgeImportBatch }) {
   );
 }
 
-export function KnowledgeImportPanel() {
+export function KnowledgeImportPanel({
+  onRequestDeleteDocument,
+}: {
+  onRequestDeleteDocument?: (documentId: string) => void;
+} = {}) {
   const auth = useContext(AuthContext);
   const canImport = auth?.user
     ? hasPermission(auth.user, "knowledge.write")
@@ -241,7 +263,12 @@ export function KnowledgeImportPanel() {
         error={operationError}
         onRetry={selectedFiles.length > 0 ? () => void upload() : resource.reload}
       />
-      {selectedBatch && <ImportDetail batch={selectedBatch} />}
+      {selectedBatch && (
+        <ImportDetail
+          batch={selectedBatch}
+          onRequestDeleteDocument={canImport ? onRequestDeleteDocument : undefined}
+        />
+      )}
 
       {resource.status !== "ready" ? (
         <ResourceState status={resource.status} title={resource.status === "empty" ? "尚无导入批次" : undefined} description={resource.status === "empty" ? "选择文件后创建第一个异步导入批次。" : resource.error?.message} errorCode={resource.error?.code} requestId={resource.error?.requestId} onRetry={resource.status === "error" ? resource.reload : undefined} compact />

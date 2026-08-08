@@ -10,6 +10,7 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular,
+  Delete24Regular,
   Edit24Regular,
   Save24Regular,
   Send24Regular,
@@ -48,6 +49,7 @@ import type {
   SelectableFaqDocument,
 } from "../api/types";
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
+import { ActionConfirmDialog } from "./ActionConfirmDialog";
 import { TemplateBlockInspector } from "./enterprise-template/TemplateBlockInspector";
 import { TemplateCanvas } from "./enterprise-template/TemplateCanvas";
 import { TemplatePageSettings } from "./enterprise-template/TemplatePageSettings";
@@ -192,12 +194,14 @@ function SortableStructureItem({
   busy,
   selected,
   onSelect,
+  onRemove,
 }: {
   block: EnterpriseTemplateBlock;
   index: number;
   busy: boolean;
   selected: boolean;
   onSelect: () => void;
+  onRemove?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
@@ -228,6 +232,18 @@ function SortableStructureItem({
           <span>{String(index + 1).padStart(2, "0")}</span>
           <strong>{block.title || enterpriseTemplateBlockLabels[block.type]}</strong>
         </button>
+        {onRemove ? (
+          <button
+            type="button"
+            className="template-structure-remove"
+            aria-label={`删除${block.title || enterpriseTemplateBlockLabels[block.type]}板块`}
+            title="删除板块"
+            disabled={busy}
+            onClick={onRemove}
+          >
+            <Delete24Regular aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
     </li>
   );
@@ -316,6 +332,7 @@ export function EnterpriseTemplateEditor({
   const [error, setError] = useState<ApiError>();
   const [previewMode, setPreviewMode] = useState<"draft" | "published">("draft");
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
+  const [removeTarget, setRemoveTarget] = useState<EnterpriseTemplateBlock>();
   const [mobilePane, setMobilePane] = useState<"structure" | "preview" | "content">("structure");
   const galleryInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const coverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -458,6 +475,13 @@ export function EnterpriseTemplateEditor({
     const fallback = blocks[index + 1]?.id ?? blocks[index - 1]?.id;
     mutateBlocks((items) => items.filter((block) => block.id !== current.id));
     setSelectedBlockId(fallback);
+  };
+
+  const confirmRemoveBlock = () => {
+    if (!removeTarget) return;
+    const index = blocks.findIndex((block) => block.id === removeTarget.id);
+    if (index >= 0) removeBlock(index);
+    setRemoveTarget(undefined);
   };
 
   const handleBlockKeyDown = (
@@ -759,6 +783,7 @@ export function EnterpriseTemplateEditor({
 
   if (open) {
     return (
+      <>
       <Dialog
         open
         onOpenChange={(_, data) => {
@@ -842,6 +867,7 @@ export function EnterpriseTemplateEditor({
                               busy={busy}
                               selected={block.id === selectedBlock?.id}
                               onSelect={() => setSelectedBlockId(block.id)}
+                              onRemove={block.type === "identity" ? undefined : () => setRemoveTarget(block)}
                             />
                           ))}
                         </ol>
@@ -978,7 +1004,7 @@ export function EnterpriseTemplateEditor({
                         onUpdate={(patch) => updateBlock(selectedIndex >= 0 ? selectedIndex : 0, patch)}
                         onMove={(direction) => moveBlock(selectedIndex >= 0 ? selectedIndex : 0, direction)}
                         onDuplicate={() => duplicateBlock(selectedIndex >= 0 ? selectedIndex : 0)}
-                        onRemove={() => removeBlock(selectedIndex >= 0 ? selectedIndex : 0)}
+                        onRemove={() => selectedBlock && setRemoveTarget(selectedBlock)}
                         onGalleryUpload={(event) => void uploadGalleryImages(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onCoverUpload={(event) => void uploadVideoCover(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onBackgroundUpload={(event) => void uploadBackgroundImage(selectedIndex >= 0 ? selectedIndex : 0, event)}
@@ -1036,6 +1062,24 @@ export function EnterpriseTemplateEditor({
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      <ActionConfirmDialog
+        open={Boolean(removeTarget)}
+        title="删除名片板块"
+        description="该板块会从当前草稿中移除。保存草稿后删除才会写入后台，已经发布的名片在再次发布前不会变化。"
+        confirmLabel="确认删除"
+        pendingLabel="正在删除"
+        pending={false}
+        destructive
+        detail={removeTarget ? (
+          <div className="publish-target">
+            <strong>{removeTarget.title || enterpriseTemplateBlockLabels[removeTarget.type]}</strong>
+            <span>{enterpriseTemplateBlockLabels[removeTarget.type]}</span>
+          </div>
+        ) : undefined}
+        onCancel={() => setRemoveTarget(undefined)}
+        onConfirm={confirmRemoveBlock}
+      />
+      </>
     );
   }
 

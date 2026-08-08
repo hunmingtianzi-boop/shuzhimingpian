@@ -48,6 +48,9 @@ from app.db.models import (
     KnowledgeIndexJob,
     KnowledgeVersion,
     ReviewStatus,
+    ScheduledPublishJob,
+    ScheduledPublishResourceType,
+    ScheduledPublishStatus,
     Visibility,
 )
 from app.db.session import set_rls_context
@@ -340,6 +343,7 @@ class AdminStore:
                 else (
                     KnowledgeDocument.tenant_id == scope.tenant_id,
                     KnowledgeDocument.company_id == scope.company_id,
+                    KnowledgeDocument.status != ContentStatus.ARCHIVED,
                 )
             )
             total = int(
@@ -455,6 +459,93 @@ class AdminStore:
             )
             await session.flush()
             return await self._document_record(session, scope=scope, document=document)
+
+    async def delete_document(
+        self,
+        *,
+        scope: AdminScope,
+        document_id: uuid.UUID,
+        expected_version: int,
+        trace_id: str | None = None,
+    ) -> None:
+        """Remove a knowledge document from admin and retrieval surfaces.
+
+        Knowledge and conversation records are audit-sensitive, so deletion is
+        intentionally recoverable: the document and its versions remain in the
+        database, while every chunk is deactivated and pending publication is
+        cancelled. Archived documents are excluded from normal admin reads.
+        """
+
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            document = await self._document(
+                session,
+                scope=scope,
+                document_id=document_id,
+                for_update=True,
+            )
+            _require_version(document.version, expected_version)
+            await session.execute(
+                update(KnowledgeChunk)
+                .where(
+                    KnowledgeChunk.tenant_id == scope.tenant_id,
+                    KnowledgeChunk.company_id == scope.company_id,
+                    KnowledgeChunk.document_id == document.id,
+                )
+                .values(is_active=False)
+            )
+            await session.execute(
+                update(KnowledgeVersion)
+                .where(
+                    KnowledgeVersion.tenant_id == scope.tenant_id,
+                    KnowledgeVersion.company_id == scope.company_id,
+                    KnowledgeVersion.document_id == document.id,
+                    KnowledgeVersion.review_status != ReviewStatus.ARCHIVED,
+                )
+                .values(review_status=ReviewStatus.ARCHIVED)
+            )
+            now = datetime.now(UTC)
+            await session.execute(
+                update(ScheduledPublishJob)
+                .where(
+                    ScheduledPublishJob.tenant_id == scope.tenant_id,
+                    ScheduledPublishJob.company_id == scope.company_id,
+                    ScheduledPublishJob.resource_type
+                    == ScheduledPublishResourceType.KNOWLEDGE_DOCUMENT,
+                    ScheduledPublishJob.resource_id == document.id,
+                    ScheduledPublishJob.status.in_(
+                        (
+                            ScheduledPublishStatus.PENDING,
+                            ScheduledPublishStatus.PROCESSING,
+                            ScheduledPublishStatus.FAILED,
+                        )
+                    ),
+                )
+                .values(
+                    status=ScheduledPublishStatus.CANCELLED,
+                    cancelled_at=now,
+                    lock_token=None,
+                    locked_by=None,
+                    lease_expires_at=None,
+                )
+            )
+            previous_status = document.status.value
+            document.status = ContentStatus.ARCHIVED
+            document.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="knowledge.document.delete",
+                resource_type="knowledge_document",
+                resource_id=document.id,
+                trace_id=trace_id,
+                event_data={
+                    "title": document.title,
+                    "previous_status": previous_status,
+                    "version": document.version,
+                },
+            )
+            await session.flush()
 
     async def put_document_draft(
         self,
@@ -991,6 +1082,7 @@ class AdminStore:
             KnowledgeDocument.id == document_id,
             KnowledgeDocument.tenant_id == scope.tenant_id,
             KnowledgeDocument.company_id == scope.company_id,
+            KnowledgeDocument.status != ContentStatus.ARCHIVED,
         )
         if for_update:
             statement = statement.with_for_update()

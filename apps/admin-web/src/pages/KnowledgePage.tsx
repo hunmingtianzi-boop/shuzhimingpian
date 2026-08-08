@@ -17,6 +17,7 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular,
+  Delete24Regular,
   Edit24Regular,
   Send24Regular,
 } from "@fluentui/react-icons";
@@ -29,6 +30,7 @@ import {
   type ScheduledPublication,
 } from "../api/scheduledPublicationsApi";
 import type { KnowledgeDocument } from "../api/types";
+import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { KnowledgeEditor } from "../components/KnowledgeEditor";
 import { KnowledgeImportPanel } from "../components/KnowledgeImportPanel";
 import { PageHeader } from "../components/PageHeader";
@@ -55,6 +57,9 @@ export function KnowledgePage() {
   const [publishTarget, setPublishTarget] = useState<KnowledgeDocument>();
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<ApiError>();
+  const [deleteTarget, setDeleteTarget] = useState<KnowledgeDocument>();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
 
   const openCreate = () => {
@@ -107,6 +112,45 @@ export function KnowledgePage() {
     schedules.reload();
   };
 
+  const requestDelete = (document: KnowledgeDocument) => {
+    setDeleteTarget(document);
+    setDeleteError(undefined);
+    setNotice(undefined);
+  };
+
+  const requestImportedDelete = async (documentId: string) => {
+    try {
+      requestDelete(await adminApi.getKnowledgeDocument(documentId));
+    } catch (caught) {
+      setDeleteError(
+        caught instanceof ApiError
+          ? caught
+          : new ApiError("读取待删除知识内容时发生未知错误。", { code: "UNKNOWN_ERROR" }),
+      );
+    }
+  };
+
+  const remove = async () => {
+    if (!deleteTarget || deleting || deleteTarget.version === undefined) return;
+    setDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await adminApi.deleteKnowledgeDocument(deleteTarget.id, deleteTarget.version);
+      setDeleteTarget(undefined);
+      setNotice("知识内容已删除，AI 将不再检索该内容；历史导入批次仍保留用于追溯。");
+      resource.reload();
+      schedules.reload();
+    } catch (caught) {
+      setDeleteError(
+        caught instanceof ApiError
+          ? caught
+          : new ApiError("删除知识内容时发生未知错误。", { code: "UNKNOWN_ERROR" }),
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <main className="page-stack">
       <PageHeader
@@ -143,7 +187,16 @@ export function KnowledgePage() {
         </MessageBar>
       )}
 
-      <KnowledgeImportPanel />
+      <KnowledgeImportPanel onRequestDeleteDocument={(id) => void requestImportedDelete(id)} />
+
+      {deleteError && !deleteTarget ? (
+        <MessageBar intent="error">
+          <MessageBarBody>
+            无法打开删除确认：{deleteError.message}
+            {deleteError.requestId ? `（请求编号：${deleteError.requestId}）` : ""}
+          </MessageBarBody>
+        </MessageBar>
+      ) : null}
 
       <section id="knowledge-documents" className="content-panel knowledge-panel">
         {resource.status !== "ready" && (
@@ -235,6 +288,15 @@ export function KnowledgePage() {
                             onChanged={reloadAfterSchedule}
                           />
                         )}
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<Delete24Regular />}
+                          disabled={document.version === undefined}
+                          onClick={() => requestDelete(document)}
+                        >
+                          删除
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -314,6 +376,33 @@ export function KnowledgePage() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      <ActionConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除知识内容"
+        description="删除后，这条内容会立即退出知识列表和 AI 检索范围；相关待发布任务也会取消。历史导入记录会保留，便于追溯。"
+        confirmLabel="确认删除"
+        pendingLabel="正在删除"
+        pending={deleting}
+        error={deleteError}
+        destructive
+        detail={deleteTarget ? (
+          <div className="publish-target">
+            <strong>{deleteTarget.title || "未命名知识"}</strong>
+            <span>当前版本：{deleteTarget.version ?? "未知"}</span>
+          </div>
+        ) : undefined}
+        onCancel={() => {
+          setDeleteTarget(undefined);
+          setDeleteError(undefined);
+        }}
+        onConfirm={() => void remove()}
+        onReload={() => {
+          setDeleteTarget(undefined);
+          setDeleteError(undefined);
+          resource.reload();
+        }}
+      />
     </main>
   );
 }

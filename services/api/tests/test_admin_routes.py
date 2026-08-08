@@ -112,6 +112,9 @@ class RouteStore:
         self.calls.append(("publish", kwargs))
         return self.published
 
+    async def delete_document(self, **kwargs: Any) -> None:
+        self.calls.append(("delete_document", kwargs))
+
 
 @pytest.fixture
 def route_client(
@@ -241,7 +244,11 @@ def test_admin_router_exposes_requested_vertical_slice(
     assert set(paths["/api/v1/admin/card"]) == {"get", "put"}
     assert set(paths["/api/v1/admin/setup/complete"]) == {"post"}
     assert set(paths["/api/v1/admin/knowledge/documents"]) == {"get", "post"}
-    assert set(paths["/api/v1/admin/knowledge/documents/{document_id}"]) == {"get", "put"}
+    assert set(paths["/api/v1/admin/knowledge/documents/{document_id}"]) == {
+        "delete",
+        "get",
+        "put",
+    }
     assert "post" in paths["/api/v1/admin/knowledge/documents/{document_id}/publish"]
 
 
@@ -409,6 +416,10 @@ def test_knowledge_review_permission_covers_create_draft_list_and_publish(
         f"/api/v1/admin/knowledge/documents/{document_id}/publish",
         json={"version_id": str(version_id)},
     )
+    delete_response = client.delete(
+        f"/api/v1/admin/knowledge/documents/{document_id}",
+        headers={"If-Match": '"2"'},
+    )
 
     assert list_response.status_code == 200
     assert list_response.json()["total"] == 1
@@ -426,3 +437,6 @@ def test_knowledge_review_permission_covers_create_draft_list_and_publish(
     assert publish_response.json()["data"]["index_status"] == "succeeded"
     publish_call = next(payload for name, payload in store.calls if name == "publish")
     assert publish_call["version_id"] == version_id
+    assert delete_response.status_code == 204
+    delete_call = next(payload for name, payload in store.calls if name == "delete_document")
+    assert delete_call["expected_version"] == 2

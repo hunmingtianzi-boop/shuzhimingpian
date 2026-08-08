@@ -17,6 +17,7 @@ function documentWith(
     id: "knowledge-1",
     title: "企业知识",
     status,
+    version: 2,
     latestVersion: reviewStatus
       ? {
           id: "version-1",
@@ -118,5 +119,23 @@ describe("KnowledgePage scheduled publication", () => {
     await user.click(screen.getByRole("button", { name: "取消定时" }));
     await user.click(screen.getByRole("button", { name: "确认取消定时" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("schedule-2", 3));
+  });
+
+  it("deletes a knowledge document only after destructive confirmation", async () => {
+    const user = userEvent.setup();
+    const remove = vi.spyOn(adminApi, "deleteKnowledgeDocument").mockResolvedValue(undefined);
+    render(
+      <FluentProvider theme={adminLightTheme}>
+        <KnowledgePage />
+      </FluentProvider>,
+    );
+
+    await screen.findByText("企业知识");
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    expect(remove).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("knowledge-1", 2));
+    expect(await screen.findByText(/AI 将不再检索该内容/)).toBeInTheDocument();
   });
 });

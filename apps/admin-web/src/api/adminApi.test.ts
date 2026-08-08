@@ -237,6 +237,22 @@ describe("adminApi real contract", () => {
     );
   });
 
+  it("deletes knowledge content with optimistic concurrency", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const api = await authenticatedApi(fetcher);
+
+    await api.deleteKnowledgeDocument("knowledge-1", 6);
+
+    expect(fetcher.mock.calls[1][0]).toBe(
+      "https://api.example.test/api/v1/admin/knowledge/documents/knowledge-1",
+    );
+    expect(fetcher.mock.calls[1][1]?.method).toBe("DELETE");
+    expect((fetcher.mock.calls[1][1]?.headers as Headers).get("If-Match")).toBe("6");
+  });
+
   it("submits a local template document only when creation is confirmed", async () => {
     const card = {
       id: "card-enterprise",

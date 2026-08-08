@@ -841,6 +841,13 @@ export function createAdminApi(client: ApiClient) {
     );
   },
 
+  async deleteKnowledgeDocument(id: string, version: number): Promise<void> {
+    await client.delete(
+      `/admin/knowledge/documents/${encodeURIComponent(id)}`,
+      { version },
+    );
+  },
+
   async listProducts(): Promise<Product[]> {
     return normalizeList(
       await client.get("/admin/products?limit=100&offset=0"),

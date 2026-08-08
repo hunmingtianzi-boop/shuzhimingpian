@@ -3808,7 +3808,7 @@ a:hover {
 
 .template-structure-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
   width: 100%;
   min-height: 38px;
   align-items: center;
@@ -4693,13 +4693,14 @@ a:hover {
 
 .template-structure-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr) 34px;
   min-height: 48px;
   align-items: stretch;
 }
 
 .template-drag-handle,
-.template-structure-select {
+.template-structure-select,
+.template-structure-remove {
   border: 0;
   background: transparent;
   font: inherit;
@@ -4742,6 +4743,26 @@ a:hover {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.template-structure-remove {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  align-self: center;
+  color: #a44b4b;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.template-structure-remove:hover,
+.template-structure-remove:focus-visible {
+  color: #8e2929;
+  background: #fdeeee;
 }
 
 .template-structure-select:focus-visible,

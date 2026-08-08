@@ -447,6 +447,26 @@ async def put_knowledge_document_draft(
     return KnowledgeDraftEnvelope(data=result)
 
 
+@router.delete(
+    "/knowledge/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteKnowledgeDocument",
+)
+async def delete_knowledge_document(
+    document_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> None:
+    _require_permission(principal, "knowledge.write")
+    await _store(request).delete_document(
+        scope=_scope(principal),
+        document_id=document_id,
+        expected_version=parse_if_match(if_match),
+        trace_id=request_id_ctx.get(),
+    )
+
+
 @router.post(
     "/knowledge/documents/{document_id}/publish",
     response_model=KnowledgePublishEnvelope,

@@ -424,6 +424,31 @@ describe("EnterpriseTemplateEditor", () => {
     expect(await screen.findByText("图片画廊已加入草稿。请补齐内容后再发布。")).toBeInTheDocument();
   }, 15_000);
 
+  it("deletes a block from the structure list only after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
+      async (_id, _version, themeKey, blocks) => template({
+        version: 8,
+        draft: { schemaVersion: 1, themeKey, blocks },
+      }),
+    );
+    renderEditor();
+
+    await screen.findByRole("button", { name: "删除企业介绍板块", hidden: true });
+    expect(screen.queryByRole("button", { name: "删除基础名片板块", hidden: true })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除企业介绍板块", hidden: true }));
+    expect(screen.getByText("删除名片板块")).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "确认删除", hidden: true }));
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][3].map((block) => block.id)).toEqual(["identity", "ai-1"]);
+  }, 15_000);
+
   it("binds FAQ blocks to selectable published knowledge instead of a free-text answer", async () => {
     const user = userEvent.setup();
     const faqTemplate = template({
