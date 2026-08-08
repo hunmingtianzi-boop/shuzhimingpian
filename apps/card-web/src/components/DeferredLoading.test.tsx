@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useEffect, useRef } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -146,10 +146,9 @@ describe("deferred first-screen boundaries", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "分享名片" }));
-    expect(
-      await screen.findByRole("dialog", { name: "扫码或复制链接" }),
-    ).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    const shareDialog = await screen.findByRole("dialog", { name: "扫码或复制链接" });
+    expect(shareDialog).toBeInTheDocument();
+    fireEvent.click(within(shareDialog).getByRole("button", { name: "关闭" }));
     await waitFor(() =>
       expect(
         screen.queryByRole("dialog", { name: "扫码或复制链接" }),
