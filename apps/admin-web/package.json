@@ -20,7 +20,7 @@
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
     "@fluentui/react-components": "9.74.3",
-    "@fluentui/react-icons": "2.0.332",
+    "@fluentui/react-icons": "2.0.334",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
