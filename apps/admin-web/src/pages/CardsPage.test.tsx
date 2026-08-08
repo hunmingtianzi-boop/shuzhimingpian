@@ -388,6 +388,13 @@ describe("CardsPage", () => {
     const create = vi
       .spyOn(adminApi, "createManagedCard")
       .mockResolvedValue(enterpriseCard);
+    vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: "/api/v1/public/card-assets/enterprise-logo.webp",
+      contentType: "image/webp",
+      width: 640,
+      height: 640,
+      sizeBytes: 2048,
+    });
     renderPage();
 
     await screen.findByText("尚未创建名片");
@@ -405,6 +412,12 @@ describe("CardsPage", () => {
       screen.queryByRole("textbox", { name: /所有者用户 ID/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("选择企业 Logo")).toBeInTheDocument();
+    await user.upload(
+      screen.getByLabelText("选择企业 Logo"),
+      new File(["logo"], "企业-logo.png", { type: "image/png" }),
+    );
+    const logoPreview = await screen.findByRole("img", { name: "企业 Logo 预览" });
+    await waitFor(() => expect(logoPreview.getAttribute("src")).toMatch(/^data:image\/png;base64,/));
     await user.click(screen.getByRole("button", { name: "创建名片" }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());

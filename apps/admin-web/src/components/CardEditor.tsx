@@ -170,13 +170,34 @@ export function CardEditor({
   }, [createKind, item, open]);
 
   useEffect(() => {
-    if (!imageFile || typeof URL.createObjectURL !== "function") {
+    if (!imageFile) {
       setImagePreview("");
       return;
     }
-    const preview = URL.createObjectURL(imageFile);
-    setImagePreview(preview);
-    return () => URL.revokeObjectURL(preview);
+
+    let active = true;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (active && typeof reader.result === "string") {
+        setImagePreview(reader.result);
+      }
+    });
+    reader.addEventListener("error", () => {
+      if (active) {
+        setImagePreview("");
+        setError(new ApiError("无法读取所选图片，请重新选择。", {
+          code: "CARD_ASSET_READ_FAILED",
+        }));
+      }
+    });
+    reader.readAsDataURL(imageFile);
+
+    return () => {
+      active = false;
+      if (reader.readyState === FileReader.LOADING) {
+        reader.abort();
+      }
+    };
   }, [imageFile]);
 
   const update = (field: keyof ManagedCardInput, value: string) => {
