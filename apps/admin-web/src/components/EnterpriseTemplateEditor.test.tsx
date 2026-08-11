@@ -442,8 +442,13 @@ describe("EnterpriseTemplateEditor", () => {
     fireEvent.change(opacitySlider, { target: { value: "78" } });
 
     await user.click(screen.getByRole("button", { name: /02\s*核心业务/ }));
-    await user.click(screen.getByRole("radio", { name: /双列宫格/ }));
-    expect(screen.getByRole("radio", { name: /双列宫格/ })).toHaveAttribute("aria-checked", "true");
+    // Tabster can temporarily mark the portal surface aria-hidden in jsdom
+    // after a focus change. The controls remain rendered and interactive.
+    await user.click(screen.getByRole("radio", { name: /双列宫格/, hidden: true }));
+    expect(screen.getByRole("radio", { name: /双列宫格/, hidden: true })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
