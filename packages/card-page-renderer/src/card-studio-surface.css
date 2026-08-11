@@ -133,6 +133,23 @@ input.sr-only {
 
 .icon-button:hover { background: var(--surface-soft); }
 
+.card-topbar-placeholder { pointer-events: none; }
+
+.card-page-switch {
+  width: fit-content;
+  margin: -4px 16px 12px auto;
+  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--cyan-strong);
+  background: var(--surface-soft);
+  font-size: 12px;
+  font-weight: 760;
+  text-decoration: none;
+}
+
 .identity-block {
   position: relative;
   isolation: isolate;

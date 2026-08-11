@@ -106,13 +106,14 @@ export type CompanyProfile = {
   website: string;
   logoUrl: string;
   profilePersonalizationPolicyVersion: string;
+  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CompanyProfileInput = Omit<
   CompanyProfile,
-  "id" | "updatedAt"
+  "id" | "updatedAt" | "onboardingStatus"
 >;
 
 export type CardSettings = {
@@ -130,13 +131,14 @@ export type CardSettings = {
     leadConsent: string;
   };
   status?: string;
+  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CardSettingsInput = Omit<
   CardSettings,
-  "id" | "status" | "updatedAt"
+  "id" | "status" | "onboardingStatus" | "updatedAt"
 >;
 
 export type KnowledgeStatus =
@@ -884,7 +886,85 @@ export type Visit = {
   startedAt: string;
   endedAt?: string;
   durationSeconds?: number;
+  activityStatus: "active" | "ended" | "estimated" | "unknown";
+  lastActivityAt?: string;
+  durationEstimated: boolean;
+  visitorChannel: "web" | "wechat" | "wecom";
+  visitorIdentityType: "anonymous" | "wecom_member" | "wechat_openid" | "wecom_external";
+  visitorIdentityLabel: string;
   conversationCount: number;
+};
+
+export type VisitPageDuration = {
+  pageKey: string;
+  pageTitle: string;
+  objectType?: string;
+  objectId?: string;
+  durationSeconds: number;
+  viewCount: number;
+  lastViewedAt: string;
+};
+
+export type VisitQuestion = {
+  messageId: string;
+  conversationId: string;
+  question: string;
+  askedAt: string;
+  answerStatus?: string;
+  answer?: string;
+  answeredAt?: string;
+  responseSeconds?: number;
+};
+
+export type VisitPageTimelineItem = {
+  sequence: number;
+  pageKey: string;
+  pageTitle: string;
+  objectType?: string;
+  objectId?: string;
+  enteredAt: string;
+  lastActivityAt: string;
+  durationSeconds: number;
+  exitReason: "navigation" | "background" | "leave" | "timeout" | "active";
+};
+
+export type VisitAction = {
+  eventId: string;
+  actionType: "content_view" | "cta_click" | "share";
+  actionLabel: string;
+  objectType?: string;
+  objectId?: string;
+  occurredAt: string;
+};
+
+export type VisitBehaviorSignal = {
+  category: "engagement" | "interest" | "intent";
+  label: string;
+  evidence: string;
+  basis: "observed" | "inferred";
+  confidence: number;
+};
+
+export type VisitBehaviorAnalysis = {
+  summary: string;
+  engagementScore: number;
+  engagementLevel: "low" | "medium" | "high";
+  intentLevel: "low" | "medium" | "high";
+  trackedDurationSeconds: number;
+  uniquePages: number;
+  totalActions: number;
+  questionCount: number;
+  answeredCount: number;
+  signals: VisitBehaviorSignal[];
+};
+
+export type VisitDetail = Visit & {
+  eventCount: number;
+  pageDurations: VisitPageDuration[];
+  pageTimeline: VisitPageTimelineItem[];
+  actions: VisitAction[];
+  questions: VisitQuestion[];
+  behaviorAnalysis: VisitBehaviorAnalysis;
 };
 
 export type ConversationStatus = "active" | "closed" | "expired" | "blocked";

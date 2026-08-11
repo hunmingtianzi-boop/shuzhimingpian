@@ -20,9 +20,7 @@ import {
 import previewAiUrl from "./assets/preview-ai.svg";
 import previewAvatarUrl from "./assets/preview-avatar.svg";
 import previewCaseUrl from "./assets/preview-case.svg";
-import previewContactUrl from "./assets/preview-contact.svg";
 import previewSmartCardUrl from "./assets/preview-smart-card.svg";
-import previewStoryUrl from "./assets/preview-story.svg";
 
 const previewCard: ManagedCard = {
   id: "local-preview-card",
@@ -145,18 +143,6 @@ const initialBlocks: EnterpriseTemplateBlock[] = [
     sortOrder: 1,
     title: "企业介绍",
     body: "让每一张企业名片都能持续更新内容、接待访客并沉淀业务机会。",
-    contentImage: {
-      url: previewStoryUrl,
-      alt: "企业团队讨论数智名片方案",
-      placement: "top",
-      fit: "cover",
-      aspectRatio: "wide",
-      widthPercent: 100,
-      positionX: 50,
-      positionY: 48,
-    },
-    sizePreset: "standard",
-    paddingY: "standard",
   },
   {
     id: "business",
@@ -196,17 +182,6 @@ const initialBlocks: EnterpriseTemplateBlock[] = [
     body: "留下需求，交给团队继续跟进。",
     ctaLabel: "访问企业官网",
     ctaUrl: "https://example.com",
-    background: {
-      kind: "image",
-      color: "#183438",
-      imageUrl: previewContactUrl,
-      fit: "cover",
-      positionX: 50,
-      positionY: 52,
-      overlayColor: "#102b2f",
-      overlayOpacity: 0.64,
-    },
-    textTone: "light",
   },
   {
     id: "assistant",
@@ -226,8 +201,19 @@ function cloneBlocks(blocks: EnterpriseTemplateBlock[]) {
     productIds: block.productIds ? [...block.productIds] : undefined,
     caseIds: block.caseIds ? [...block.caseIds] : undefined,
     faqDocumentIds: block.faqDocumentIds ? [...block.faqDocumentIds] : undefined,
-    background: block.background ? { ...block.background } : undefined,
-    contentImage: block.contentImage ? { ...block.contentImage } : undefined,
+    galleryItems: block.galleryItems?.map((item) => ({ ...item })),
+    actionItems: block.actionItems?.map((item) => ({ ...item })),
+    productOverrides: block.productOverrides?.map((item) => ({ ...item })),
+    caseOverrides: block.caseOverrides?.map((item) => ({
+      ...item,
+      metrics: item.metrics?.map((metric) => ({ ...metric })),
+    })),
+    presentation: block.presentation ? {
+      ...block.presentation,
+      background: block.presentation.background
+        ? { ...block.presentation.background }
+        : undefined,
+    } : undefined,
   }));
 }
 
@@ -249,16 +235,6 @@ function readFileAsDataUrl(file: File) {
 function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
   let version = 1;
   let themeKey: EnterpriseTemplateThemeKey = "brand";
-  let pageBackground: EnterpriseTemplateBlock["background"] = {
-    kind: "color",
-    color: "#edf4f3",
-    fit: "cover",
-    positionX: 50,
-    positionY: 50,
-    overlayColor: "#000000",
-    overlayOpacity: 0,
-  };
-  let pageTextTone: EnterpriseTemplate["draft"]["pageTextTone"] = "auto";
   let blocks = cloneBlocks(initialBlocks);
 
   const enterpriseTemplate = (): EnterpriseTemplate => ({
@@ -267,8 +243,6 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
     draft: {
       schemaVersion: 1,
       themeKey,
-      pageBackground: pageBackground ? { ...pageBackground } : undefined,
-      pageTextTone,
       blocks: cloneBlocks(blocks),
     },
   });
@@ -280,13 +254,9 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
   const save = (
     nextThemeKey: EnterpriseTemplateThemeKey,
     nextBlocks: EnterpriseTemplateBlock[],
-    nextPageBackground?: EnterpriseTemplateBlock["background"],
-    nextPageTextTone?: EnterpriseTemplate["draft"]["pageTextTone"],
   ) => {
     version += 1;
     themeKey = nextThemeKey;
-    pageBackground = nextPageBackground ? { ...nextPageBackground } : undefined;
-    pageTextTone = nextPageTextTone ?? "auto";
     blocks = cloneBlocks(nextBlocks);
   };
 
@@ -318,12 +288,24 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
         sizeBytes: file.size,
       };
     },
-    async updateEnterpriseTemplate(_cardId, _expectedVersion, nextThemeKey, nextBlocks, nextPageBackground, nextPageTextTone) {
-      save(nextThemeKey, nextBlocks, nextPageBackground, nextPageTextTone);
+    async updateManagedCard(_cardId, _expectedVersion, input) {
+      version += 1;
+      return {
+        ...previewCard,
+        ...input,
+        id: previewCard.id,
+        shareUrl: previewCard.shareUrl,
+        qrUrl: previewCard.qrUrl,
+        status: previewCard.status,
+        version,
+      };
+    },
+    async updateEnterpriseTemplate(_cardId, _expectedVersion, nextThemeKey, nextBlocks) {
+      save(nextThemeKey, nextBlocks);
       return enterpriseTemplate();
     },
-    async updateCardComposerDefault(cardKind, _expectedVersion, nextThemeKey, nextBlocks, nextPageBackground, nextPageTextTone) {
-      save(nextThemeKey, nextBlocks, nextPageBackground, nextPageTextTone);
+    async updateCardComposerDefault(cardKind, _expectedVersion, nextThemeKey, nextBlocks) {
+      save(nextThemeKey, nextBlocks);
       return composerDefault(cardKind);
     },
   };

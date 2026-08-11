@@ -27,6 +27,7 @@ import {
 import type { EnterpriseCardConfig } from "../domain/card";
 import { AssistantApiError, recordPublicCardAction } from "../lib/assistantApi";
 import type { AssistantRelatedSection } from "../lib/assistantRelatedSections";
+import type { AnalyticsPage } from "../lib/visitAnalytics";
 import { copyText } from "../lib/clipboard";
 import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import { EnterpriseTemplateBlocks } from "../components/EnterpriseTemplateBlocks";
@@ -76,6 +77,16 @@ type CardSwitchTarget = {
 
 type CompanySectionId = "overview" | "intro" | "business" | "cases" | "trust" | "faq" | "ai";
 
+const companySectionAnalyticsLabels: Record<CompanySectionId, string> = {
+  overview: "概览",
+  intro: "介绍",
+  business: "业务",
+  cases: "案例",
+  trust: "资料",
+  faq: "问答",
+  ai: "AI",
+};
+
 export type BusinessCardPrototypeAppHandle = {
   openAssistantTarget: (targetId: string) => void;
 };
@@ -85,6 +96,7 @@ type BusinessCardPrototypeAppProps = {
   card?: PublicCardData;
   onAssistant: (question?: string) => void;
   onAssistantRelatedSectionsChange?: (sections: AssistantRelatedSection[]) => void;
+  onAnalyticsPageChange?: (page: AnalyticsPage) => void;
   onLead: () => void;
   onPrivacy: () => void;
   onProfile: () => void;
@@ -552,6 +564,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   card,
   onAssistant,
   onAssistantRelatedSectionsChange,
+  onAnalyticsPageChange,
   onLead,
   onPrivacy,
   onProfile,
@@ -1044,6 +1057,54 @@ export const BusinessCardPrototypeApp = forwardRef<
   const templateFaqBlocks = visibleTemplateBlocks.filter((block) => block.type === "faq");
   const templateCtaBlocks = visibleTemplateBlocks.filter((block) => block.type === "cta");
   const companyNavigationKey = companyNavigationItems.map(({ id }) => id).join(",");
+
+  useEffect(() => {
+    if (!onAnalyticsPageChange) return;
+    if (view === "detail") {
+      const route = detail
+        ? { kind: detail.kind, slug: detail.item.slug, title: detail.kind === "product" ? detail.item.name : detail.item.title }
+        : requestedDetail
+          ? { ...requestedDetail, title: requestedDetail.slug }
+          : undefined;
+      if (route) {
+        onAnalyticsPageChange({
+          key: `detail:${route.kind}:${route.slug}`,
+          title: route.title,
+          objectType: route.kind,
+          objectId: route.slug,
+        });
+        return;
+      }
+    }
+    if (view === "company") {
+      onAnalyticsPageChange({
+        key: `company:${activeCompanySection}`,
+        title: `企业页·${companySectionAnalyticsLabels[activeCompanySection]}`,
+        objectType: "card",
+        objectId: `company:${activeCompanySection}`,
+      });
+      return;
+    }
+    const labels: Record<BaseView, string> = {
+      card: "个人名片",
+      company: "企业主页",
+      square: "业务广场",
+      me: "访客中心",
+    };
+    onAnalyticsPageChange({
+      key: view,
+      title: labels[view as BaseView] ?? view,
+      objectType: "card",
+      objectId: view,
+    });
+  }, [
+    activeCompanySection,
+    detail,
+    onAnalyticsPageChange,
+    requestedDetail?.kind,
+    requestedDetail?.slug,
+    view,
+  ]);
   const composedIdentity: CardPageIdentity = isStandaloneEmployee
     ? {
         kind: "employee",
@@ -1199,10 +1260,19 @@ export const BusinessCardPrototypeApp = forwardRef<
       onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
       onAssistant={assistantAvailable ? (question) => onAssistant(question) : undefined}
       title={isStandaloneEmployee ? "员工数字名片" : "企业官方名片"}
-      onBack={() => window.history.back()}
       onShare={onShare}
+      switchTarget={isStandaloneEmployee && officialCompanyHref ? {
+        href: officialCompanyHref,
+        label: "切换企业",
+        ariaLabel: "切换到企业名片",
+      } : isStandaloneEnterprise && employeeReturnHref ? {
+        href: employeeReturnHref,
+        label: "切换员工",
+        ariaLabel: "切换到员工名片",
+      } : undefined}
+      contentAriaLabel={isStandaloneEmployee ? "员工名片内容" : "企业名片内容"}
       primaryAction={{ label: "咨询 AI", onClick: () => onAssistant(), disabled: !assistantAvailable }}
-      secondaryAction={{ label: "提交合作需求", onClick: onLead }}
+      secondaryAction={{ label: isStandaloneEmployee ? "发起合作" : "提交合作需求", onClick: onLead }}
       onAction={(item) => {
         if (!card) return;
         void recordPublicCardAction({

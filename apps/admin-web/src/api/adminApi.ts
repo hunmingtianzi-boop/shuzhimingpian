@@ -100,6 +100,7 @@ function normalizeCompany(payload: unknown): CompanyProfile {
     profilePersonalizationPolicyVersion:
       optionalString(raw.profile_personalization_policy_version) ||
       "profile-personalization-v1",
+    onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
   };
@@ -128,6 +129,7 @@ function normalizeCard(payload: unknown): CardSettings {
       leadConsent: optionalString(policies.lead_consent),
     },
     status: optionalString(raw.status) || undefined,
+    onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
   };
@@ -927,6 +929,10 @@ export function createAdminApi(client: ApiClient) {
     await client.put("/admin/card", cardPayload(input), {
       version: input.version,
     });
+  },
+
+  async completeEnterpriseSetup(): Promise<void> {
+    await client.post("/admin/setup/complete", {});
   },
 
   async listKnowledgeDocuments(): Promise<KnowledgeDocument[]> {

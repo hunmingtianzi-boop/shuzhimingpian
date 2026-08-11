@@ -489,6 +489,55 @@
         }
       }
     },
+    "/admin/setup/complete": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Complete Enterprise Setup",
+        "operationId": "completeEnterpriseSetup",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseSetupEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/knowledge/documents": {
       "get": {
         "tags": [
@@ -729,6 +778,65 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Delete Knowledge Document",
+        "operationId": "deleteKnowledgeDocument",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -10627,6 +10735,65 @@
         }
       }
     },
+    "/admin/visits/{visit_id}": {
+      "get": {
+        "tags": [
+          "Business Workflow"
+        ],
+        "summary": "Get Visit Detail",
+        "operationId": "getAdminVisitDetail",
+        "parameters": [
+          {
+            "name": "visit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Visit Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitDetailEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/conversations": {
       "get": {
         "tags": [
@@ -12421,6 +12588,216 @@
           }
         }
       }
+    },
+    "/integrations/wecom/suite/install-url": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Create Wecom Suite Install Url",
+        "operationId": "createWeComSuiteInstallUrl",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeComOAuthUrlEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/wecom/suite/install-complete": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Complete Wecom Suite Install",
+        "operationId": "completeWeComSuiteInstall",
+        "parameters": [
+          {
+            "name": "auth_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 512,
+              "title": "Auth Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/wecom/suite/callback": {
+      "get": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Verify Wecom Suite Callback Url",
+        "operationId": "verifyWeComSuiteCallbackUrl",
+        "parameters": [
+          {
+            "name": "msg_signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40,
+              "title": "Msg Signature"
+            }
+          },
+          {
+            "name": "timestamp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "title": "Timestamp"
+            }
+          },
+          {
+            "name": "nonce",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Nonce"
+            }
+          },
+          {
+            "name": "echostr",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Echostr"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "WeCom Provider"
+        ],
+        "summary": "Receive Wecom Suite Callback",
+        "operationId": "receiveWeComSuiteCallback",
+        "parameters": [
+          {
+            "name": "msg_signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 40,
+              "maxLength": 40,
+              "title": "Msg Signature"
+            }
+          },
+          {
+            "name": "timestamp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "title": "Timestamp"
+            }
+          },
+          {
+            "name": "nonce",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Nonce"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -12934,6 +13311,68 @@
         "title": "CardComposerDefaultRecord",
         "description": "Company-owned default free-module configuration for one card kind."
       },
+      "CardContactItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "wechat",
+              "email",
+              "location",
+              "website",
+              "other"
+            ],
+            "title": "Kind",
+            "default": "other"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Value"
+          },
+          "href": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "CardContactItem"
+      },
       "CardKind": {
         "type": "string",
         "enum": [
@@ -13033,6 +13472,10 @@
             "type": "string",
             "title": "Status"
           },
+          "onboarding_status": {
+            "type": "string",
+            "title": "Onboarding Status"
+          },
           "published_at": {
             "anyOf": [
               {
@@ -13065,6 +13508,7 @@
           "display_name",
           "title",
           "status",
+          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -13401,6 +13845,10 @@
             "type": "string",
             "title": "Status"
           },
+          "onboarding_status": {
+            "type": "string",
+            "title": "Onboarding Status"
+          },
           "version": {
             "type": "integer",
             "minimum": 1.0,
@@ -13420,6 +13868,7 @@
           "summary",
           "profile_personalization_policy_version",
           "status",
+          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -14004,6 +14453,22 @@
             },
             "type": "object",
             "title": "Policy Versions"
+          },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Identity Titles"
+          },
+          "contact_fields": {
+            "items": {
+              "$ref": "#/components/schemas/CardContactItem"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Contact Fields"
           },
           "employee_contact_visibility": {
             "items": {
@@ -15587,6 +16052,314 @@
         ],
         "title": "EnterpriseRecord"
       },
+      "EnterpriseSetupEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseSetupResult"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "EnterpriseSetupEnvelope"
+      },
+      "EnterpriseSetupResult": {
+        "properties": {
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          },
+          "company": {
+            "$ref": "#/components/schemas/CompanyProfile"
+          },
+          "card": {
+            "$ref": "#/components/schemas/CardProfile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "completed",
+          "company",
+          "card"
+        ],
+        "title": "EnterpriseSetupResult"
+      },
+      "EnterpriseTemplateActionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "external",
+                  "building",
+                  "calendar",
+                  "file",
+                  "play"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 24
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "external_url",
+              "internal_path",
+              "phone",
+              "map"
+            ],
+            "title": "Target Type"
+          },
+          "target_value": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Target Value"
+          },
+          "open_mode": {
+            "type": "string",
+            "enum": [
+              "self",
+              "new_tab"
+            ],
+            "title": "Open Mode",
+            "default": "self"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "target_type",
+          "target_value"
+        ],
+        "title": "EnterpriseTemplateActionItem"
+      },
+      "EnterpriseTemplateBackground": {
+        "properties": {
+          "asset_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Url"
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "cover",
+              "contain",
+              "custom"
+            ],
+            "title": "Fit",
+            "default": "cover"
+          },
+          "position": {
+            "type": "string",
+            "enum": [
+              "center",
+              "top",
+              "bottom",
+              "left",
+              "right",
+              "top_left",
+              "top_right",
+              "bottom_left",
+              "bottom_right"
+            ],
+            "title": "Position",
+            "default": "center"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "16:9",
+              "4:3",
+              "3:2",
+              "1:1"
+            ],
+            "title": "Aspect Ratio",
+            "default": "auto"
+          },
+          "focal_x": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Focal X",
+            "default": 50
+          },
+          "focal_y": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Focal Y",
+            "default": 50
+          },
+          "scale": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.5,
+            "title": "Scale",
+            "default": 1
+          },
+          "opacity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Opacity",
+            "default": 1
+          },
+          "overlay": {
+            "type": "string",
+            "enum": [
+              "none",
+              "light",
+              "dark",
+              "brand"
+            ],
+            "title": "Overlay",
+            "default": "none"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EnterpriseTemplateBackground"
+      },
       "EnterpriseTemplateBlock": {
         "properties": {
           "id": {
@@ -15608,13 +16381,19 @@
               "trust_panel",
               "faq",
               "cta",
-              "ai_assistant"
+              "ai_assistant",
+              "action_collection"
             ],
             "title": "Type"
           },
           "visible": {
             "type": "boolean",
             "title": "Visible",
+            "default": true
+          },
+          "show_title": {
+            "type": "boolean",
+            "title": "Show Title",
             "default": true
           },
           "directory_enabled": {
@@ -15628,6 +16407,64 @@
             "minimum": 0.0,
             "title": "Sort Order",
             "default": 0
+          },
+          "layout_variant": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "list",
+              "grid",
+              "carousel",
+              "featured",
+              "mosaic",
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Layout Variant",
+            "default": "auto"
+          },
+          "item_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 12.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Limit"
+          },
+          "action_template": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "shortcuts",
+                  "media",
+                  "event",
+                  "banner",
+                  "articles",
+                  "video",
+                  "buttons"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Template"
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplatePresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "anyOf": [
@@ -15660,6 +16497,14 @@
             "type": "array",
             "maxItems": 12,
             "title": "Image Urls"
+          },
+          "gallery_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateGalleryItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Gallery Items"
           },
           "video_url": {
             "anyOf": [
@@ -15702,6 +16547,14 @@
             "maxItems": 12,
             "title": "Product Items"
           },
+          "product_overrides": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateProductOverride"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Product Overrides"
+          },
           "case_ids": {
             "items": {
               "type": "string",
@@ -15718,6 +16571,14 @@
             "type": "array",
             "maxItems": 12,
             "title": "Case Items"
+          },
+          "case_overrides": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateCaseOverride"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Case Overrides"
           },
           "faq_mode": {
             "anyOf": [
@@ -15766,6 +16627,14 @@
               }
             ],
             "title": "Cta Url"
+          },
+          "action_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateActionItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Action Items"
           }
         },
         "additionalProperties": false,
@@ -15820,6 +16689,62 @@
             ],
             "title": "Summary"
           },
+          "background": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateMetric"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Metrics"
+          },
           "image_url": {
             "anyOf": [
               {
@@ -15831,6 +16756,18 @@
               }
             ],
             "title": "Image Url"
+          },
+          "cta_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Label"
           }
         },
         "additionalProperties": false,
@@ -15841,6 +16778,137 @@
           "title"
         ],
         "title": "EnterpriseTemplateCaseItem"
+      },
+      "EnterpriseTemplateCaseOverride": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateMetric"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Metrics"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "cta_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "EnterpriseTemplateCaseOverride"
       },
       "EnterpriseTemplateDocument": {
         "properties": {
@@ -15885,6 +16953,175 @@
           "data"
         ],
         "title": "EnterpriseTemplateEnvelope"
+      },
+      "EnterpriseTemplateGalleryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "image_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Image Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "time_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Label"
+          },
+          "period_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Label"
+          },
+          "badge_mode": {
+            "type": "string",
+            "enum": [
+              "title",
+              "time",
+              "period",
+              "custom",
+              "none"
+            ],
+            "title": "Badge Mode",
+            "default": "title"
+          },
+          "badge_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Badge Text"
+          },
+          "alt_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Text"
+          },
+          "link_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "image_url"
+        ],
+        "title": "EnterpriseTemplateGalleryItem"
+      },
+      "EnterpriseTemplateMetric": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "EnterpriseTemplateMetric"
+      },
+      "EnterpriseTemplatePresentation": {
+        "properties": {
+          "identity_layout": {
+            "type": "string",
+            "enum": [
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Identity Layout",
+            "default": "horizontal"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplateBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EnterpriseTemplatePresentation"
       },
       "EnterpriseTemplateProductItem": {
         "properties": {
@@ -15940,6 +17177,18 @@
               }
             ],
             "title": "Image Url"
+          },
+          "cta_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Label"
           }
         },
         "additionalProperties": false,
@@ -15950,6 +17199,81 @@
           "name"
         ],
         "title": "EnterpriseTemplateProductItem"
+      },
+      "EnterpriseTemplateProductOverride": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "cta_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "EnterpriseTemplateProductOverride"
       },
       "EnterpriseTemplateRecord": {
         "properties": {
@@ -18465,6 +19789,22 @@
             },
             "type": "object",
             "title": "Policy Versions"
+          },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Identity Titles"
+          },
+          "contact_fields": {
+            "items": {
+              "$ref": "#/components/schemas/CardContactItem"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Contact Fields"
           },
           "employee_contact_visibility": {
             "items": {
@@ -21096,6 +22436,14 @@
             ],
             "title": "Business Summary"
           },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Identity Titles"
+          },
           "contact_fields": {
             "items": {
               "additionalProperties": {
@@ -22692,9 +24040,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2083,
-                "minLength": 1,
-                "format": "uri"
+                "maxLength": 2048
               },
               {
                 "type": "null"
@@ -22909,9 +24255,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2083,
-                "minLength": 1,
-                "format": "uri"
+                "maxLength": 2048
               },
               {
                 "type": "null"
@@ -23124,6 +24468,22 @@
             },
             "type": "object",
             "title": "Policy Versions"
+          },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Identity Titles"
+          },
+          "contact_fields": {
+            "items": {
+              "$ref": "#/components/schemas/CardContactItem"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Contact Fields"
           },
           "employee_contact_visibility": {
             "items": {
@@ -23721,6 +25081,371 @@
         ],
         "title": "ValidationError"
       },
+      "VisitAction": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "content_view",
+              "cta_click",
+              "share"
+            ],
+            "title": "Action Type"
+          },
+          "action_label": {
+            "type": "string",
+            "title": "Action Label"
+          },
+          "object_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Type"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "action_type",
+          "action_label",
+          "occurred_at"
+        ],
+        "title": "VisitAction"
+      },
+      "VisitBehaviorAnalysis": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "engagement_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Engagement Score"
+          },
+          "engagement_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Engagement Level"
+          },
+          "intent_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Intent Level"
+          },
+          "tracked_duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Tracked Duration Seconds"
+          },
+          "unique_pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Pages"
+          },
+          "total_actions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Actions"
+          },
+          "question_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Question Count"
+          },
+          "answered_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Answered Count"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/VisitBehaviorSignal"
+            },
+            "type": "array",
+            "title": "Signals"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "summary",
+          "engagement_score",
+          "engagement_level",
+          "intent_level",
+          "tracked_duration_seconds",
+          "unique_pages",
+          "total_actions",
+          "question_count",
+          "answered_count"
+        ],
+        "title": "VisitBehaviorAnalysis"
+      },
+      "VisitBehaviorSignal": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "engagement",
+              "interest",
+              "intent"
+            ],
+            "title": "Category"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "inferred"
+            ],
+            "title": "Basis"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "label",
+          "evidence",
+          "basis",
+          "confidence"
+        ],
+        "title": "VisitBehaviorSignal"
+      },
+      "VisitDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "card_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Card Id"
+          },
+          "card_display_name": {
+            "type": "string",
+            "title": "Card Display Name"
+          },
+          "visitor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Visitor Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "activity_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "ended",
+              "estimated",
+              "unknown"
+            ],
+            "title": "Activity Status",
+            "default": "unknown"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "duration_estimated": {
+            "type": "boolean",
+            "title": "Duration Estimated",
+            "default": false
+          },
+          "visitor_channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "wechat",
+              "wecom"
+            ],
+            "title": "Visitor Channel",
+            "default": "web"
+          },
+          "visitor_identity_type": {
+            "type": "string",
+            "enum": [
+              "anonymous",
+              "wecom_member",
+              "wechat_openid",
+              "wecom_external"
+            ],
+            "title": "Visitor Identity Type",
+            "default": "anonymous"
+          },
+          "visitor_identity_label": {
+            "type": "string",
+            "title": "Visitor Identity Label",
+            "default": "匿名网页访客"
+          },
+          "conversation_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Conversation Count"
+          },
+          "event_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Event Count"
+          },
+          "page_durations": {
+            "items": {
+              "$ref": "#/components/schemas/VisitPageDuration"
+            },
+            "type": "array",
+            "title": "Page Durations"
+          },
+          "page_timeline": {
+            "items": {
+              "$ref": "#/components/schemas/VisitPageTimelineItem"
+            },
+            "type": "array",
+            "title": "Page Timeline"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/VisitAction"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/VisitQuestion"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "behavior_analysis": {
+            "$ref": "#/components/schemas/VisitBehaviorAnalysis"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "card_id",
+          "card_display_name",
+          "visitor_id",
+          "started_at",
+          "conversation_count",
+          "event_count",
+          "behavior_analysis"
+        ],
+        "title": "VisitDetail"
+      },
+      "VisitDetailEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/VisitDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "VisitDetailEnvelope"
+      },
       "VisitEnvelope": {
         "properties": {
           "data": {
@@ -23916,6 +25641,60 @@
             ],
             "title": "Duration Seconds"
           },
+          "activity_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "ended",
+              "estimated",
+              "unknown"
+            ],
+            "title": "Activity Status",
+            "default": "unknown"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "duration_estimated": {
+            "type": "boolean",
+            "title": "Duration Estimated",
+            "default": false
+          },
+          "visitor_channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "wechat",
+              "wecom"
+            ],
+            "title": "Visitor Channel",
+            "default": "web"
+          },
+          "visitor_identity_type": {
+            "type": "string",
+            "enum": [
+              "anonymous",
+              "wecom_member",
+              "wechat_openid",
+              "wecom_external"
+            ],
+            "title": "Visitor Identity Type",
+            "default": "anonymous"
+          },
+          "visitor_identity_label": {
+            "type": "string",
+            "title": "Visitor Identity Label",
+            "default": "匿名网页访客"
+          },
           "conversation_count": {
             "type": "integer",
             "minimum": 0.0,
@@ -23968,6 +25747,220 @@
           "offset"
         ],
         "title": "VisitListEnvelope"
+      },
+      "VisitPageDuration": {
+        "properties": {
+          "page_key": {
+            "type": "string",
+            "title": "Page Key"
+          },
+          "page_title": {
+            "type": "string",
+            "title": "Page Title"
+          },
+          "object_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Type"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Duration Seconds"
+          },
+          "view_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "View Count"
+          },
+          "last_viewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Viewed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page_key",
+          "page_title",
+          "duration_seconds",
+          "view_count",
+          "last_viewed_at"
+        ],
+        "title": "VisitPageDuration"
+      },
+      "VisitPageTimelineItem": {
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "page_key": {
+            "type": "string",
+            "title": "Page Key"
+          },
+          "page_title": {
+            "type": "string",
+            "title": "Page Title"
+          },
+          "object_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Type"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "entered_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Entered At"
+          },
+          "last_activity_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Activity At"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Duration Seconds"
+          },
+          "exit_reason": {
+            "type": "string",
+            "enum": [
+              "navigation",
+              "background",
+              "leave",
+              "timeout",
+              "active"
+            ],
+            "title": "Exit Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sequence",
+          "page_key",
+          "page_title",
+          "entered_at",
+          "last_activity_at",
+          "duration_seconds",
+          "exit_reason"
+        ],
+        "title": "VisitPageTimelineItem"
+      },
+      "VisitQuestion": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "asked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Asked At"
+          },
+          "answer_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Status"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "answered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered At"
+          },
+          "response_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_id",
+          "conversation_id",
+          "question",
+          "asked_at"
+        ],
+        "title": "VisitQuestion"
       },
       "VisitSession": {
         "properties": {

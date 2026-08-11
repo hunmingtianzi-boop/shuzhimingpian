@@ -356,7 +356,22 @@ type EnterpriseTemplateEditorProps = {
     themeKey: EnterpriseTemplateThemeKey;
     blocks: EnterpriseTemplateBlock[];
   }, identity: { identityTitles: string[]; contactFields: IdentityContactField[] }) => void | Promise<void>;
+  dataSource?: EnterpriseTemplateEditorDataSource;
 };
+
+export type EnterpriseTemplateEditorDataSource = Pick<
+  typeof adminApi,
+  | "getEnterpriseTemplate"
+  | "getCardComposerDefault"
+  | "listProducts"
+  | "listCaseStudies"
+  | "getCompanyProfile"
+  | "listSelectableFaqDocuments"
+  | "uploadCardAsset"
+  | "updateManagedCard"
+  | "updateEnterpriseTemplate"
+  | "updateCardComposerDefault"
+>;
 
 export function EnterpriseTemplateEditor({
   card,
@@ -368,6 +383,7 @@ export function EnterpriseTemplateEditor({
   onRequestPublish,
   onSaved,
   onDraftConfirm,
+  dataSource = adminApi,
 }: EnterpriseTemplateEditorProps) {
   const [blocks, setBlocks] = useState<EnterpriseTemplateBlock[]>([]);
   const blocksRef = useRef<EnterpriseTemplateBlock[]>([]);
@@ -428,16 +444,16 @@ export function EnterpriseTemplateEditor({
     setIdentityDirty(false);
     void Promise.all([
       card
-        ? adminApi.getEnterpriseTemplate(card.id)
+        ? dataSource.getEnterpriseTemplate(card.id)
         : creationDraft?.sourceCardId
-          ? adminApi.getEnterpriseTemplate(creationDraft.sourceCardId)
-          : adminApi.getCardComposerDefault(
+          ? dataSource.getEnterpriseTemplate(creationDraft.sourceCardId)
+          : dataSource.getCardComposerDefault(
               creationDraft?.cardKind ?? defaultKind as ManagedCard["cardKind"],
             ),
-      adminApi.listProducts(),
-      adminApi.listCaseStudies(),
-      adminApi.getCompanyProfile(),
-      adminApi.listSelectableFaqDocuments(),
+      dataSource.listProducts(),
+      dataSource.listCaseStudies(),
+      dataSource.getCompanyProfile(),
+      dataSource.listSelectableFaqDocuments(),
     ])
       .then(([template, productResult, caseResult, companyProfile, faqResult]) => {
         if (!active) return;
@@ -493,7 +509,7 @@ export function EnterpriseTemplateEditor({
     return () => {
       active = false;
     };
-  }, [editorSourceKey, open]);
+  }, [dataSource, editorSourceKey, open]);
 
   // Keep controlled fields responsive while a large, draggable public-page
   // preview is present. Rapid edits are coalesced into one near-real-time
@@ -637,7 +653,7 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     try {
       const uploaded = [];
-      for (const file of files) uploaded.push(await adminApi.uploadCardAsset(file));
+      for (const file of files) uploaded.push(await dataSource.uploadCardAsset(file));
       const nextItems = [...existingGalleryItems, ...uploaded.map((item, uploadedIndex) => ({
         id: `gallery-${crypto.randomUUID()}`,
         imageUrl: item.url,
@@ -672,7 +688,7 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:cover`);
     setError(undefined);
     try {
-      const uploaded = await adminApi.uploadCardAsset(file);
+      const uploaded = await dataSource.uploadCardAsset(file);
       updateBlock(index, { videoCoverUrl: uploaded.url });
     } catch (cause) {
       setError(toApiError(cause, "上传视频封面失败。", "TEMPLATE_COVER_UPLOAD_FAILED"));
@@ -698,7 +714,7 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:background`);
     setError(undefined);
     try {
-      const uploaded = await adminApi.uploadCardAsset(file);
+      const uploaded = await dataSource.uploadCardAsset(file);
       updateBlock(index, {
         presentation: {
           ...block.presentation,
@@ -742,7 +758,7 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:action:${actionId}`);
     setError(undefined);
     try {
-      const uploaded = await adminApi.uploadCardAsset(file);
+      const uploaded = await dataSource.uploadCardAsset(file);
       updateBlock(index, {
         actionItems: block.actionItems?.map((item) => (
           item.id === actionId ? { ...item, imageUrl: uploaded.url } : item
@@ -771,7 +787,7 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:${kind}:${itemId}`);
     setError(undefined);
     try {
-      const uploaded = await adminApi.uploadCardAsset(file);
+      const uploaded = await dataSource.uploadCardAsset(file);
       if (kind === "product") {
         const current = block.productOverrides?.find((item) => item.id === itemId);
         updateBlock(index, { productOverrides: [...(block.productOverrides ?? []).filter((item) => item.id !== itemId), { ...current, id: itemId, imageUrl: uploaded.url }] });
@@ -811,12 +827,12 @@ export function EnterpriseTemplateEditor({
           contactFields: identityContactFields,
           employeeContactVisibility: card.employeeContactVisibility ?? [],
         };
-        savedCard = await adminApi.updateManagedCard(card.id, baseVersion, cardInput);
+        savedCard = await dataSource.updateManagedCard(card.id, baseVersion, cardInput);
         baseVersion = savedCard.version;
       }
       const template = card
-        ? await adminApi.updateEnterpriseTemplate(card.id, baseVersion, themeKey, nextBlocks)
-        : await adminApi.updateCardComposerDefault(defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks);
+        ? await dataSource.updateEnterpriseTemplate(card.id, baseVersion, themeKey, nextBlocks)
+        : await dataSource.updateCardComposerDefault(defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks);
       const document = "draft" in template ? template.draft : template.document;
       replaceBlocks(document.blocks);
       setVersion(template.version);

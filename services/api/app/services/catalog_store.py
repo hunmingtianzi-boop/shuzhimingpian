@@ -1350,9 +1350,7 @@ class CatalogStore:
         if faq_document_ids:
             valid_faq_ids = set(
                 (
-                    await session.scalars(
-                        eligible_faq_document_statement(scope, faq_document_ids)
-                    )
+                    await session.scalars(eligible_faq_document_statement(scope, faq_document_ids))
                 ).all()
             )
             if valid_faq_ids != faq_document_ids:
@@ -1369,10 +1367,18 @@ class CatalogStore:
                 {
                     "id": str(product.id),
                     "slug": product.slug,
-                    "name": override.title if (override := product_overrides.get(product.id)) and override.title else product.name,
-                    "category": override.category if override and override.category else product.category,
-                    "summary": override.summary if override and override.summary else product.summary,
-                    "image_url": override.image_url if override and override.image_url else product.image_url,
+                    "name": override.title
+                    if (override := product_overrides.get(product.id)) and override.title
+                    else product.name,
+                    "category": override.category
+                    if override and override.category
+                    else product.category,
+                    "summary": override.summary
+                    if override and override.summary
+                    else product.summary,
+                    "image_url": override.image_url
+                    if override and override.image_url
+                    else product.image_url,
                     "cta_label": override.cta_label if override else None,
                 }
                 for product_id in block.product_ids
@@ -1383,15 +1389,29 @@ class CatalogStore:
                 {
                     "id": str(case.id),
                     "slug": case.slug,
-                    "title": override.title if (override := case_overrides.get(case.id)) and override.title else case.title,
-                    "industry": override.industry if override and override.industry else case.industry,
-                    "client_name": override.client_name if override and override.client_name else case.client_display_name,
-                    "background": override.background if override and override.background else case.background,
-                    "solution": override.solution if override and override.solution else case.solution,
+                    "title": override.title
+                    if (override := case_overrides.get(case.id)) and override.title
+                    else case.title,
+                    "industry": override.industry
+                    if override and override.industry
+                    else case.industry,
+                    "client_name": override.client_name
+                    if override and override.client_name
+                    else case.client_display_name,
+                    "background": override.background
+                    if override and override.background
+                    else case.background,
+                    "solution": override.solution
+                    if override and override.solution
+                    else case.solution,
                     "summary": override.summary if override and override.summary else case.solution,
                     "result": override.result if override and override.result else case.result,
-                    "metrics": [metric.model_dump(mode="json") for metric in override.metrics] if override else [],
-                    "image_url": override.image_url if override and override.image_url else case.image_url,
+                    "metrics": [metric.model_dump(mode="json") for metric in override.metrics]
+                    if override
+                    else [],
+                    "image_url": override.image_url
+                    if override and override.image_url
+                    else case.image_url,
                     "cta_label": override.cta_label if override else None,
                 }
                 for case_id in block.case_ids
@@ -1952,8 +1972,7 @@ def _card_settings(body: CreateCardRequest | UpdateManagedCardRequest) -> dict[s
         "policy_versions": dict(body.policy_versions),
         "identity_titles": list(body.identity_titles),
         "contact_fields": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in body.contact_fields
+            item.model_dump(mode="json", exclude_none=True) for item in body.contact_fields
         ],
     }
 
@@ -1970,8 +1989,7 @@ def _employee_card_expression_settings(
         "policy_versions": dict(body.policy_versions),
         "identity_titles": list(body.identity_titles),
         "contact_fields": [
-            item.model_dump(mode="json", exclude_none=True)
-            for item in body.contact_fields
+            item.model_dump(mode="json", exclude_none=True) for item in body.contact_fields
         ],
         "employee_contact_visibility": list(body.employee_contact_visibility),
     }

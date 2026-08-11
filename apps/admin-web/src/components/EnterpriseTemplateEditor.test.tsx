@@ -367,7 +367,7 @@ describe("EnterpriseTemplateEditor", () => {
     const file = new File(["image"], "gallery.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择项目现场图片"), file);
     await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
-    expect(await screen.findByAltText("展示图片 1")).toHaveAttribute(
+    expect(await screen.findByAltText("gallery")).toHaveAttribute(
       "src",
       "/api/v1/public/card-assets/company-1/gallery.webp",
     );
@@ -528,8 +528,8 @@ describe("EnterpriseTemplateEditor", () => {
     renderEditor();
 
     await user.click(await screen.findByRole("tab", { name: "添加模块" }));
-    await screen.findByRole("button", { name: "图片画廊" });
-    await user.click(screen.getByRole("button", { name: "图片画廊" }));
+    await screen.findByRole("button", { name: /^图片画廊/ });
+    await user.click(screen.getByRole("button", { name: /^图片画廊/ }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
@@ -621,7 +621,7 @@ describe("EnterpriseTemplateEditor", () => {
     expect(await screen.findByRole("button", { name: /02\s*个人介绍/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /02\s*企业介绍/ })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("tab", { name: "添加模块" }));
-    await user.click(await screen.findByRole("button", { name: "图文介绍" }));
+    await user.click(await screen.findByRole("button", { name: /^图文介绍/ }));
     expect(updateDefault).not.toHaveBeenCalled();
     expect(updateCard).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "使用此设计创建名片" }));

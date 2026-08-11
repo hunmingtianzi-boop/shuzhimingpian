@@ -10,6 +10,7 @@ import type {
   EnterpriseTemplate,
   EnterpriseTemplateThemeKey,
   ManagedCard,
+  ManagedCardInput,
 } from "../api/types";
 import { AuthContext } from "../auth/AuthContext";
 import type { AuthContextValue } from "../auth/AuthContext";
@@ -28,10 +29,19 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
     card?: ManagedCard;
     creationDraft?: {
       cardKind: ManagedCard["cardKind"];
-      identityPreview: { displayName: string; title: string; avatarUrl?: string };
+      identityPreview: {
+        displayName: string;
+        title: string;
+        avatarUrl?: string;
+        identityTitles?: string[];
+        contactFields?: ManagedCardInput["contactFields"];
+      };
     };
     onClose: () => void;
-    onDraftConfirm?: (document: EnterpriseTemplate["draft"]) => void | Promise<void>;
+    onDraftConfirm?: (
+      document: EnterpriseTemplate["draft"],
+      identity: Pick<ManagedCardInput, "identityTitles" | "contactFields">,
+    ) => void | Promise<void>;
     onEditBasicSettings?: (card: ManagedCard) => void;
   }) => {
     if (!open) return null;
@@ -54,7 +64,10 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
       <div role="dialog" aria-label={`创建前设计${creationDraft.cardKind === "employee" ? "员工" : "企业"}名片`}>
         <span>{creationDraft.identityPreview.displayName}</span>
         <button type="button" onClick={onClose}>取消创建</button>
-        <button type="button" onClick={() => void onDraftConfirm?.(document)}>
+        <button type="button" onClick={() => void onDraftConfirm?.(document, {
+          identityTitles: creationDraft.identityPreview.identityTitles ?? [],
+          contactFields: creationDraft.identityPreview.contactFields ?? [],
+        })}>
           使用此设计创建名片
         </button>
       </div>

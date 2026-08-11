@@ -608,10 +608,14 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     video_cover_url: str | None = Field(default=None, max_length=2_048)
     product_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
     product_items: list[EnterpriseTemplateProductItem] = Field(default_factory=list, max_length=12)
-    product_overrides: list[EnterpriseTemplateProductOverride] = Field(default_factory=list, max_length=12)
+    product_overrides: list[EnterpriseTemplateProductOverride] = Field(
+        default_factory=list, max_length=12
+    )
     case_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
     case_items: list[EnterpriseTemplateCaseItem] = Field(default_factory=list, max_length=12)
-    case_overrides: list[EnterpriseTemplateCaseOverride] = Field(default_factory=list, max_length=12)
+    case_overrides: list[EnterpriseTemplateCaseOverride] = Field(
+        default_factory=list, max_length=12
+    )
     faq_mode: Literal["all_published", "selected"] | None = None
     faq_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
     cta_label: str | None = Field(default=None, max_length=80)

@@ -80,6 +80,8 @@ export type StudioCardPageProps = {
   renderModuleHandle?: (module: StudioModule) => ReactNode;
   onBack?: () => void;
   onShare?: () => void;
+  switchTarget?: { href: string; label: string; ariaLabel: string };
+  contentAriaLabel?: string;
   onOpenItem?: (module: StudioModule, item: Record<string, unknown>) => void;
   onAction?: (item: Record<string, unknown>) => void;
   primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
@@ -194,7 +196,7 @@ function hasPublicModuleContent(module: StudioModule) {
   return true;
 }
 
-export function StudioCardPage({ modules, title, editor = false, className, selectedModuleId, onSelectModule, renderModuleHandle, onBack, onShare, onOpenItem, onAction, primaryAction, secondaryAction, directoryAriaLabel = "名片目录", onAssistant }: StudioCardPageProps) {
+export function StudioCardPage({ modules, title, editor = false, className, selectedModuleId, onSelectModule, renderModuleHandle, onBack, onShare, switchTarget, contentAriaLabel, onOpenItem, onAction, primaryAction, secondaryAction, directoryAriaLabel = "名片目录", onAssistant }: StudioCardPageProps) {
   const hostRef = useRef<HTMLElement>(null);
   const directoryRef = useRef<HTMLElement>(null);
   const visible = useMemo(
@@ -261,8 +263,11 @@ export function StudioCardPage({ modules, title, editor = false, className, sele
     return <div className="card-content" key={module.id}>{exactModule}</div>;
   });
   return <main ref={hostRef} className={["card-page", className].filter(Boolean).join(" ")} data-card-page-experience>
-    <header className="card-topbar"><button className="icon-button" type="button" onClick={onBack}><StudioIcon name="arrowLeft"/><span className="sr-only">返回</span></button><strong>{title}</strong><button className="icon-button" type="button" onClick={onShare}><StudioIcon name="share"/><span className="sr-only">分享</span></button></header>
-    {!directoryRendered ? directoryNode : null}{content}
+    <header className="card-topbar">{onBack ? <button className="icon-button" type="button" onClick={onBack}><StudioIcon name="arrowLeft"/><span className="sr-only">返回</span></button> : <span className="icon-button card-topbar-placeholder" aria-hidden="true"/>}<strong>{title}</strong><button className="icon-button" type="button" onClick={onShare}><StudioIcon name="share"/><span className="sr-only">分享名片</span></button></header>
+    {switchTarget ? <a className="card-page-switch" href={switchTarget.href} aria-label={switchTarget.ariaLabel}>{switchTarget.label}</a> : null}
+    <section className="card-page-content-region" aria-label={contentAriaLabel}>
+      {!directoryRendered ? directoryNode : null}{content}
+    </section>
     {primaryAction || secondaryAction ? <div className="sticky-actions">{primaryAction ? <button className="action-primary" type="button" disabled={primaryAction.disabled} onClick={primaryAction.onClick}>{primaryAction.label}</button> : null}{secondaryAction ? <button className="action-secondary" type="button" disabled={secondaryAction.disabled} onClick={secondaryAction.onClick}>{secondaryAction.label}</button> : null}</div> : null}
   </main>;
 }

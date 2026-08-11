@@ -155,6 +155,8 @@ export function EnterpriseTemplateBlocks({
   title,
   onBack,
   onShare,
+  switchTarget,
+  contentAriaLabel,
   primaryAction,
   secondaryAction,
 }: {
@@ -179,6 +181,8 @@ export function EnterpriseTemplateBlocks({
   title?: string;
   onBack?: () => void;
   onShare?: () => void;
+  switchTarget?: { href: string; label: string; ariaLabel: string };
+  contentAriaLabel?: string;
   primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
   secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
@@ -205,7 +209,7 @@ export function EnterpriseTemplateBlocks({
           : undefined,
         onAction,
       }}
-      shell={{ title, onBack, onShare, primaryAction, secondaryAction }}
+      shell={{ title, onBack, onShare, switchTarget, contentAriaLabel, primaryAction, secondaryAction }}
     />
   );
 }

@@ -125,8 +125,11 @@ describe("TemplateCanvas draft interactions", () => {
       />,
     );
 
-    expect(screen.getByText(faq.answer).closest("details")).toHaveAttribute("open");
-    expect(screen.getByRole("link", { name: /播放视频/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: new RegExp(faq.title) })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("link", { name: /打开视频/ })).toHaveAttribute(
       "href",
       "https://video.example.test/intro",
     );
@@ -161,10 +164,9 @@ describe("TemplateCanvas draft interactions", () => {
     expect(onSelectBlock).toHaveBeenCalledWith("cases");
 
     await user.click(screen.getByRole("button", { name: "返回名片页面" }));
-    await user.click(screen.getByRole("button", { name: "继续问 AI" }));
+    await user.click(screen.getByRole("button", { name: "开始咨询" }));
     expect(screen.getByRole("region", { name: "AI 助手预览" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "公开页将打开 AI 助手" })).toBeInTheDocument();
-    expect(screen.getByText(`将带入问题：${faq.title}`)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "返回名片页面" }));
     await user.click(screen.getByRole("button", { name: /开始咨询/ }));

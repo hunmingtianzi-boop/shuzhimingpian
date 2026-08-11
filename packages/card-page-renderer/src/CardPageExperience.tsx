@@ -40,7 +40,7 @@ export type CardPageDirectoryOptions = { ariaLabel?: string; onNavigate?: (block
 export type CardPageExperienceProps = {
   blocks: CardPageBlock[]; data?: CardPageResolvedData; actions?: CardPageExperienceActions; identityContent?: ReactNode; directory?: boolean | CardPageDirectoryOptions;
   resolveResourceUrl?: (url: string) => string; editorAdapter?: CardPageEditorAdapter; className?: string;
-  shell?: { title?: string; onBack?: () => void; onShare?: () => void; primaryAction?: { label: string; onClick: () => void; disabled?: boolean }; secondaryAction?: { label: string; onClick: () => void; disabled?: boolean } };
+  shell?: { title?: string; onBack?: () => void; onShare?: () => void; switchTarget?: { href: string; label: string; ariaLabel: string }; contentAriaLabel?: string; primaryAction?: { label: string; onClick: () => void; disabled?: boolean }; secondaryAction?: { label: string; onClick: () => void; disabled?: boolean } };
 };
 
 const blockSelector = {
@@ -136,6 +136,8 @@ export function CardPageExperience({ blocks, data = {}, actions = {}, directory 
       renderModuleHandle={editorAdapter?.renderBlockHandle ? (module) => { const block = byId.get(module.id); return block ? editorAdapter.renderBlockHandle?.(block) : null; } : undefined}
       onBack={shell?.onBack}
       onShare={shell?.onShare}
+      switchTarget={shell?.switchTarget}
+      contentAriaLabel={shell?.contentAriaLabel}
       onOpenItem={(module, item) => module.type === "services" ? actions.onOpenProduct?.(item as CardPageProduct) : module.type === "cases" ? actions.onOpenCase?.(item as CardPageCase) : undefined}
       onAction={(item) => actions.onAction?.(item as unknown as CardPageActionItem)}
       onAssistant={actions.onAssistant}

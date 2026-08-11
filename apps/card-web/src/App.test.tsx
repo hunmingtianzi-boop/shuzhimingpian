@@ -132,7 +132,7 @@ describe("BusinessCardPrototypeApp", () => {
       directoryLabel: "员工名片内容导航",
       contentLabel: "员工名片内容",
       identityName: "示例顾问",
-      identityKind: "员工名片",
+      identityKind: "员工名片 · 资料已同步",
     },
     {
       kind: "enterprise" as const,
@@ -140,7 +140,7 @@ describe("BusinessCardPrototypeApp", () => {
       directoryLabel: "企业名片内容导航",
       contentLabel: "企业名片内容",
       identityName: "示例企业",
-      identityKind: "企业名片",
+      identityKind: "企业官方名片",
     },
   ])("uses the shared composed template for a standalone $kind card", ({
     kind,
@@ -195,7 +195,7 @@ describe("BusinessCardPrototypeApp", () => {
     expect(screen.getByRole("navigation", { name: directoryLabel })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: contentLabel })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: identityName })).toBeInTheDocument();
-    expect(screen.getByText(identityKind)).toBeInTheDocument();
+    expect(screen.getAllByText(identityKind).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "内容模块" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "业务介绍" })).not.toBeInTheDocument();
     expect(
@@ -230,7 +230,7 @@ describe("BusinessCardPrototypeApp", () => {
       />,
     );
 
-    expect(screen.getByText("企业官方名片")).toBeInTheDocument();
+    expect(screen.getAllByText("企业官方名片").length).toBeGreaterThan(0);
     expect(screen.queryByText("可以为你对接的人")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "名片导航" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返回" })).not.toBeInTheDocument();
@@ -241,7 +241,7 @@ describe("BusinessCardPrototypeApp", () => {
       "/c/xusongbo?mock-card=employee",
     );
     expect(screen.getByRole("navigation", { name: "企业名片内容导航" })).toBeInTheDocument();
-    for (const label of ["概览", "介绍", "业务", "案例", "资料", "问答", "AI"]) {
+    for (const label of ["概览", "企业介绍", "企业资料"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     expect(screen.getByRole("button", { name: "提交合作需求" })).toBeInTheDocument();
@@ -299,7 +299,7 @@ describe("BusinessCardPrototypeApp", () => {
 
     const directory = screen.getByRole("navigation", { name: "企业名片内容导航" });
     expect(directory).toBeInTheDocument();
-    for (const label of ["我们的故事", "概览", "介绍", "业务", "案例", "资料", "问答", "AI"]) {
+    for (const label of ["我们的故事", "概览", "企业资料", "常见问题"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     expect(container.querySelector("[data-card-page-experience]")).toBeInTheDocument();
@@ -313,15 +313,11 @@ describe("BusinessCardPrototypeApp", () => {
       "custom-story",
       "default-enterprise-overview",
       "default-enterprise-intro",
-      "default-enterprise-business",
-      "default-enterprise-cases",
       "default-enterprise-trust",
       "default-enterprise-faq",
-      "default-enterprise-ai",
     ]);
     expect(screen.getByRole("heading", { name: "我们的故事" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "企业介绍" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "核心业务" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "企业资料" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "常见问题" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "提交合作需求" })).toBeInTheDocument();
@@ -398,9 +394,9 @@ describe("BusinessCardPrototypeApp", () => {
     );
 
     await screen.findByText("数据服务");
-    expect(container.querySelectorAll(".cpr-product-item")).toHaveLength(2);
-    expect(container.querySelectorAll(".cpr-case-item")).toHaveLength(2);
-    expect(container.querySelectorAll(".cpr-faq-list details")).toHaveLength(2);
+    expect(container.querySelectorAll(".service-card")).toHaveLength(2);
+    expect(container.querySelectorAll(".case-story")).toHaveLength(2);
+    expect(container.querySelectorAll(".cpr-faq-list .faq-item")).toHaveLength(2);
     expect(screen.getByText("关键决策效率得到提升。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("如何开始合作？"));

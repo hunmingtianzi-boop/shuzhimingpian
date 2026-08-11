@@ -83,6 +83,10 @@ from app.db.models import (
     VisitSummary,
     WeComCardContactWay,
 )
+from app.services.ai_configuration import (
+    ENVIRONMENT_LLM_SECRET_REF,
+    provision_chat_configuration,
+)
 from app.services.catalog_store import _merge_default_template_blocks
 
 
@@ -845,6 +849,58 @@ class PublicStore:
                 429,
                 "MODEL_BUDGET_EXCEEDED",
                 "今日 AI 服务额度已用完，请联系企业工作人员",
+            )
+
+    async def ensure_ai_configuration(
+        self,
+        *,
+        principal: VisitorPrincipal,
+        runtime_settings: Settings,
+        profile_id: uuid.UUID | None,
+    ) -> None:
+        """Provision persistence metadata before the provider streams an answer."""
+
+        async with self._sessions() as session, session.begin():
+            await self._set_principal_scope(session, principal)
+            card = await session.get(Card, principal.card_id)
+            if (
+                card is None
+                or card.tenant_id != principal.tenant_id
+                or card.company_id != principal.company_id
+            ):
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在")
+            publisher_id = card.responsible_user_id or card.owner_user_id
+            if publisher_id is None:
+                publisher_id = await session.scalar(
+                    select(Membership.user_id)
+                    .where(
+                        Membership.tenant_id == principal.tenant_id,
+                        Membership.company_id == principal.company_id,
+                        Membership.status == LifecycleStatus.ACTIVE,
+                    )
+                    .order_by(Membership.created_at, Membership.id)
+                    .limit(1)
+                )
+            if publisher_id is None:
+                raise ApiError(
+                    503,
+                    "AI_CONFIGURATION_MISSING",
+                    "企业 AI 配置尚未完成，请联系管理员",
+                )
+
+            await provision_chat_configuration(
+                session,
+                tenant_id=principal.tenant_id,
+                company_id=principal.company_id,
+                published_by=publisher_id,
+                published_at=datetime.now(UTC),
+                settings=runtime_settings,
+                secret_ref=(
+                    f"platform-llm-profile:{profile_id}"
+                    if profile_id is not None
+                    else ENVIRONMENT_LLM_SECRET_REF
+                ),
+                change_summary="Auto-provisioned for the active enterprise AI runtime",
             )
 
     async def load_forbidden_topic_rules(
