@@ -26,7 +26,8 @@ COPY packages/evals /eval-data
 
 # Release archives are group-readable (0640). The runtime user is deliberately
 # unprivileged, so normalize read/traverse permissions inside the image.
-RUN chmod -R a+rX /app/app /app/migrations /seed-data /eval-data
+RUN chmod 0644 /app/pyproject.toml /app/alembic.ini \
+    && chmod -R a+rX /app/app /app/migrations /seed-data /eval-data
 
 USER app
 EXPOSE 8000

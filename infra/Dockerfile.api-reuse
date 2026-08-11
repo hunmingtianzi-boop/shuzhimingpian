@@ -4,9 +4,11 @@ FROM ${BASE_IMAGE}
 USER root
 WORKDIR /app
 RUN rm -rf /app/app /app/migrations /seed-data /eval-data
+COPY --chown=app:app services/api/pyproject.toml /app/pyproject.toml
 COPY --chown=app:app services/api/app /app/app
 COPY --chown=app:app services/api/alembic.ini /app/alembic.ini
 COPY --chown=app:app services/api/migrations /app/migrations
 COPY --chown=app:app packages/tenant-content /seed-data
 COPY --chown=app:app packages/evals /eval-data
+RUN chmod 0644 /app/pyproject.toml /app/alembic.ini
 USER app
