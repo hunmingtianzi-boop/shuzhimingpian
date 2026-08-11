@@ -132,6 +132,7 @@ class Settings(BaseSettings):
     wecom_suite_secret: SecretStr | None = None
     wecom_suite_callback_token: SecretStr | None = None
     wecom_suite_callback_encoding_aes_key: SecretStr | None = None
+    wecom_suite_callback_corp_id: str | None = None
     wecom_suite_install_redirect_uri: str | None = None
     wecom_suite_oauth_redirect_uri: str | None = None
     wecom_suite_success_redirect_uri: str | None = None
@@ -264,6 +265,7 @@ class Settings(BaseSettings):
         "wecom_corp_id",
         "wecom_oauth_redirect_uri",
         "wecom_suite_id",
+        "wecom_suite_callback_corp_id",
         "wecom_suite_install_redirect_uri",
         "wecom_suite_oauth_redirect_uri",
         "wecom_suite_success_redirect_uri",
@@ -429,11 +431,9 @@ class Settings(BaseSettings):
                 "WeCom callbacks require core credentials and a tenant/company scope"
             )
         wecom_suite_core = (self.wecom_suite_id, self.wecom_suite_secret)
-        if any(value is not None for value in wecom_suite_core) and not all(
-            value is not None for value in wecom_suite_core
-        ):
+        if self.wecom_suite_secret is not None and self.wecom_suite_id is None:
             raise ValueError(
-                "WECOM_SUITE_ID and WECOM_SUITE_SECRET must be configured together"
+                "WECOM_SUITE_SECRET requires WECOM_SUITE_ID"
             )
         wecom_suite_callback = (
             self.wecom_suite_callback_token,
@@ -446,10 +446,8 @@ class Settings(BaseSettings):
                 "WECOM_SUITE_CALLBACK_TOKEN and WECOM_SUITE_CALLBACK_ENCODING_AES_KEY "
                 "must be configured together"
             )
-        if any(value is not None for value in wecom_suite_callback) and not all(
-            value is not None for value in wecom_suite_core
-        ):
-            raise ValueError("WeCom suite callbacks require SuiteID and SuiteSecret")
+        if any(value is not None for value in wecom_suite_callback) and not self.wecom_suite_id:
+            raise ValueError("WeCom suite callbacks require SuiteID")
         if self.wecom_auth_mode == "self_built" and not all(
             value is not None for value in wecom_core
         ):

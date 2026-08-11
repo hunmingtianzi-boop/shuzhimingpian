@@ -41,18 +41,23 @@ def _store(request: Request) -> WeComSuiteStore:
     )
 
 
-def _crypto(request: Request) -> WeComCallbackCrypto:
+def _crypto(
+    request: Request,
+    *,
+    receiver_id: str | None = None,
+) -> WeComCallbackCrypto:
     settings = request.app.state.settings
     token = settings.wecom_suite_callback_token
     encoding_key = settings.wecom_suite_callback_encoding_aes_key
     suite_id = settings.wecom_suite_id
-    if token is None or encoding_key is None or not suite_id:
+    callback_corp_id = receiver_id or settings.wecom_suite_callback_corp_id or suite_id
+    if token is None or encoding_key is None or not suite_id or not callback_corp_id:
         raise ApiError(409, "WECOM_SUITE_CALLBACK_NOT_CONFIGURED", "企微服务商回调尚未配置")
     try:
         return WeComCallbackCrypto(
             token=token.get_secret_value(),
             encoding_aes_key=encoding_key.get_secret_value(),
-            corp_id=suite_id,
+            corp_id=callback_corp_id,
         )
     except WeComCryptoError as exc:
         raise ApiError(
@@ -220,14 +225,35 @@ async def receive_wecom_suite_callback(
         raise ApiError(413, "WECOM_SUITE_CALLBACK_TOO_LARGE", "企微服务商回调内容超出限制")
     try:
         encrypted = extract_encrypted_xml(body)
-        message = _crypto(request).decrypt(
-            encrypted=encrypted,
-            signature=msg_signature,
-            timestamp=timestamp,
-            nonce=nonce,
-        )
     except WeComCryptoError as exc:
         raise ApiError(400, "WECOM_SUITE_CALLBACK_INVALID", "企微服务商回调校验失败") from exc
+
+    decrypt_kwargs = {
+        "encrypted": encrypted,
+        "signature": msg_signature,
+        "timestamp": timestamp,
+        "nonce": nonce,
+    }
+    try:
+        message = _crypto(request).decrypt(**decrypt_kwargs)
+    except WeComCryptoError as primary_exc:
+        settings = request.app.state.settings
+        suite_id = settings.wecom_suite_id
+        callback_corp_id = settings.wecom_suite_callback_corp_id
+        if not suite_id or not callback_corp_id or suite_id == callback_corp_id:
+            raise ApiError(
+                400,
+                "WECOM_SUITE_CALLBACK_INVALID",
+                "企微服务商回调校验失败",
+            ) from primary_exc
+        try:
+            message = _crypto(request, receiver_id=suite_id).decrypt(**decrypt_kwargs)
+        except WeComCryptoError as fallback_exc:
+            raise ApiError(
+                400,
+                "WECOM_SUITE_CALLBACK_INVALID",
+                "企微服务商回调校验失败",
+            ) from fallback_exc
 
     info_type = (message.fields.get("InfoType") or "").casefold()
     if info_type == "suite_ticket":

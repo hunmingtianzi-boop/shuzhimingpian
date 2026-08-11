@@ -84,8 +84,8 @@ def test_wecom_core_settings_are_all_or_none() -> None:
     assert settings.wecom_company_id is None
 
 
-def test_wecom_suite_settings_are_all_or_none() -> None:
-    with pytest.raises(ValidationError, match="must be configured together"):
+def test_wecom_suite_settings_require_secret_for_third_party_auth() -> None:
+    with pytest.raises(ValidationError, match="requires suite credentials"):
         Settings(
             _env_file=None,
             app_env="test",
@@ -104,6 +104,23 @@ def test_wecom_suite_settings_are_all_or_none() -> None:
     )
     assert settings.wecom_suite_secret is not None
     assert settings.wecom_auth_mode == "third_party"
+
+
+def test_wecom_suite_callback_can_be_verified_before_secret_is_issued() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_auth_mode="auto",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_callback_token="callback-token",  # noqa: S106 - protocol fixture
+        wecom_suite_callback_encoding_aes_key="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+        wecom_suite_callback_corp_id="wwprovider123456",
+    )
+
+    assert settings.wecom_suite_id == "wwsuite123456"
+    assert settings.wecom_suite_secret is None
+    assert settings.wecom_suite_callback_token is not None
+    assert settings.wecom_suite_callback_corp_id == "wwprovider123456"
 
 
 @pytest.mark.asyncio
