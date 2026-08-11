@@ -1,797 +1,147 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import {
-  CardPageBlocksRenderer,
-  deriveCardPageDirectory,
-  orderVisibleCardPageBlocks,
-} from "./CardPageBlocksRenderer";
-import "./styles.css";
+import { orderVisibleCardPageBlocks } from "./CardPageBlocksRenderer";
+import { CardStudioSurface } from "./CardStudioSurface";
+import { StudioCardPage, type StudioModule } from "./CardStudioComponents";
 
-export type CardPageBlockType =
-  | "identity"
-  | "rich_text"
-  | "business_collection"
-  | "image_gallery"
-  | "video_link"
-  | "case_collection"
-  | "trust_panel"
-  | "faq"
-  | "cta"
-  | "ai_assistant";
-
-export type CardPageIdentity = {
-  kind: "enterprise" | "employee";
-  name: string;
-  headline?: string;
-  summary?: string;
-  imageUrl?: string;
-  companyName?: string;
-  verificationLabel?: string;
-  positioning?: string;
-  meta?: string[];
-  tags?: string[];
+export type CardPageBlockType = "identity" | "rich_text" | "business_collection" | "image_gallery" | "video_link" | "case_collection" | "trust_panel" | "faq" | "cta" | "ai_assistant" | "action_collection";
+export type CardPageLayoutVariant = "auto" | "list" | "grid" | "carousel" | "featured" | "mosaic" | "horizontal" | "vertical";
+export type CardPageIdentityPresentation = {
+  identityLayout?: "horizontal" | "vertical";
+  background?: {
+    assetUrl?: string;
+    fit?: "cover" | "contain" | "custom";
+    position?: "center" | "top" | "bottom" | "left" | "right" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight" | "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    aspectRatio?: "auto" | "16:9" | "4:3" | "3:2" | "1:1";
+    focalX?: number;
+    focalY?: number;
+    scale?: number;
+    opacity?: number;
+    overlay?: "none" | "light" | "dark" | "brand";
+  };
 };
-
-export type CardPageProduct = {
-  id: string;
-  slug?: string;
-  name: string;
-  category?: string;
-  summary?: string;
-  imageUrl?: string;
-};
-
-export type CardPageCase = {
-  id: string;
-  slug?: string;
-  title: string;
-  industry?: string;
-  summary?: string;
-  result?: string;
-  imageUrl?: string;
-};
-
-export type CardPageFaqItem = {
-  id: string;
-  documentId?: string;
-  question: string;
-  answer: string;
-  sourceLabel?: string;
-};
-
-export type CardPageBlockBackground = {
-  kind: "none" | "color" | "image";
-  color?: string;
-  imageUrl?: string;
-  fit?: "cover" | "contain";
-  positionX?: number;
-  positionY?: number;
-  overlayColor?: string;
-  overlayOpacity?: number;
-};
-
-export type CardPageContentImage = {
-  url: string;
-  alt?: string;
-  placement: "top" | "bottom" | "left" | "right";
-  fit?: "cover" | "contain";
-  aspectRatio?: "auto" | "square" | "standard" | "wide";
-  widthPercent?: number;
-  positionX?: number;
-  positionY?: number;
-};
-
+export type CardPageActionTemplate = "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
+export type CardPageActionItem = { id: string; title: string; summary?: string; label?: string; tag?: string; icon?: "external" | "building" | "calendar" | "file" | "play"; date?: string; location?: string; source?: string; status?: string; duration?: string; imageUrl?: string; targetType: "external_url" | "internal_path" | "phone" | "map"; targetValue: string; openMode?: "self" | "new_tab" };
+export type CardPageGalleryItem = { id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string };
+export type CardPageIdentity = { kind: "enterprise" | "employee"; name: string; headline?: string; titles?: string[]; summary?: string; imageUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
+export type CardPageProduct = { id: string; slug?: string; name: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string };
+export type CardPageCase = { id: string; slug?: string; title: string; industry?: string; clientName?: string; background?: string; solution?: string; summary?: string; result?: string; metrics?: Array<{ value: string; label: string }>; imageUrl?: string; ctaLabel?: string };
+export type CardPageFaqItem = { id: string; documentId?: string; question: string; answer: string; sourceLabel?: string };
 export type CardPageBlock = {
-  id: string;
-  type: CardPageBlockType;
-  title?: string;
-  body?: string;
-  visible?: boolean;
-  directoryEnabled?: boolean;
-  sortOrder?: number;
-  imageUrls?: string[];
-  videoUrl?: string;
-  videoCoverUrl?: string;
-  productIds?: string[];
-  productItems?: CardPageProduct[];
-  caseIds?: string[];
-  caseItems?: CardPageCase[];
-  faqMode?: "all_published" | "selected";
-  faqDocumentIds?: string[];
-  ctaLabel?: string;
-  ctaUrl?: string;
-  background?: CardPageBlockBackground;
-  textTone?: "auto" | "light" | "dark";
-  textColor?: string;
-  contentImage?: CardPageContentImage;
-  sizePreset?: "auto" | "compact" | "standard" | "tall";
-  paddingY?: "auto" | "compact" | "standard" | "spacious";
+  id: string; type: CardPageBlockType; title?: string; body?: string; visible?: boolean; showTitle?: boolean; directoryEnabled?: boolean; sortOrder?: number;
+  layoutVariant?: CardPageLayoutVariant; itemLimit?: number; presentation?: CardPageIdentityPresentation; imageUrls?: string[]; galleryItems?: CardPageGalleryItem[]; videoUrl?: string; videoCoverUrl?: string;
+  productIds?: string[]; productItems?: CardPageProduct[]; productOverrides?: Array<Partial<CardPageProduct> & { id: string; title?: string }>; caseIds?: string[]; caseItems?: CardPageCase[]; caseOverrides?: Array<Partial<CardPageCase> & { id: string }>; faqMode?: "all_published" | "selected"; faqDocumentIds?: string[];
+  ctaLabel?: string; ctaUrl?: string; actionTemplate?: CardPageActionTemplate; actionItems?: CardPageActionItem[];
 };
-
-export type CardPageResolvedData = {
-  identity?: CardPageIdentity;
-  products?: CardPageProduct[];
-  cases?: CardPageCase[];
-  faqItems?: CardPageFaqItem[];
-};
-
-export type CardPageExperienceActions = {
-  onOpenProduct?: (item: CardPageProduct) => void;
-  onOpenCase?: (item: CardPageCase) => void;
-  onAssistant?: (question?: string) => void;
-};
-
-export type CardPageEditorAdapter = {
-  selectedBlockId?: string | null;
-  onSelectBlock?: (blockId: string) => void;
-  renderBlockHandle?: (block: CardPageBlock) => ReactNode;
-  getBlockClassName?: (block: CardPageBlock) => string | undefined;
-};
-
-export type CardPageDirectoryOptions = {
-  ariaLabel?: string;
-  onNavigate?: (blockId: string) => void;
-};
-
+export type CardPageResolvedData = { identity?: CardPageIdentity; products?: CardPageProduct[]; cases?: CardPageCase[]; faqItems?: CardPageFaqItem[] };
+export type CardPageExperienceActions = { onOpenProduct?: (item: CardPageProduct) => void; onOpenCase?: (item: CardPageCase) => void; onAction?: (item: CardPageActionItem) => void; onAssistant?: (question?: string) => void };
+export type CardPageEditorAdapter = { selectedBlockId?: string | null; onSelectBlock?: (blockId: string) => void; renderBlockHandle?: (block: CardPageBlock) => ReactNode; getBlockClassName?: (block: CardPageBlock) => string | undefined };
+export type CardPageDirectoryOptions = { ariaLabel?: string; onNavigate?: (blockId: string) => void };
 export type CardPageExperienceProps = {
-  blocks: CardPageBlock[];
-  pageBackground?: CardPageBlockBackground;
-  pageTextTone?: "auto" | "light" | "dark";
-  data?: CardPageResolvedData;
-  actions?: CardPageExperienceActions;
-  identityContent?: ReactNode;
-  directory?: boolean | CardPageDirectoryOptions;
-  resolveResourceUrl?: (url: string) => string;
-  editorAdapter?: CardPageEditorAdapter;
-  className?: string;
+  blocks: CardPageBlock[]; data?: CardPageResolvedData; actions?: CardPageExperienceActions; identityContent?: ReactNode; directory?: boolean | CardPageDirectoryOptions;
+  resolveResourceUrl?: (url: string) => string; editorAdapter?: CardPageEditorAdapter; className?: string;
+  shell?: { title?: string; onBack?: () => void; onShare?: () => void; primaryAction?: { label: string; onClick: () => void; disabled?: boolean }; secondaryAction?: { label: string; onClick: () => void; disabled?: boolean } };
 };
 
 const blockSelector = {
   getId: (block: CardPageBlock) => block.id,
   getSortOrder: (block: CardPageBlock) => block.sortOrder ?? 0,
-  // Identity is a required source-projected block: it participates in ordering,
-  // but a malformed/legacy snapshot must never make the card subject disappear.
   isVisible: (block: CardPageBlock) => block.type === "identity" || block.visible !== false,
 };
 
 export function safeCardPageExternalUrl(value?: string) {
   if (!value) return undefined;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : undefined;
-  } catch {
-    return undefined;
+  try { const url = new URL(value); return url.protocol === "https:" ? url.toString() : undefined; } catch { return undefined; }
+}
+
+export function safeCardPageActionHref(item: CardPageActionItem) {
+  const value = item.targetValue.trim();
+  if (!value || /[\\\u0000-\u001f]/.test(value)) return undefined;
+  if (item.targetType === "external_url" || item.targetType === "map") return safeCardPageExternalUrl(value);
+  if (item.targetType === "internal_path") {
+    if (!value.startsWith("/") || value.startsWith("//")) return undefined;
+    try { const parsed = new URL(value, "https://card.local"); return parsed.origin === "https://card.local" && !parsed.pathname.split("/").includes("..") ? `${parsed.pathname}${parsed.search}${parsed.hash}` : undefined; } catch { return undefined; }
   }
+  return /^\+?[0-9][0-9() -]{4,24}$/.test(value) ? `tel:${value.replace(/[^+\d]/g, "")}` : undefined;
 }
 
-function quantityClass(count: number) {
-  if (count <= 1) return "single";
-  if (count === 2) return "pair";
-  return "many";
+export function resolveCardPageFaqItems(block: Pick<CardPageBlock, "faqMode" | "faqDocumentIds">, faqItems: CardPageFaqItem[]) {
+  if (block.faqMode !== "selected") return faqItems;
+  const byDocumentId = new Map(faqItems.map((item) => [item.documentId || item.id, item]));
+  return (block.faqDocumentIds || []).flatMap((id) => { const item = byDocumentId.get(id); return item ? [item] : []; });
 }
 
-function resolveReferencedItems<T extends { id: string }>(
-  embedded: T[] | undefined,
-  ids: string[] | undefined,
-  available: T[],
-) {
+function limited<T>(items: T[], limit?: number) { return limit && Number.isFinite(limit) ? items.slice(0, Math.max(1, Math.min(12, Math.floor(limit)))) : items; }
+function resolved<T extends { id: string }>(embedded: T[] | undefined, ids: string[] | undefined, available: T[]) {
   if (embedded !== undefined) return embedded;
   if (!ids?.length) return available;
   const byId = new Map(available.map((item) => [item.id, item]));
-  return ids.flatMap((id) => {
-    const item = byId.get(id);
-    return item ? [item] : [];
+  return ids.flatMap((id) => { const item = byId.get(id); return item ? [item] : []; });
+}
+function withOverrides<T extends { id: string }>(items: T[], overrides: Array<Partial<T> & { id: string }> | undefined) {
+  const byId = new Map((overrides || []).map((item) => [item.id, item]));
+  return items.map((item) => ({ ...item, ...byId.get(item.id) }));
+}
+function simulatorLayout(variant?: CardPageLayoutVariant, listAlias = "stack") { return ({ carousel: "rail", list: listAlias } as Record<string, string>)[variant || "auto"] || variant || "auto"; }
+function isOverview(block: CardPageBlock) { return block.type === "rich_text" && (block.id === "overview" || block.id.endsWith("-overview") || block.title?.trim() === "概览"); }
+function moduleTitle(block: CardPageBlock, identityKind?: CardPageIdentity["kind"]) {
+  const configured = block.title?.trim();
+  if (block.type === "rich_text" && identityKind === "employee" && configured === "企业介绍") return "个人介绍";
+  if (block.type === "rich_text" && identityKind === "enterprise" && configured === "个人介绍") return "企业介绍";
+  return configured || ({ identity: "基础名片", rich_text: "介绍", business_collection: "核心业务", image_gallery: "工作相册", video_link: "视频介绍", case_collection: "业务案例", trust_panel: "企业资料", faq: "常见问题", cta: "联系", ai_assistant: "AI 助手", action_collection: "行动入口" } as Record<CardPageBlockType, string>)[block.type];
+}
+function moduleSource(block: CardPageBlock, identityKind?: CardPageIdentity["kind"]) {
+  const profileSource = identityKind === "enterprise" ? "企业资料" : "员工信息";
+  return ({ identity: "企业员工", rich_text: profileSource, business_collection: "业务库", image_gallery: "素材库", video_link: "素材库", case_collection: "案例库", trust_panel: "企业资料", faq: "问答库", cta: "自定义内容", ai_assistant: "企业资料", action_collection: "自定义内容" } as Record<CardPageBlockType, string>)[block.type];
+}
+function studioType(block: CardPageBlock): StudioModule["type"] { return isOverview(block) ? "overview" : ({ identity: "identity", rich_text: "intro", business_collection: "services", image_gallery: "gallery", video_link: "video", case_collection: "cases", trust_panel: "trust", faq: "faq", cta: "cta", ai_assistant: "ai", action_collection: "actions" } as Record<CardPageBlockType, StudioModule["type"]>)[block.type]; }
+function positionValue(value?: CardPageIdentityPresentation["background"] extends infer B ? B extends { position?: infer P } ? P : never : never) { return ({ top_left: "topLeft", top_right: "topRight", bottom_left: "bottomLeft", bottom_right: "bottomRight" } as Record<string, string>)[String(value || "")] || value; }
+
+export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceUrl = (url) => url }: Pick<CardPageExperienceProps, "blocks" | "data" | "resolveResourceUrl">): StudioModule[] {
+  return orderVisibleCardPageBlocks(blocks, blockSelector).map((block): StudioModule => {
+    const base: StudioModule = { id: block.id, type: studioType(block), title: moduleTitle(block, data.identity?.kind), source: moduleSource(block, data.identity?.kind), visible: block.type === "identity" ? true : block.visible !== false, directoryEnabled: block.directoryEnabled, showTitle: block.showTitle !== false && block.type !== "identity" && !isOverview(block), layout: simulatorLayout(block.layoutVariant), body: block.body, actionTemplate: block.actionTemplate };
+    if (block.type === "identity") {
+      const identity = data.identity;
+      base.identity = identity ? { ...identity, imageUrl: identity.imageUrl ? resolveResourceUrl(identity.imageUrl) : undefined, layout: block.presentation?.identityLayout || (block.layoutVariant === "vertical" ? "vertical" : "horizontal"), background: { imageUrl: block.presentation?.background?.assetUrl ? resolveResourceUrl(block.presentation.background.assetUrl) : undefined, fit: block.presentation?.background?.fit, position: positionValue(block.presentation?.background?.position) as string, aspectRatio: block.presentation?.background?.aspectRatio, focalX: block.presentation?.background?.focalX, focalY: block.presentation?.background?.focalY, scale: block.presentation?.background?.scale, opacity: block.presentation?.background?.opacity, overlay: block.presentation?.background?.overlay } } : undefined;
+    } else if (block.type === "business_collection") {
+      base.items = limited(withOverrides(resolved(block.productItems, block.productIds, data.products || []), block.productOverrides?.map((item) => ({ ...item, name: item.title || item.name }))), block.itemLimit).map((item) => ({ ...item, title: item.name, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }));
+    } else if (block.type === "case_collection") {
+      base.items = limited(withOverrides(resolved(block.caseItems, block.caseIds, data.cases || []), block.caseOverrides), block.itemLimit).map((item) => ({ ...item, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }));
+    } else if (block.type === "image_gallery") {
+      base.galleryItems = limited(block.galleryItems || (block.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index + 1}`, imageUrl, title: block.title, badgeMode: "title" as const })), block.itemLimit).map((item) => ({ ...item, imageUrl: resolveResourceUrl(item.imageUrl) }));
+      base.imageUrls = base.galleryItems.map((item) => item.imageUrl);
+    } else if (block.type === "video_link") {
+      base.videoUrl = safeCardPageExternalUrl(block.videoUrl); base.videoCoverUrl = block.videoCoverUrl ? resolveResourceUrl(block.videoCoverUrl) : undefined;
+    } else if (block.type === "faq") {
+      base.items = limited(resolveCardPageFaqItems(block, data.faqItems || []), block.itemLimit).map((item) => ({ ...item }));
+    } else if (block.type === "action_collection") {
+      base.items = limited(block.actionItems || [], block.itemLimit).flatMap((item) => { const href = safeCardPageActionHref(item); return href ? [{ ...item, href, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }] : []; });
+    } else if (block.type === "cta") { base.ctaLabel = block.ctaLabel; base.ctaUrl = safeCardPageExternalUrl(block.ctaUrl); }
+    return base;
   });
 }
 
-export function resolveCardPageFaqItems(
-  block: Pick<CardPageBlock, "faqMode" | "faqDocumentIds">,
-  faqItems: CardPageFaqItem[],
-) {
-  if (block.faqMode !== "selected") return faqItems;
-  const byDocumentId = new Map<string, CardPageFaqItem>();
-  faqItems.forEach((item) => {
-    byDocumentId.set(item.documentId || item.id, item);
-  });
-  return (block.faqDocumentIds ?? []).flatMap((documentId) => {
-    const item = byDocumentId.get(documentId);
-    return item ? [item] : [];
-  });
-}
-
-function initials(name: string) {
-  const compact = name.trim().replace(/\s+/g, "");
-  return compact.slice(0, Math.min(2, compact.length)).toUpperCase() || "名片";
-}
-
-function IdentityBlock({
-  identity,
-  resolveResourceUrl,
-}: {
-  identity?: CardPageIdentity;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  if (!identity) {
-    return (
-      <div className="cpr-empty cpr-identity-empty">
-        <strong>基础名片信息待同步</strong>
-        <p>选择企业或企业员工后，这里会自动读取身份资料。</p>
-      </div>
-    );
-  }
-
-  const meta = (identity.meta ?? []).filter(Boolean);
-  return (
-    <div className={`cpr-identity cpr-identity--${identity.kind}`}>
-      <div className="cpr-identity-portrait">
-        {identity.imageUrl ? (
-          <img
-            src={resolveResourceUrl(identity.imageUrl)}
-            alt={identity.kind === "employee" ? `${identity.name}的职业头像` : `${identity.name}标识`}
-          />
-        ) : (
-          <span aria-label={`${identity.name}的名称缩写`}>{initials(identity.name)}</span>
-        )}
-      </div>
-      <div className="cpr-identity-copy">
-        <div className="cpr-identity-kicker">
-          <span>{identity.kind === "employee" ? "员工名片" : "企业名片"}</span>
-          {identity.verificationLabel && <b>{identity.verificationLabel}</b>}
-        </div>
-        <div className="cpr-identity-name-row">
-          <h1>{identity.name}</h1>
-        </div>
-        {identity.headline && <p className="cpr-identity-headline">{identity.headline}</p>}
-        {identity.companyName && <p className="cpr-identity-company">{identity.companyName}</p>}
-        {identity.summary && <p className="cpr-identity-summary">{identity.summary}</p>}
-        {meta.length > 0 && <small className="cpr-identity-meta">{meta.join(" · ")}</small>}
-        {identity.tags?.length ? (
-          <div className="cpr-tags" aria-label="名片标签">
-            {identity.tags.map((tag) => <span key={tag}>{tag}</span>)}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SectionHeading({ block }: { block: CardPageBlock }) {
-  if (!block.title) return null;
-  return (
-    <div className="bp-section-title cpr-section-title">
-      <h2>{block.title}</h2>
-    </div>
-  );
-}
-
-function isDarkColor(value?: string) {
-  const match = value?.match(/^#([0-9a-f]{6})$/i);
-  if (!match) return false;
-  const numeric = Number.parseInt(match[1], 16);
-  const red = (numeric >> 16) & 255;
-  const green = (numeric >> 8) & 255;
-  const blue = numeric & 255;
-  return (red * 299 + green * 587 + blue * 114) / 1000 < 142;
-}
-
-function blockTone(block: CardPageBlock) {
-  if (block.textTone === "light" || block.textTone === "dark") return block.textTone;
-  if (block.background?.kind === "image" && block.background.imageUrl) return "light";
-  if (block.background?.kind === "color") {
-    return isDarkColor(block.background.color) ? "light" : "dark";
-  }
-  return undefined;
-}
-
-function RichTextContent({
-  block,
-  resolveResourceUrl,
-}: {
-  block: CardPageBlock;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  const intro = block.body?.trim();
-  const contentImage = block.contentImage;
-  const widthPercent = Math.min(100, Math.max(30, contentImage?.widthPercent ?? 100));
-  const sideWidthPercent = Math.min(60, widthPercent);
-  const aspectRatio = contentImage?.aspectRatio === "square"
-    ? "1 / 1"
-    : contentImage?.aspectRatio === "standard"
-      ? "4 / 3"
-      : contentImage?.aspectRatio === "auto"
-        ? "auto"
-        : "16 / 9";
-  const copy = intro
-    ? <div className="cpr-rich-text"><p>{intro}</p></div>
-    : <div className="cpr-empty"><strong>内容待补充</strong></div>;
-  if (!contentImage?.url) return copy;
-  return (
-    <div
-      className={`cpr-rich-media cpr-rich-media--${contentImage.placement}`}
-      style={{
-        "--cpr-rich-media-width": `${widthPercent}%`,
-        "--cpr-rich-media-side-width": `${sideWidthPercent}%`,
-      } as CSSProperties}
-    >
-      {copy}
-      <img
-        src={resolveResourceUrl(contentImage.url)}
-        alt={contentImage.alt || ""}
-        style={{
-          objectFit: contentImage.fit === "contain" ? "contain" : "cover",
-          objectPosition: `${contentImage.positionX ?? 50}% ${contentImage.positionY ?? 50}%`,
-          aspectRatio,
-        }}
-      />
-    </div>
-  );
-}
-
-function isOverviewBlock(block: CardPageBlock) {
-  return block.type === "rich_text" && (
-    block.id === "overview"
-    || block.id.endsWith("-overview")
-    || block.title?.trim() === "概览"
-  );
-}
-
-function directoryTitle(block: CardPageBlock) {
-  const title = block.title?.trim();
-  if (block.type === "rich_text") {
-    if (isOverviewBlock(block)) return "概览";
-    if (title === "企业介绍" || title === "个人介绍") return "介绍";
-    return title;
-  }
-  const compactTitles: Partial<Record<CardPageBlockType, string>> = {
-    identity: "名片",
-    business_collection: "业务",
-    image_gallery: "图片",
-    video_link: "视频",
-    case_collection: "案例",
-    trust_panel: "资料",
-    faq: "问答",
-    cta: "联系",
-    ai_assistant: "AI",
-  };
-  return compactTitles[block.type] || title;
-}
-
-function ProductCollection({
-  items,
-  onOpen,
-  resolveResourceUrl,
-}: {
-  items: CardPageProduct[];
-  onOpen?: (item: CardPageProduct) => void;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  if (!items.length) {
-    return <div className="cpr-empty"><strong>产品与服务待补充</strong><p>发布业务资料后会自动出现在这里。</p></div>;
-  }
-  const size = quantityClass(items.length);
-  return (
-    <div className={`cpr-product-list cpr-product-list--${size}`} data-item-count={items.length}>
-      {items.map((item, index) => {
-        const content = (
-          <>
-            {item.imageUrl && <img src={resolveResourceUrl(item.imageUrl)} alt="" loading="lazy" />}
-            <span className="cpr-item-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-            <div className="cpr-product-copy">
-              <small>{item.category || "产品与服务"}</small>
-              <strong>{item.name}</strong>
-              {item.summary && <p>{item.summary}</p>}
-              {onOpen && <span className="cpr-item-link">查看详情 <i aria-hidden="true">→</i></span>}
-            </div>
-          </>
-        );
-        return onOpen ? (
-          <button className="cpr-product-item" type="button" key={item.id} onClick={() => onOpen(item)}>
-            {content}
-          </button>
-        ) : (
-          <div className="cpr-product-item" key={item.id}>{content}</div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CaseCollection({
-  items,
-  onOpen,
-  resolveResourceUrl,
-}: {
-  items: CardPageCase[];
-  onOpen?: (item: CardPageCase) => void;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  if (!items.length) {
-    return <div className="cpr-empty"><strong>代表案例待补充</strong><p>案例确认公开范围后会显示在这里。</p></div>;
-  }
-  const size = quantityClass(items.length);
-  return (
-    <div className={`cpr-case-list cpr-case-list--${size}`} data-item-count={items.length}>
-      {items.map((item, index) => {
-        const content = (
-          <>
-            {item.imageUrl && <img src={resolveResourceUrl(item.imageUrl)} alt="" loading="lazy" />}
-            <span className="cpr-case-meta"><b>CASE {String(index + 1).padStart(2, "0")}</b><small>{item.industry || "公开案例"}</small></span>
-            <strong>{item.title}</strong>
-            {(item.summary || item.result) && <p>{item.summary || item.result}</p>}
-            {onOpen && <span className="cpr-item-link">查看完整案例 <i aria-hidden="true">→</i></span>}
-          </>
-        );
-        return onOpen ? (
-          <button className="cpr-case-item" type="button" key={item.id} onClick={() => onOpen(item)}>
-            {content}
-          </button>
-        ) : (
-          <div className="cpr-case-item" key={item.id}>{content}</div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Gallery({
-  urls,
-  title,
-  resolveResourceUrl,
-}: {
-  urls: string[];
-  title?: string;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  if (!urls.length) {
-    return <div className="cpr-empty"><strong>展示图片待上传</strong><p>添加图片后会按数量自动编排。</p></div>;
-  }
-  return (
-    <div className={`cpr-gallery cpr-gallery--${quantityClass(urls.length)}`} data-item-count={urls.length}>
-      {urls.map((url, index) => (
-        <figure key={`${url}-${index}`}>
-          <img src={resolveResourceUrl(url)} alt={`${title || "企业展示"} ${index + 1}`} loading="lazy" />
-        </figure>
-      ))}
-    </div>
-  );
-}
-
-function FaqCollection({
-  items,
-  onAssistant,
-}: {
-  items: CardPageFaqItem[];
-  onAssistant?: (question?: string) => void;
-}) {
-  if (!items.length) {
-    return <div className="cpr-empty"><strong>常见问题待补充</strong><p>已发布且公开的知识 FAQ 会同步到这里。</p></div>;
-  }
-  return (
-    <div className="cpr-faq-list">
-      {items.map((item, index) => (
-        <details key={item.id} open={index === 0}>
-          <summary>
-            <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-            <strong>{item.question}</strong>
-            <i aria-hidden="true" />
-          </summary>
-          <div className="cpr-faq-answer">
-            <p>{item.answer}</p>
-            {(item.sourceLabel || onAssistant) && (
-              <footer>
-                {item.sourceLabel && <small>资料来源：{item.sourceLabel}</small>}
-                {onAssistant && <button type="button" onClick={() => onAssistant(item.question)}>继续问 AI <span aria-hidden="true">→</span></button>}
-              </footer>
-            )}
-          </div>
-        </details>
-      ))}
-    </div>
-  );
-}
-
-function renderBlockContent({
-  block,
-  data,
-  actions,
-  identityContent,
-  resolveResourceUrl,
-}: {
-  block: CardPageBlock;
-  data: CardPageResolvedData;
-  actions: CardPageExperienceActions;
-  identityContent?: ReactNode;
-  resolveResourceUrl: (url: string) => string;
-}) {
-  if (block.type === "identity") {
-    return identityContent ?? <IdentityBlock identity={data.identity} resolveResourceUrl={resolveResourceUrl} />;
-  }
-
-  const intro = block.body?.trim();
-  if (block.type === "rich_text") {
-    if (isOverviewBlock(block)) {
-      const positioning = intro || data.identity?.positioning?.trim() || data.identity?.summary?.trim();
-      return positioning ? (
-        <div className="cpr-positioning">
-          <small>我们能帮助你</small>
-          <strong>{positioning}</strong>
-        </div>
-      ) : <div className="cpr-empty"><strong>企业定位待补充</strong></div>;
-    }
-    return <RichTextContent block={block} resolveResourceUrl={resolveResourceUrl} />;
-  }
-
-  if (block.type === "business_collection") {
-    const items = resolveReferencedItems(block.productItems, block.productIds, data.products ?? []);
-    return <>{intro && <p className="cpr-block-intro">{intro}</p>}<ProductCollection items={items} onOpen={actions.onOpenProduct} resolveResourceUrl={resolveResourceUrl} /></>;
-  }
-
-  if (block.type === "case_collection") {
-    const items = resolveReferencedItems(block.caseItems, block.caseIds, data.cases ?? []);
-    return <>{intro && <p className="cpr-block-intro">{intro}</p>}<CaseCollection items={items} onOpen={actions.onOpenCase} resolveResourceUrl={resolveResourceUrl} /></>;
-  }
-
-  if (block.type === "image_gallery") {
-    return <>{intro && <p className="cpr-block-intro">{intro}</p>}<Gallery urls={block.imageUrls ?? []} title={block.title} resolveResourceUrl={resolveResourceUrl} /></>;
-  }
-
-  if (block.type === "video_link") {
-    const url = safeCardPageExternalUrl(block.videoUrl);
-    if (!url) return <div className="cpr-empty"><strong>视频待配置</strong><p>请添加安全的 HTTPS 视频地址。</p></div>;
-    return (
-      <a className="cpr-video" href={url} target="_blank" rel="noreferrer">
-        {block.videoCoverUrl ? <img src={resolveResourceUrl(block.videoCoverUrl)} alt={`${block.title || "企业视频"}封面`} /> : <span className="cpr-video-placeholder" aria-hidden="true">▶</span>}
-        <span className="cpr-video-action"><b aria-hidden="true">▶</b><strong>播放视频</strong><small>将在新窗口打开</small></span>
-      </a>
-    );
-  }
-
-  if (block.type === "trust_panel") {
-    return (
-      <div className="cpr-trust-grid">
-        <span><b aria-hidden="true">✓</b> 企业公开资料</span>
-        <span><b aria-hidden="true">✓</b> 发布范围已确认</span>
-        <span><b aria-hidden="true">✓</b> AI 引用可追溯</span>
-      </div>
-    );
-  }
-
-  if (block.type === "faq") {
-    const items = resolveCardPageFaqItems(block, data.faqItems ?? []);
-    return <FaqCollection items={items} onAssistant={actions.onAssistant} />;
-  }
-
-  if (block.type === "ai_assistant") {
-    return (
-      <div className="cpr-ai-panel">
-        <div className="cpr-ai-mark" aria-hidden="true">AI</div>
-        <div>
-          <strong>{block.title || "企业 AI 助手"}</strong>
-          <p>{intro || "基于企业已审核并发布的资料，为访客介绍业务并整理合作需求。"}</p>
-        </div>
-        {actions.onAssistant && <button type="button" onClick={() => actions.onAssistant?.()}>开始咨询 <span aria-hidden="true">→</span></button>}
-      </div>
-    );
-  }
-
-  if (block.type === "cta") {
-    const url = safeCardPageExternalUrl(block.ctaUrl);
-    return (
-      <div className="cpr-cta-panel">
-        <p>{intro || "准备进一步了解？"}</p>
-        {url ? <a href={url} target="_blank" rel="noreferrer">{block.ctaLabel || "了解更多"}<span aria-hidden="true">↗</span></a> : <span className="cpr-cta-disabled">行动链接待配置</span>}
-      </div>
-    );
-  }
-
-  return null;
-}
-
-export function CardPageExperience({
-  blocks,
-  pageBackground,
-  pageTextTone,
-  data = {},
-  actions = {},
-  identityContent,
-  directory = false,
-  resolveResourceUrl = (url) => url,
-  editorAdapter,
-  className,
-}: CardPageExperienceProps) {
-  const directoryItems = useMemo(() => deriveCardPageDirectory(blocks, {
-    ...blockSelector,
-    getTitle: directoryTitle,
-    isDirectoryEnabled: (block) => block.directoryEnabled !== false,
-  }), [blocks]);
+export function CardPageExperience({ blocks, data = {}, actions = {}, directory = false, resolveResourceUrl = (url) => url, editorAdapter, className, shell }: CardPageExperienceProps) {
+  const modules = adaptCardPageToStudioModel({ blocks, data, resolveResourceUrl });
+  const byId = new Map(blocks.map((block) => [block.id, block]));
   const directoryOptions = typeof directory === "object" ? directory : undefined;
-  const directoryKey = useMemo(
-    () => directoryItems.map((item) => item.id).join("|"),
-    [directoryItems],
-  );
-  const [activeDirectoryBlockId, setActiveDirectoryBlockId] = useState<string | undefined>(
-    directoryItems[0]?.id,
-  );
-  const orderedBlocks = orderVisibleCardPageBlocks(blocks, blockSelector);
-  const leadingIdentity = orderedBlocks[0]?.type === "identity" ? orderedBlocks[0] : undefined;
-  const remainingBlocks = leadingIdentity
-    ? blocks.filter((block) => block.id !== leadingIdentity.id)
-    : blocks;
-  const pageBackgroundImageUrl = pageBackground?.kind === "image" && pageBackground.imageUrl
-    ? resolveResourceUrl(pageBackground.imageUrl)
-    : undefined;
-  const hasPageBackground = pageBackground?.kind === "color" || Boolean(pageBackgroundImageUrl);
-  const pageTone = pageTextTone === "light" || pageTextTone === "dark"
-    ? pageTextTone
-    : pageBackground?.kind === "image" && pageBackground.imageUrl
-      ? "light"
-      : pageBackground?.kind === "color"
-        ? isDarkColor(pageBackground.color) ? "light" : "dark"
-        : undefined;
-  const pageBackgroundStyle: CSSProperties = {
-    backgroundColor: pageBackground?.color || undefined,
-    backgroundImage: pageBackgroundImageUrl ? `url(${JSON.stringify(pageBackgroundImageUrl)})` : undefined,
-    backgroundSize: pageBackground?.fit === "contain" ? "contain" : "cover",
-    backgroundPosition: `${pageBackground?.positionX ?? 50}% ${pageBackground?.positionY ?? 50}%`,
-    backgroundRepeat: "no-repeat",
-  };
-
-  useEffect(() => {
-    if (!directoryItems.some((item) => item.id === activeDirectoryBlockId)) {
-      setActiveDirectoryBlockId(directoryItems[0]?.id);
-    }
-  }, [activeDirectoryBlockId, directoryItems, directoryKey]);
-
-  useEffect(() => {
-    if (!directory || typeof IntersectionObserver === "undefined" || directoryItems.length === 0) {
-      return undefined;
-    }
-    const targets = directoryItems.flatMap((item) => {
-      const target = document.getElementById(`bp-template-block-${item.id}`);
-      return target ? [target] : [];
-    });
-    if (targets.length === 0) return undefined;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visibleEntry = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => {
-            if (right.intersectionRatio !== left.intersectionRatio) {
-              return right.intersectionRatio - left.intersectionRatio;
-            }
-            return Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top);
-          })[0];
-        const blockId = visibleEntry?.target.getAttribute("data-card-page-block");
-        if (blockId) setActiveDirectoryBlockId(blockId);
-      },
-      { rootMargin: "-126px 0px -52% 0px", threshold: [0.08, 0.3, 0.65] },
-    );
-    targets.forEach((target) => observer.observe(target));
-    return () => observer.disconnect();
-  }, [directory, directoryItems, directoryKey]);
-
-  const navigateToBlock = (blockId: string) => {
-    setActiveDirectoryBlockId(blockId);
-    if (directoryOptions?.onNavigate) {
-      directoryOptions.onNavigate(blockId);
-      return;
-    }
-    const target = document.getElementById(`bp-template-block-${blockId}`);
-    target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    target?.focus({ preventScroll: true });
-  };
-
-  const renderBlocks = (items: CardPageBlock[], className: string) => (
-    <CardPageBlocksRenderer
-      blocks={items}
-      selector={blockSelector}
-      className={className}
-      ariaLabel={data.identity?.kind === "employee" ? "员工名片内容" : "企业名片内容"}
-      blockClassName={(block) => [
-        "bp-section",
-        "enterprise-template-block",
-        `enterprise-template-${block.type}`,
-        "cpr-block",
-        `cpr-block--${block.type}`,
-        editorAdapter?.selectedBlockId === block.id ? "cpr-block--selected" : "",
-        editorAdapter?.getBlockClassName?.(block) || "",
-      ].filter(Boolean).join(" ")}
-      getBlockDataType={(block) => block.type}
-      renderBlock={(block) => {
-        const background = block.background;
-        const backgroundImageUrl = background?.kind === "image" && background.imageUrl
-          ? resolveResourceUrl(background.imageUrl)
-          : undefined;
-        const hasBackground = background?.kind === "color" || Boolean(backgroundImageUrl);
-        const tone = blockTone(block);
-        const customTextStyle = block.textColor ? {
-          "--cpr-block-text-color": block.textColor,
-        } as CSSProperties : undefined;
-        const backgroundStyle: CSSProperties = {
-          backgroundColor: background?.color || undefined,
-          backgroundImage: backgroundImageUrl ? `url(${JSON.stringify(backgroundImageUrl)})` : undefined,
-          backgroundSize: background?.fit === "contain" ? "contain" : "cover",
-          backgroundPosition: `${background?.positionX ?? 50}% ${background?.positionY ?? 50}%`,
-          backgroundRepeat: "no-repeat",
-        };
-        return (
-          <div
-            className={[
-              "cpr-block-inner",
-              hasBackground ? "cpr-block-inner--has-background" : "",
-              tone ? `cpr-block-inner--tone-${tone}` : "",
-              block.textColor ? "cpr-block-inner--custom-text" : "",
-              block.sizePreset && block.sizePreset !== "auto" ? `cpr-block-inner--size-${block.sizePreset}` : "",
-              block.paddingY && block.paddingY !== "auto" ? `cpr-block-inner--padding-${block.paddingY}` : "",
-            ].filter(Boolean).join(" ")}
-            style={customTextStyle}
-            onClick={editorAdapter?.onSelectBlock ? () => editorAdapter.onSelectBlock?.(block.id) : undefined}
-          >
-            {hasBackground ? (
-              <div className="cpr-block-background" style={backgroundStyle} aria-hidden="true">
-                {(background?.overlayOpacity ?? 0) > 0 ? (
-                  <span style={{
-                    backgroundColor: background?.overlayColor || "#000000",
-                    opacity: background?.overlayOpacity ?? 0,
-                  }} />
-                ) : null}
-              </div>
-            ) : null}
-            <div className="cpr-block-foreground">
-              {editorAdapter?.renderBlockHandle && (
-                <div className="cpr-editor-affordance">{editorAdapter.renderBlockHandle(block)}</div>
-              )}
-              {block.type !== "identity" && block.type !== "ai_assistant" && !isOverviewBlock(block) && <SectionHeading block={block} />}
-              <div className="enterprise-template-block-content cpr-block-content">
-                {renderBlockContent({ block, data, actions, identityContent, resolveResourceUrl })}
-              </div>
-            </div>
-          </div>
-        );
-      }}
+  return <CardStudioSurface mode={editorAdapter ? "editor" : "public"}>
+    <StudioCardPage
+      modules={directory ? modules : modules.map((module) => ({ ...module, directoryEnabled: false }))}
+      title={shell?.title || (data.identity?.kind === "employee" ? "员工数字名片" : "企业官方名片")}
+      editor={Boolean(editorAdapter)}
+      className={["card-page-experience", className].filter(Boolean).join(" ")}
+      selectedModuleId={editorAdapter?.selectedBlockId}
+      onSelectModule={(id) => { editorAdapter?.onSelectBlock?.(id); directoryOptions?.onNavigate?.(id); }}
+      renderModuleHandle={editorAdapter?.renderBlockHandle ? (module) => { const block = byId.get(module.id); return block ? editorAdapter.renderBlockHandle?.(block) : null; } : undefined}
+      onBack={shell?.onBack}
+      onShare={shell?.onShare}
+      onOpenItem={(module, item) => module.type === "services" ? actions.onOpenProduct?.(item as CardPageProduct) : module.type === "cases" ? actions.onOpenCase?.(item as CardPageCase) : undefined}
+      onAction={(item) => actions.onAction?.(item as unknown as CardPageActionItem)}
+      onAssistant={actions.onAssistant}
+      directoryAriaLabel={directoryOptions?.ariaLabel || "名片内容导航"}
+      primaryAction={shell?.primaryAction}
+      secondaryAction={shell?.secondaryAction}
     />
-  );
-
-  return (
-    <div
-      className={[
-        "cpr-experience",
-        hasPageBackground ? "cpr-experience--has-background" : "",
-        pageTone ? `cpr-experience--tone-${pageTone}` : "",
-        className,
-      ].filter(Boolean).join(" ")}
-      data-card-page-experience
-    >
-      {hasPageBackground ? (
-        <div className="cpr-page-background" style={pageBackgroundStyle} aria-hidden="true">
-          {(pageBackground?.overlayOpacity ?? 0) > 0 ? (
-            <span style={{
-              backgroundColor: pageBackground?.overlayColor || "#000000",
-              opacity: pageBackground?.overlayOpacity ?? 0,
-            }} />
-          ) : null}
-        </div>
-      ) : null}
-      <div className="cpr-page-foreground">
-        {leadingIdentity && renderBlocks([leadingIdentity], "cpr-blocks cpr-blocks--leading enterprise-template-public")}
-        {directory && directoryItems.length > 0 && (
-          <nav className="cpr-directory" aria-label={directoryOptions?.ariaLabel || "名片内容导航"}>
-            {directoryItems.map((item, index) => (
-              <button
-                type="button"
-                key={item.id}
-                aria-current={activeDirectoryBlockId === item.id ? "location" : undefined}
-                onClick={() => navigateToBlock(item.id)}
-              >
-                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                {item.title}
-              </button>
-            ))}
-          </nav>
-        )}
-        {renderBlocks(remainingBlocks, "cpr-blocks enterprise-template-public")}
-      </div>
-    </div>
-  );
+  </CardStudioSurface>;
 }

@@ -4,19 +4,60 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { CardPageExperience } from "@cf/card-page-renderer";
 import { describe, expect, it, vi } from "vitest";
 
-import { EnterpriseTemplateBlocks } from "./EnterpriseTemplateBlocks";
+import { EnterpriseTemplateBlocks, toCardPageBlock } from "./EnterpriseTemplateBlocks";
 
 describe("EnterpriseTemplateBlocks", () => {
+  it("uses the exact simulator card component tree with real adapter data", () => {
+    const { container } = render(
+      <EnterpriseTemplateBlocks
+        blocks={[
+          { id: "identity", type: "identity", sort_order: 0 },
+          { id: "overview", type: "rich_text", title: "概览", body: "真实定位", sort_order: 1 },
+          { id: "business", type: "business_collection", title: "核心业务", product_items: [{ id: "p1", slug: "real-service", name: "真实业务", image_url: "/real-service.webp" }], sort_order: 2 },
+        ]}
+        identityData={{ kind: "employee", name: "林小满", headline: "解决方案顾问" }}
+        directory
+      />,
+    );
+
+    const page = container.querySelector(".public-frame > .card-page");
+    expect(page?.querySelector(":scope > .card-topbar")).toBeInTheDocument();
+    expect(page?.querySelector(".identity-block + .card-directory")).toBeInTheDocument();
+    expect(page?.querySelector(".card-content .overview-panel")).toHaveTextContent("真实定位");
+    expect(page?.querySelector(".service-grid .service-card")).toHaveTextContent("真实业务");
+    expect(page?.querySelector(".service-grid .service-card")).toHaveClass("has-media");
+    expect(screen.getByRole("img", { name: "真实业务展示图" })).toHaveAttribute("src", "/real-service.webp");
+  });
+
   it("renders visible blocks in the published order and hides disabled blocks", () => {
     render(<EnterpriseTemplateBlocks blocks={[
-      { id: "later", type: "rich_text", title: "第二块", sort_order: 2 },
+      { id: "later", type: "rich_text", title: "第二块", body: "第二块内容", sort_order: 2 },
       { id: "hidden", type: "rich_text", title: "不公开", visible: false, sort_order: 0 },
-      { id: "first", type: "rich_text", title: "第一块", sort_order: 1 },
+      { id: "first", type: "rich_text", title: "第一块", body: "第一块内容", sort_order: 1 },
     ]} />);
 
     const headings = screen.getAllByRole("heading").map((node) => node.textContent);
     expect(headings).toEqual(["第一块", "第二块"]);
     expect(screen.queryByText("不公开")).not.toBeInTheDocument();
+  });
+
+  it("adapts employee copy and keeps empty editor placeholders off the public card", () => {
+    const { container } = render(<CardPageExperience
+      blocks={[
+        { id: "identity", type: "identity", sortOrder: 0 },
+        { id: "intro", type: "rich_text", title: "企业介绍", body: "个人业务介绍", sortOrder: 1 },
+        { id: "business", type: "business_collection", title: "核心业务", productItems: [], sortOrder: 2 },
+        { id: "cases", type: "case_collection", title: "代表案例", caseItems: [], sortOrder: 3 },
+      ]}
+      data={{ identity: { kind: "employee", name: "徐松波", headline: "创始人 / 总经理" } }}
+      directory
+    />);
+
+    expect(screen.getByRole("heading", { name: "个人介绍" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "企业介绍" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "核心业务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "代表案例" })).not.toBeInTheDocument();
+    expect(container.querySelector(".empty-state")).not.toBeInTheDocument();
   });
 
   it("renders frozen case items and rejects non-HTTPS actions", () => {
@@ -65,78 +106,13 @@ describe("EnterpriseTemplateBlocks", () => {
     const onAssistant = vi.fn();
     render(
       <EnterpriseTemplateBlocks
-        blocks={[{ id: "ai", type: "ai_assistant", title: "企业 AI" }]}
+        blocks={[{ id: "ai", type: "ai_assistant", title: "企业 AI", body: "基于已审核资料提供咨询。" }]}
         onAssistant={onAssistant}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "开始咨询" }));
     expect(onAssistant).toHaveBeenCalledOnce();
-  });
-
-  it("renders published block backgrounds and rich-text content images", () => {
-    const { container } = render(
-      <EnterpriseTemplateBlocks
-        pageBackground={{
-          kind: "image",
-          image_url: "/api/v1/public/card-assets/company-1/page.webp",
-          position_x: 36,
-          position_y: 64,
-          overlay_color: "#000000",
-          overlay_opacity: 0.38,
-        }}
-        pageTextTone="light"
-        blocks={[{
-          id: "story",
-          type: "rich_text",
-          title: "品牌故事",
-          body: "持续更新的企业内容入口。",
-          background: {
-            kind: "image",
-            image_url: "/api/v1/public/card-assets/company-1/background.webp",
-            fit: "cover",
-            position_x: 24,
-            position_y: 68,
-            overlay_color: "#102b2f",
-            overlay_opacity: 0.5,
-          },
-          text_tone: "light",
-          text_color: "#F4C36A",
-          content_image: {
-            url: "/api/v1/public/card-assets/company-1/story.webp",
-            alt: "团队共创",
-            placement: "right",
-            fit: "contain",
-            aspect_ratio: "standard",
-            width_percent: 42,
-            position_x: 28,
-            position_y: 72,
-          },
-          size_preset: "tall",
-          padding_y: "spacious",
-        }]}
-      />,
-    );
-
-    expect(screen.getByAltText("团队共创")).toHaveAttribute(
-      "src",
-      "/api/v1/public/card-assets/company-1/story.webp",
-    );
-    expect(container.querySelector(".cpr-rich-media--right")).toBeInTheDocument();
-    expect(container.querySelector(".cpr-block-inner--tone-light")).toBeInTheDocument();
-    const customTextBlock = container.querySelector<HTMLElement>(".cpr-block-inner--custom-text");
-    expect(customTextBlock).toBeInTheDocument();
-    expect(customTextBlock?.style.getPropertyValue("--cpr-block-text-color")).toBe("#F4C36A");
-    expect(container.querySelector(".cpr-block-background"))
-      .toHaveStyle({ backgroundPosition: "24% 68%" });
-    expect(container.querySelector(".cpr-page-background"))
-      .toHaveStyle({ backgroundPosition: "36% 64%" });
-    expect(container.querySelector(".cpr-block-inner--size-tall"))
-      .toHaveClass("cpr-block-inner--padding-spacious");
-    expect(screen.getByAltText("团队共创")).toHaveStyle({
-      aspectRatio: "4 / 3",
-      objectPosition: "28% 72%",
-    });
   });
 
   it("filters selected FAQ records by canonical document id and keeps the configured order", () => {
@@ -158,7 +134,7 @@ describe("EnterpriseTemplateBlocks", () => {
       />,
     );
 
-    const questions = Array.from(container.querySelectorAll(".cpr-faq-list summary strong"))
+    const questions = Array.from(container.querySelectorAll(".cpr-faq-list .faq-question strong"))
       .map((node) => node.textContent);
     expect(questions).toEqual(["问题二", "问题一"]);
     expect(screen.queryByText("不应展示")).not.toBeInTheDocument();
@@ -204,9 +180,9 @@ describe("EnterpriseTemplateBlocks", () => {
     render(
       <CardPageExperience
         blocks={[
-          { id: "second", type: "rich_text", title: "第二部分", sortOrder: 2 },
+          { id: "second", type: "rich_text", title: "第二部分", body: "第二部分内容", sortOrder: 2 },
           { id: "hidden", type: "rich_text", title: "隐藏部分", sortOrder: 0, visible: false },
-          { id: "first", type: "rich_text", title: "第一部分", sortOrder: 1 },
+          { id: "first", type: "rich_text", title: "第一部分", body: "第一部分内容", sortOrder: 1 },
         ]}
         directory={{ onNavigate }}
       />,
@@ -214,7 +190,7 @@ describe("EnterpriseTemplateBlocks", () => {
 
     const directory = screen.getByRole("navigation", { name: "名片内容导航" });
     const buttons = Array.from(directory.querySelectorAll("button"));
-    expect(buttons.map((button) => button.textContent)).toEqual(["01第一部分", "02第二部分"]);
+    expect(buttons.map((button) => button.textContent)).toEqual(["第一部分", "第二部分"]);
     fireEvent.click(buttons[1]);
     expect(onNavigate).toHaveBeenCalledWith("second");
   });
@@ -234,5 +210,113 @@ describe("EnterpriseTemplateBlocks", () => {
       .map((node) => node.getAttribute("data-card-page-block"));
     expect(renderedIds).toEqual(["copy", "identity"]);
     expect(screen.getByRole("heading", { name: "林小满" })).toBeInTheDocument();
+  });
+
+  it("renders identity background presentation from the real template contract", () => {
+    const { container } = render(
+      <EnterpriseTemplateBlocks
+        blocks={[{
+          id: "identity",
+          type: "identity",
+          presentation: {
+            identity_layout: "vertical",
+            background: {
+              asset_url: "/api/v1/public/assets/company/card.webp",
+              fit: "custom",
+              position: "top_right",
+              scale: 1.25,
+              opacity: 0.42,
+              overlay: "light",
+            },
+          },
+        }]}
+        identityData={{ kind: "employee", name: "林小满", headline: "解决方案顾问" }}
+      />,
+    );
+
+    const identity = container.querySelector(".cpr-identity");
+    const background = container.querySelector<HTMLElement>(".cpr-identity-background");
+    expect(identity).toHaveClass("cpr-identity--vertical", "cpr-identity--has-background");
+    expect(background?.style.backgroundImage).toContain("/api/v1/public/assets/company/card.webp");
+    expect(background?.style.backgroundPosition).toBe("right top");
+    expect(background?.style.backgroundSize).toBe("125%");
+    expect(background?.style.opacity).toBe("0.42");
+    expect(container.querySelector(".cpr-identity-overlay--light")).toBeInTheDocument();
+  });
+
+  it("renders an action collection with safe whole-card links and reports actions", () => {
+    const onAction = vi.fn();
+    render(
+      <EnterpriseTemplateBlocks
+        blocks={[{
+          id: "actions",
+          type: "action_collection",
+          title: "行动入口",
+          layout_variant: "grid",
+          item_limit: 2,
+          action_items: [
+            {
+              id: "event",
+              title: "世界会展大会",
+              summary: "查看大会日程与报名方式",
+              label: "查看详情",
+              image_url: "/api/v1/public/assets/company/event.webp",
+              target_type: "external_url",
+              target_value: "https://events.example.test/conference",
+              open_mode: "new_tab",
+            },
+            {
+              id: "phone",
+              title: "预约咨询",
+              target_type: "phone",
+              target_value: "+86 138-0013-8000",
+              open_mode: "self",
+            },
+            {
+              id: "unsafe",
+              title: "危险入口",
+              target_type: "internal_path",
+              target_value: "//evil.example.test",
+              open_mode: "self",
+            },
+          ],
+        }]}
+        onAction={onAction}
+      />,
+    );
+
+    const eventLink = screen.getByRole("link", { name: /世界会展大会/ });
+    expect(eventLink).toHaveAttribute("href", "https://events.example.test/conference");
+    expect(eventLink).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: /预约咨询/ })).toHaveAttribute("href", "tel:+8613800138000");
+    expect(screen.queryByText("危险入口")).not.toBeInTheDocument();
+    fireEvent.click(eventLink);
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: "event", targetType: "external_url" }));
+  });
+
+  it("maps snake_case action collection and identity background fields once", () => {
+    expect(toCardPageBlock({
+      id: "actions",
+      type: "action_collection",
+      layout_variant: "featured",
+      item_limit: 4,
+      action_items: [{
+        id: "official-site",
+        title: "企业官网",
+        image_url: "/api/v1/public/assets/company/site.webp",
+        target_type: "internal_path",
+        target_value: "/company",
+        open_mode: "self",
+      }],
+    })).toMatchObject({
+      layoutVariant: "featured",
+      itemLimit: 4,
+      actionItems: [{
+        id: "official-site",
+        imageUrl: "/api/v1/public/assets/company/site.webp",
+        targetType: "internal_path",
+        targetValue: "/company",
+      }],
+    });
   });
 });

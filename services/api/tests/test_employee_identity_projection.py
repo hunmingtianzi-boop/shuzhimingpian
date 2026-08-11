@@ -104,6 +104,8 @@ def test_employee_card_write_persists_expression_without_identity_copy() -> None
         "welcome_message": "欢迎咨询",
         "suggested_questions": ["可以提供什么服务？"],
         "policy_versions": {},
+        "identity_titles": [],
+        "contact_fields": [],
         "employee_contact_visibility": [],
     }
     assert not {"display_name", "title", "avatar_url", "business_summary"} & stored.keys()
@@ -251,11 +253,32 @@ async def test_public_employee_identity_uses_user_and_membership_projection() ->
     assert identity.avatar_url == "https://cdn.example/public-avatar.png"
     assert identity.business_summary == "帮助企业把复杂方案转成可落地路径。"
     assert _employee_contact_fields(identity, {"mobile", "email"}) == [
-        {"label": "工作手机", "value": "mobile", "href": "tel:mobile"},
-        {"label": "工作邮箱", "value": "email", "href": "mailto:email"},
+        {
+            "id": "employee-mobile",
+            "kind": "phone",
+            "type": "phone",
+            "label": "工作手机",
+            "value": "mobile",
+            "href": "tel:mobile",
+        },
+        {
+            "id": "employee-email",
+            "kind": "email",
+            "type": "email",
+            "label": "工作邮箱",
+            "value": "email",
+            "href": "mailto:email",
+        },
     ]
     assert _employee_contact_fields(identity, {"mobile"}) == [
-        {"label": "工作手机", "value": "mobile", "href": "tel:mobile"},
+        {
+            "id": "employee-mobile",
+            "kind": "phone",
+            "type": "phone",
+            "label": "工作手机",
+            "value": "mobile",
+            "href": "tel:mobile",
+        },
     ]
     statement = str(session.statements[0])
     assert "users.status" in statement

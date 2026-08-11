@@ -631,9 +631,21 @@ export function safeContactHref(field: Record<string, string>) {
 
   const value = field.value?.trim();
   if (!value) return undefined;
+  const kind = `${field.kind || ""} ${field.type || ""} ${field.label || ""}`.toLowerCase();
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return `mailto:${value}`;
   if (/^\+?[\d\s()-]{5,40}$/.test(value)) {
     return `tel:${value.replace(/[^\d+]/g, "")}`;
+  }
+  if (/location|address|地址|地区/.test(kind)) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`;
+  }
+  if (/website|site|官网|网站/.test(kind)) {
+    try {
+      const parsed = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+      return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }

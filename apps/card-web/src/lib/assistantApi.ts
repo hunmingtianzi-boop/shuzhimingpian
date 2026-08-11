@@ -481,6 +481,42 @@ export async function recordVisitEvent({
   if (!response.ok) throw await responseError(response);
 }
 
+export async function recordPublicCardAction({
+  cardSlug,
+  actionId,
+  actionTitle,
+  targetType,
+  policyVersions,
+  companyId,
+  signal,
+}: {
+  cardSlug: string;
+  actionId: string;
+  actionTitle: string;
+  targetType: string;
+  policyVersions: PublicPolicyVersions;
+  companyId?: string;
+  signal?: AbortSignal;
+}) {
+  const session = await ensureVisitSession({
+    cardSlug,
+    policyVersions,
+    companyId,
+    signal,
+  });
+  await recordVisitEvent({
+    cardSlug,
+    session,
+    eventType: "cta_click",
+    objectType: "card",
+    objectId: actionId,
+    metadata: {
+      action_title: actionTitle.slice(0, 120),
+      target_type: targetType.slice(0, 64),
+    },
+  });
+}
+
 async function recordChatConsent(
   baseUrl: string,
   cardSlug: string,

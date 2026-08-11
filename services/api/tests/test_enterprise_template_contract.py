@@ -71,83 +71,6 @@ def test_template_requires_one_visible_identity_block() -> None:
         )
 
 
-def test_template_accepts_block_backgrounds_and_rich_text_content_images() -> None:
-    document = EnterpriseTemplateDocument.model_validate(
-        {
-            "page_background": {
-                "kind": "color",
-                "color": "#EAF2F1",
-            },
-            "blocks": [
-                {"id": "identity", "type": "identity", "sort_order": 0},
-                {
-                    "id": "story",
-                    "type": "rich_text",
-                    "sort_order": 1,
-                    "body": "品牌故事",
-                    "background": {
-                        "kind": "image",
-                        "image_url": "https://cdn.example.com/background.webp",
-                        "fit": "cover",
-                        "position_x": 38,
-                        "position_y": 62,
-                        "overlay_color": "#102B2F",
-                        "overlay_opacity": 0.48,
-                    },
-                    "text_tone": "light",
-                    "text_color": "#F4C36A",
-                    "content_image": {
-                        "url": "https://cdn.example.com/story.webp",
-                        "alt": "团队共创",
-                        "placement": "left",
-                        "fit": "contain",
-                        "aspect_ratio": "square",
-                        "width_percent": 44,
-                        "position_x": 36,
-                        "position_y": 64,
-                    },
-                    "size_preset": "tall",
-                    "padding_y": "spacious",
-                },
-            ]
-        }
-    )
-
-    story = document.blocks[1]
-    assert story.background is not None
-    assert story.background.position_x == 38
-    assert story.background.overlay_opacity == 0.48
-    assert story.text_tone == "light"
-    assert story.text_color == "#F4C36A"
-    assert story.content_image is not None
-    assert story.content_image.placement == "left"
-    assert story.content_image.aspect_ratio == "square"
-    assert story.content_image.width_percent == 44
-    assert story.content_image.position_x == 36
-    assert story.size_preset == "tall"
-    assert story.padding_y == "spacious"
-    assert document.page_background is not None
-    assert document.page_background.color == "#EAF2F1"
-
-    with pytest.raises(ValidationError, match="content image is only valid for rich text"):
-        EnterpriseTemplateDocument.model_validate(
-            {
-                "blocks": [
-                    {"id": "identity", "type": "identity", "sort_order": 0},
-                    {
-                        "id": "contact",
-                        "type": "cta",
-                        "sort_order": 1,
-                        "content_image": {
-                            "url": "https://cdn.example.com/story.webp",
-                            "placement": "top",
-                        },
-                    },
-                ]
-            }
-        )
-
-
 def test_business_collection_keeps_product_references_without_client_snapshots() -> None:
     product_id = uuid.uuid4()
     document = EnterpriseTemplateDocument.model_validate(
@@ -276,29 +199,9 @@ def test_managed_template_keeps_draft_and_published_snapshots_separate() -> None
     )
     record = _enterprise_template_record(card)
 
-    assert [block.id for block in record.draft.blocks] == [
-        "identity",
-        "overview",
-        "intro",
-        "business",
-        "cases",
-        "trust",
-        "faq",
-        "ai",
-        "draft",
-    ]
+    assert [block.id for block in record.draft.blocks] == ["identity", "draft"]
     assert record.published is not None
-    assert [block.id for block in record.published.blocks] == [
-        "identity",
-        "overview",
-        "intro",
-        "business",
-        "cases",
-        "trust",
-        "faq",
-        "ai",
-        "public",
-    ]
+    assert [block.id for block in record.published.blocks] == ["identity", "public"]
 
 
 def test_employee_card_uses_the_same_free_block_contract_without_copying_identity() -> None:
@@ -324,16 +227,7 @@ def test_employee_card_uses_the_same_free_block_contract_without_copying_identit
 
     record = _enterprise_template_record(card)
 
-    assert [block.id for block in record.draft.blocks] == [
-        "identity",
-        "overview",
-        "intro",
-        "business",
-        "cases",
-        "trust",
-        "faq",
-        "ai",
-    ]
+    assert [block.id for block in record.draft.blocks] == ["identity", "intro"]
     assert "display_name" not in card.settings
 
 
@@ -360,19 +254,9 @@ def test_company_default_configuration_is_per_card_kind_with_safe_empty_fallback
     )
 
     assert document.theme_key == "clean"
-    assert [block.id for block in document.blocks] == [
-        "identity",
-        "overview",
-        "intro",
-        "business",
-        "cases",
-        "trust",
-        "faq",
-        "ai",
-        "contact",
-    ]
+    assert [block.id for block in document.blocks] == ["identity", "contact"]
     assert document.blocks[0].directory_enabled is False
-    assert document.blocks[1].title == "概览"
+    assert document.blocks[1].cta_label == "联系我"
     assert [block.id for block in _company_card_composer_default({}, "enterprise").blocks] == [
         "identity",
         "overview",
@@ -413,9 +297,6 @@ def test_published_card_can_replace_its_public_snapshot() -> None:
 @pytest.mark.asyncio
 async def test_public_projection_omits_hidden_blocks() -> None:
     company_id = uuid.uuid4()
-    background_url = _asset_url(company_id)
-    content_image_url = _asset_url(company_id)
-    page_background_url = _asset_url(company_id)
     projection = await _public_enterprise_template(
         AsyncMock(),
         tenant_id=uuid.uuid4(),
@@ -423,14 +304,6 @@ async def test_public_projection_omits_hidden_blocks() -> None:
         value={
             "schema_version": 1,
             "theme_key": "clean",
-            "page_background": {
-                "kind": "image",
-                "image_url": page_background_url,
-                "position_x": 40,
-                "position_y": 60,
-                "overlay_opacity": 0.45,
-            },
-            "page_text_tone": "light",
             "blocks": [
                 {"id": "hidden", "type": "rich_text", "visible": False, "sort_order": 0},
                 {
@@ -439,15 +312,6 @@ async def test_public_projection_omits_hidden_blocks() -> None:
                     "visible": True,
                     "sort_order": 1,
                     "body": "公开内容",
-                    "background": {
-                        "kind": "image",
-                        "image_url": background_url,
-                        "overlay_opacity": 0.4,
-                    },
-                    "content_image": {
-                        "url": content_image_url,
-                        "placement": "right",
-                    },
                 },
                 {
                     "id": "spoofed-asset",
@@ -459,35 +323,10 @@ async def test_public_projection_omits_hidden_blocks() -> None:
                         f"{company_id}/{uuid.uuid4()}.webp"
                     ],
                 },
-                {
-                    "id": "spoofed-background",
-                    "type": "rich_text",
-                    "visible": True,
-                    "sort_order": 3,
-                    "background": {
-                        "kind": "image",
-                        "image_url": "https://attacker.example/background.webp",
-                    },
-                },
             ],
         },
     )
 
     assert projection is not None
-    assert [block["id"] for block in projection["blocks"]] == [
-        "identity",
-        "overview",
-        "intro",
-        "business",
-        "cases",
-        "trust",
-        "faq",
-        "ai",
-        "public",
-    ]
+    assert [block["id"] for block in projection["blocks"]] == ["identity", "public"]
     assert projection["blocks"][0]["directory_enabled"] is False
-    assert projection["page_background"]["image_url"] == page_background_url
-    assert projection["page_text_tone"] == "light"
-    public_block = next(block for block in projection["blocks"] if block["id"] == "public")
-    assert public_block["background"]["image_url"] == background_url
-    assert public_block["content_image"]["url"] == content_image_url

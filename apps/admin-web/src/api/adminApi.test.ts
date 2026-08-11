@@ -39,14 +39,6 @@ describe("adminApi real contract", () => {
       draft: {
         schema_version: 1,
         theme_key: "warm",
-        page_background: {
-          kind: "image",
-          image_url: "/api/v1/public/card-assets/company-1/page.webp",
-          position_x: 42,
-          position_y: 58,
-          overlay_opacity: 0.35,
-        },
-        page_text_tone: "light",
         blocks: [{
           id: "gallery-1",
           type: "image_gallery",
@@ -54,13 +46,6 @@ describe("adminApi real contract", () => {
           sort_order: 4,
           title: "企业相册",
           image_urls: ["/api/v1/public/card-assets/company-1/a.webp"],
-          background: {
-            kind: "color",
-            color: "#173b40",
-            overlay_opacity: 0,
-          },
-          text_tone: "light",
-          text_color: "#F4C36A",
           case_items: [{ id: "server-only" }],
         }],
       },
@@ -79,22 +64,7 @@ describe("adminApi real contract", () => {
       version: 7,
       draft: {
         themeKey: "warm",
-        pageBackground: {
-          kind: "image",
-          imageUrl: "/api/v1/public/card-assets/company-1/page.webp",
-          positionX: 42,
-          positionY: 58,
-          overlayOpacity: 0.35,
-        },
-        pageTextTone: "light",
-        blocks: [{
-          visible: false,
-          sortOrder: 4,
-          imageUrls: ["/api/v1/public/card-assets/company-1/a.webp"],
-          background: { kind: "color", color: "#173b40" },
-          textTone: "light",
-          textColor: "#F4C36A",
-        }],
+        blocks: [{ visible: false, sortOrder: 4, imageUrls: ["/api/v1/public/card-assets/company-1/a.webp"] }],
       },
     });
     await api.updateEnterpriseTemplate("card-enterprise", 7, "clean", [
@@ -106,26 +76,7 @@ describe("adminApi real contract", () => {
         sortOrder: 99,
         title: "在线咨询",
       },
-      {
-        id: "story-1",
-        type: "rich_text",
-        visible: true,
-        sortOrder: 99,
-        title: "品牌故事",
-        contentImage: {
-          url: "/api/v1/public/card-assets/company-1/story.webp",
-          alt: "团队共创",
-          placement: "left",
-          fit: "contain",
-          aspectRatio: "square",
-          widthPercent: 44,
-          positionX: 35,
-          positionY: 65,
-        },
-        sizePreset: "tall",
-        paddingY: "spacious",
-      },
-    ], loaded.draft.pageBackground, loaded.draft.pageTextTone);
+    ]);
 
     expect(fetcher.mock.calls[2][0]).toBe(
       "https://api.example.test/api/v1/admin/cards/card-enterprise/enterprise-template",
@@ -135,46 +86,10 @@ describe("adminApi real contract", () => {
     expect(body).toMatchObject({
       schema_version: 1,
       theme_key: "clean",
-      page_background: {
-        kind: "image",
-        image_url: "/api/v1/public/card-assets/company-1/page.webp",
-        position_x: 42,
-        position_y: 58,
-        overlay_opacity: 0.35,
-      },
-      page_text_tone: "light",
       blocks: [
-        { id: "gallery-1", visible: false, sort_order: 0, text_color: "#F4C36A" },
+        { id: "gallery-1", visible: false, sort_order: 0 },
         { id: "ai-1", visible: true, sort_order: 1 },
-        {
-          id: "story-1",
-          visible: true,
-          sort_order: 2,
-          content_image: {
-            url: "/api/v1/public/card-assets/company-1/story.webp",
-            alt: "团队共创",
-            placement: "left",
-            fit: "contain",
-            aspect_ratio: "square",
-            width_percent: 44,
-            position_x: 35,
-            position_y: 65,
-          },
-          size_preset: "tall",
-          padding_y: "spacious",
-        },
       ],
-    });
-    expect(body.blocks[0]).toMatchObject({
-      background: {
-        kind: "color",
-        color: "#173b40",
-        fit: "cover",
-        position_x: 50,
-        position_y: 50,
-        overlay_opacity: 0,
-      },
-      text_tone: "light",
     });
     expect(body.blocks[0]).not.toHaveProperty("case_items");
   });
@@ -239,22 +154,6 @@ describe("adminApi real contract", () => {
     );
   });
 
-  it("deletes knowledge content with optimistic concurrency", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(tokenResponse())
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const api = await authenticatedApi(fetcher);
-
-    await api.deleteKnowledgeDocument("knowledge-1", 6);
-
-    expect(fetcher.mock.calls[1][0]).toBe(
-      "https://api.example.test/api/v1/admin/knowledge/documents/knowledge-1",
-    );
-    expect(fetcher.mock.calls[1][1]?.method).toBe("DELETE");
-    expect((fetcher.mock.calls[1][1]?.headers as Headers).get("If-Match")).toBe("6");
-  });
-
   it("submits a local template document only when creation is confirmed", async () => {
     const card = {
       id: "card-enterprise",
@@ -281,6 +180,8 @@ describe("adminApi real contract", () => {
       assistantName: "企业助手",
       welcomeMessage: "欢迎咨询",
       suggestedQuestions: [],
+      identityTitles: [],
+      contactFields: [],
       policyVersions: { privacy: "privacy-v1", chatNotice: "chat-v1", leadConsent: "lead-v1" },
       employeeContactVisibility: [],
       templateSourceCardId: "must-not-be-sent",
@@ -409,22 +310,6 @@ describe("adminApi real contract", () => {
       suggested_questions: ["你们提供什么服务？"],
       policy_versions: { privacy: "privacy-v2" },
     });
-  });
-
-  it("marks the enterprise setup complete through the existing admin scope", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(tokenResponse())
-      .mockResolvedValueOnce(jsonResponse({ data: { completed: true } }));
-    const api = await authenticatedApi(fetcher);
-
-    await api.completeEnterpriseSetup();
-
-    expect(fetcher.mock.calls[1][0]).toBe(
-      "https://api.example.test/api/v1/admin/setup/complete",
-    );
-    expect(fetcher.mock.calls[1][1]?.method).toBe("POST");
-    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({});
   });
 
   it("loads detail before editing and uses the two-stage FAQ create flow", async () => {

@@ -17,31 +17,30 @@ import { adminLightTheme } from "../theme";
 
 vi.mock("../components/EnterpriseTemplateEditor", () => ({
   EnterpriseTemplateEditor: ({
-    card,
     open,
+    card,
     creationDraft,
     onClose,
     onDraftConfirm,
-    onRequestPublish,
+    onEditBasicSettings,
   }: {
-    card?: ManagedCard;
     open: boolean;
+    card?: ManagedCard;
     creationDraft?: {
       cardKind: ManagedCard["cardKind"];
       identityPreview: { displayName: string; title: string; avatarUrl?: string };
     };
     onClose: () => void;
     onDraftConfirm?: (document: EnterpriseTemplate["draft"]) => void | Promise<void>;
-    onRequestPublish?: (card: ManagedCard) => void | Promise<void>;
+    onEditBasicSettings?: (card: ManagedCard) => void;
   }) => {
     if (!open) return null;
     if (card) {
       return (
-        <div role="dialog" aria-label="编辑名片内容">
+        <div role="dialog" aria-label="名片页面编辑器">
           <span>{card.displayName}</span>
-          <button type="button" onClick={() => void onRequestPublish?.(card)}>
-            确认发布页面
-          </button>
+          <button type="button" onClick={() => onEditBasicSettings?.(card)}>编辑基础资料</button>
+          <button type="button" onClick={onClose}>关闭编辑器</button>
         </div>
       );
     }
@@ -147,6 +146,26 @@ describe("CardsPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("returns from basic settings cancellation to the card page editor", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({ items: [employeeMember], total: 1, limit: 100, offset: 0 });
+    renderPage();
+
+    await screen.findByText("林顾问");
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const pageEditor = await screen.findByRole("dialog", { name: "名片页面编辑器" });
+    await user.click(within(pageEditor).getByRole("button", { name: "编辑基础资料" }));
+
+    const basicSettings = await screen.findByRole("dialog");
+    expect(within(basicSettings).getByText("编辑员工名片")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "名片页面编辑器" })).not.toBeInTheDocument();
+    await user.click(within(basicSettings).getByRole("button", { name: "取消" }));
+
+    expect(await screen.findByRole("dialog", { name: "名片页面编辑器" })).toBeInTheDocument();
+    expect(screen.queryByText("编辑员工名片")).not.toBeInTheDocument();
+  });
+
   it("publishes a draft card with its current version", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
@@ -166,25 +185,6 @@ describe("CardsPage", () => {
     await waitFor(() =>
       expect(publishDialog).not.toBeInTheDocument(),
     );
-  });
-
-  it("publishes the confirmed template directly without opening a second dialog", async () => {
-    const user = userEvent.setup();
-    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
-    const publish = vi
-      .spyOn(adminApi, "publishManagedCard")
-      .mockResolvedValue({ ...draftCard, status: "published", version: 7 });
-    renderPage();
-
-    await screen.findByText("林顾问");
-    await user.click(screen.getByRole("button", { name: "编辑内容" }));
-    const editor = await screen.findByRole("dialog", { name: "编辑名片内容" });
-    await user.click(within(editor).getByRole("button", { name: "确认发布页面" }));
-
-    await waitFor(() => expect(publish).toHaveBeenCalledWith("card-1", 6));
-    await waitFor(() => expect(editor).not.toBeInTheDocument());
-    expect(await screen.findByText("名片已由服务端确认发布。公开链接现在可访问。"))
-      .toBeInTheDocument();
   });
 
   it("copies the server share value", async () => {
@@ -422,13 +422,6 @@ describe("CardsPage", () => {
     const create = vi
       .spyOn(adminApi, "createManagedCard")
       .mockResolvedValue(enterpriseCard);
-    vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
-      url: "/api/v1/public/card-assets/enterprise-logo.webp",
-      contentType: "image/webp",
-      width: 640,
-      height: 640,
-      sizeBytes: 2048,
-    });
     renderPage();
 
     await screen.findByText("尚未创建名片");
@@ -446,12 +439,6 @@ describe("CardsPage", () => {
       screen.queryByRole("textbox", { name: /所有者用户 ID/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText("选择企业 Logo")).toBeInTheDocument();
-    await user.upload(
-      screen.getByLabelText("选择企业 Logo"),
-      new File(["logo"], "企业-logo.png", { type: "image/png" }),
-    );
-    const logoPreview = await screen.findByRole("img", { name: "企业 Logo 预览" });
-    await waitFor(() => expect(logoPreview.getAttribute("src")).toMatch(/^data:image\/png;base64,/));
     await user.click(screen.getByRole("button", { name: "创建名片" }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());

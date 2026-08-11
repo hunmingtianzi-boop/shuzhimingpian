@@ -1,5 +1,6 @@
 import {
   CardPageExperience,
+  type CardPageActionItem,
   type CardPageBlock,
   type CardPageCase,
   type CardPageDirectoryOptions,
@@ -9,7 +10,7 @@ import {
 } from "@cf/card-page-renderer";
 import type { ReactNode } from "react";
 
-import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
+import type { PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import type { PublicCaseStudy, PublicProduct } from "../lib/publicExperienceApi";
 import { resolvePublicResourceUrl } from "../lib/publicResourceUrl";
 
@@ -59,9 +60,34 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
     title: block.title,
     body: block.body,
     visible: block.visible,
+    showTitle: block.show_title,
     directoryEnabled: block.directory_enabled,
     sortOrder: block.sort_order,
+    layoutVariant: block.layout_variant,
+    itemLimit: block.item_limit,
+    actionTemplate: block.action_template,
+    presentation: block.presentation ? {
+      identityLayout: block.presentation.identity_layout,
+      background: block.presentation.background ? {
+        assetUrl: block.presentation.background.asset_url,
+        fit: block.presentation.background.fit,
+        position: ({
+          top_left: "topLeft",
+          top_right: "topRight",
+          bottom_left: "bottomLeft",
+          bottom_right: "bottomRight",
+        } as const)[block.presentation.background.position as "top_left"]
+          ?? block.presentation.background.position as "center" | "top" | "bottom" | "left" | "right",
+        aspectRatio: block.presentation.background.aspect_ratio,
+        focalX: block.presentation.background.focal_x,
+        focalY: block.presentation.background.focal_y,
+        scale: block.presentation.background.scale,
+        opacity: block.presentation.background.opacity,
+        overlay: block.presentation.background.overlay,
+      } : undefined,
+    } : undefined,
     imageUrls: block.image_urls,
+    galleryItems: block.gallery_items?.map((item) => ({ id: item.id, imageUrl: item.image_url, title: item.title, description: item.description, timeLabel: item.time_label, periodLabel: item.period_label, badgeMode: item.badge_mode, badgeText: item.badge_text, altText: item.alt_text, linkUrl: item.link_url })),
     videoUrl: block.video_url,
     videoCoverUrl: block.video_cover_url,
     productIds: block.product_ids,
@@ -72,6 +98,7 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
       category: item.category,
       summary: item.summary,
       imageUrl: item.image_url,
+      ctaLabel: item.cta_label,
     })),
     caseIds: block.case_ids,
     caseItems: block.case_items?.map((item) => ({
@@ -79,44 +106,42 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
       slug: item.slug,
       title: item.title,
       industry: item.industry,
+      clientName: item.client_name,
+      background: item.background,
+      solution: item.solution,
       summary: item.summary,
+      result: item.result,
+      metrics: item.metrics,
       imageUrl: item.image_url,
+      ctaLabel: item.cta_label,
     })),
     faqMode: block.faq_mode,
     faqDocumentIds: block.faq_document_ids,
     ctaLabel: block.cta_label,
     ctaUrl: block.cta_url,
-    background: block.background ? {
-      kind: block.background.kind,
-      color: block.background.color,
-      imageUrl: block.background.image_url,
-      fit: block.background.fit,
-      positionX: block.background.position_x,
-      positionY: block.background.position_y,
-      overlayColor: block.background.overlay_color,
-      overlayOpacity: block.background.overlay_opacity,
-    } : undefined,
-    textTone: block.text_tone,
-    textColor: block.text_color,
-    contentImage: block.content_image ? {
-      url: block.content_image.url,
-      alt: block.content_image.alt,
-      placement: block.content_image.placement,
-      fit: block.content_image.fit,
-      aspectRatio: block.content_image.aspect_ratio,
-      widthPercent: block.content_image.width_percent,
-      positionX: block.content_image.position_x,
-      positionY: block.content_image.position_y,
-    } : undefined,
-    sizePreset: block.size_preset,
-    paddingY: block.padding_y,
+    actionItems: block.action_items?.map((item) => ({
+      id: item.id,
+      title: item.title,
+      summary: item.summary,
+      label: item.label,
+      tag: item.tag,
+      icon: item.icon,
+      date: item.date,
+      location: item.location,
+      source: item.source,
+      status: item.status,
+      duration: item.duration,
+      imageUrl: item.image_url,
+      targetType: item.target_type,
+      targetValue: item.target_value,
+      openMode: item.open_mode,
+    })),
   };
 }
 
 export function EnterpriseTemplateBlocks({
   blocks,
-  pageBackground,
-  pageTextTone,
+  themeKey = "brand",
   directory,
   identity,
   identityData,
@@ -126,10 +151,15 @@ export function EnterpriseTemplateBlocks({
   onAssistant,
   onOpenCase,
   onOpenProduct,
+  onAction,
+  title,
+  onBack,
+  onShare,
+  primaryAction,
+  secondaryAction,
 }: {
   blocks: PublicEnterpriseTemplateBlock[];
-  pageBackground?: NonNullable<PublicCardData["enterprise_template"]>["page_background"];
-  pageTextTone?: NonNullable<PublicCardData["enterprise_template"]>["page_text_tone"];
+  themeKey?: "brand" | "clean" | "warm";
   directory?: boolean | CardPageDirectoryOptions;
   identity?: ReactNode;
   identityData?: CardPageIdentity;
@@ -145,22 +175,17 @@ export function EnterpriseTemplateBlocks({
   onAssistant?: (question?: string) => void;
   onOpenCase?: (slug: string) => void;
   onOpenProduct?: (slug: string) => void;
+  onAction?: (item: CardPageActionItem) => void;
+  title?: string;
+  onBack?: () => void;
+  onShare?: () => void;
+  primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
+  secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
   return (
     <CardPageExperience
-      className="public-shared-card-page"
+      className={`public-shared-card-page template-theme-${themeKey}`}
       blocks={blocks.map(toCardPageBlock)}
-      pageBackground={pageBackground ? {
-        kind: pageBackground.kind,
-        color: pageBackground.color,
-        imageUrl: pageBackground.image_url,
-        fit: pageBackground.fit,
-        positionX: pageBackground.position_x,
-        positionY: pageBackground.position_y,
-        overlayColor: pageBackground.overlay_color,
-        overlayOpacity: pageBackground.overlay_opacity,
-      } : undefined}
-      pageTextTone={pageTextTone}
       data={{
         identity: identityData,
         products: products.map(toCardPageProduct),
@@ -178,7 +203,9 @@ export function EnterpriseTemplateBlocks({
         onOpenCase: onOpenCase
           ? (item) => item.slug && onOpenCase(item.slug)
           : undefined,
+        onAction,
       }}
+      shell={{ title, onBack, onShare, primaryAction, secondaryAction }}
     />
   );
 }

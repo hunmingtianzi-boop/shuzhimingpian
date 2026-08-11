@@ -106,14 +106,13 @@ export type CompanyProfile = {
   website: string;
   logoUrl: string;
   profilePersonalizationPolicyVersion: string;
-  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CompanyProfileInput = Omit<
   CompanyProfile,
-  "id" | "updatedAt" | "onboardingStatus"
+  "id" | "updatedAt"
 >;
 
 export type CardSettings = {
@@ -131,14 +130,13 @@ export type CardSettings = {
     leadConsent: string;
   };
   status?: string;
-  onboardingStatus?: string;
   version?: number;
   updatedAt?: string;
 };
 
 export type CardSettingsInput = Omit<
   CardSettings,
-  "id" | "status" | "onboardingStatus" | "updatedAt"
+  "id" | "status" | "updatedAt"
 >;
 
 export type KnowledgeStatus =
@@ -562,6 +560,16 @@ export type ForbiddenTopicInput = Omit<
   "id" | "version" | "createdAt" | "updatedAt"
 >;
 
+export type IdentityContactKind = "phone" | "wechat" | "email" | "location" | "website" | "other";
+
+export type IdentityContactField = {
+  id: string;
+  kind: IdentityContactKind;
+  label: string;
+  value: string;
+  href?: string;
+};
+
 export type ManagedCard = VersionedResource & {
   cardKind: "enterprise" | "employee";
   ownerUserId?: string;
@@ -577,6 +585,8 @@ export type ManagedCard = VersionedResource & {
     chatNotice: string;
     leadConsent: string;
   };
+  identityTitles?: string[];
+  contactFields?: IdentityContactField[];
   employeeContactVisibility?: Array<"mobile" | "email">;
   shareUrl: string;
   qrUrl: string;
@@ -592,6 +602,8 @@ export type ManagedCardInput = {
   welcomeMessage: string;
   suggestedQuestions: string[];
   policyVersions: ManagedCard["policyVersions"];
+  identityTitles: string[];
+  contactFields: IdentityContactField[];
   employeeContactVisibility: Array<"mobile" | "email">;
   /** Empty means use the company default configuration on create. */
   templateSourceCardId?: string;
@@ -627,55 +639,120 @@ export type EnterpriseTemplateBlockType =
   | "trust_panel"
   | "faq"
   | "cta"
+  | "action_collection"
   | "ai_assistant";
 
-export type EnterpriseTemplateBlockBackground = {
-  kind: "none" | "color" | "image";
-  color?: string;
+export type EnterpriseTemplateLayoutVariant =
+  | "auto"
+  | "list"
+  | "grid"
+  | "carousel"
+  | "featured"
+  | "mosaic"
+  | "horizontal"
+  | "vertical";
+
+export type EnterpriseTemplateActionTargetType =
+  | "external_url"
+  | "internal_path"
+  | "phone"
+  | "map";
+
+/** Matches the presentation families used by the card-studio simulator. */
+export type EnterpriseTemplateActionTemplate =
+  | "shortcuts"
+  | "media"
+  | "event"
+  | "banner"
+  | "articles"
+  | "video"
+  | "buttons";
+
+export type EnterpriseTemplateActionItem = {
+  id: string;
+  title: string;
+  summary?: string;
+  label?: string;
+  tag?: string;
+  icon?: "external" | "building" | "calendar" | "file" | "play";
+  date?: string;
+  location?: string;
+  source?: string;
+  status?: string;
+  duration?: string;
   imageUrl?: string;
-  fit?: "cover" | "contain";
-  positionX?: number;
-  positionY?: number;
-  overlayColor?: string;
-  overlayOpacity?: number;
+  targetType: EnterpriseTemplateActionTargetType;
+  targetValue: string;
+  openMode: "self" | "new_tab";
 };
 
-export type EnterpriseTemplateContentImage = {
-  url: string;
-  alt?: string;
-  placement: "top" | "bottom" | "left" | "right";
-  fit?: "cover" | "contain";
-  aspectRatio?: "auto" | "square" | "standard" | "wide";
-  widthPercent?: number;
-  positionX?: number;
-  positionY?: number;
+export type EnterpriseTemplateGalleryItem = {
+  id: string;
+  imageUrl: string;
+  title?: string;
+  description?: string;
+  timeLabel?: string;
+  periodLabel?: string;
+  badgeMode: "title" | "time" | "period" | "custom" | "none";
+  badgeText?: string;
+  altText?: string;
+  linkUrl?: string;
+};
+
+export type EnterpriseTemplateProductOverride = {
+  id: string; title?: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string;
+};
+
+export type EnterpriseTemplateCaseOverride = {
+  id: string; title?: string; industry?: string; clientName?: string; background?: string;
+  solution?: string; summary?: string; result?: string; imageUrl?: string; ctaLabel?: string;
+  metrics?: Array<{ value: string; label: string }>;
+};
+
+export type EnterpriseTemplatePresentation = {
+  identityLayout?: "horizontal" | "vertical";
+  background?: {
+    assetUrl?: string;
+    fit?: "cover" | "contain" | "custom";
+    position?: "center" | "top" | "bottom" | "left" | "right" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+    aspectRatio?: "auto" | "16:9" | "4:3" | "3:2" | "1:1";
+    focalX?: number;
+    focalY?: number;
+    scale?: number;
+    opacity?: number;
+    overlay?: "none" | "light" | "dark" | "brand";
+  };
 };
 
 export type EnterpriseTemplateBlock = {
   id: string;
   type: EnterpriseTemplateBlockType;
   visible: boolean;
+  showTitle?: boolean;
   directoryEnabled?: boolean;
   sortOrder: number;
   title?: string;
   body?: string;
   imageUrls?: string[];
+  galleryItems?: EnterpriseTemplateGalleryItem[];
   videoUrl?: string;
   videoCoverUrl?: string;
   productIds?: string[];
+  productOverrides?: EnterpriseTemplateProductOverride[];
   caseIds?: string[];
+  caseOverrides?: EnterpriseTemplateCaseOverride[];
+  layoutVariant?: EnterpriseTemplateLayoutVariant;
+  itemLimit?: number;
+  /** Only used by the action-entry block; controls its information shape. */
+  actionTemplate?: EnterpriseTemplateActionTemplate;
+  presentation?: EnterpriseTemplatePresentation;
+  actionItems?: EnterpriseTemplateActionItem[];
   /** FAQ content always resolves from the company knowledge base. */
   faqMode?: "all_published" | "selected";
   /** Ordered canonical KnowledgeDocument ids, used only in selected mode. */
   faqDocumentIds?: string[];
   ctaLabel?: string;
   ctaUrl?: string;
-  background?: EnterpriseTemplateBlockBackground;
-  textTone?: "auto" | "light" | "dark";
-  textColor?: string;
-  contentImage?: EnterpriseTemplateContentImage;
-  sizePreset?: "auto" | "compact" | "standard" | "tall";
-  paddingY?: "auto" | "compact" | "standard" | "spacious";
 };
 
 export type EnterpriseTemplate = {
@@ -684,15 +761,11 @@ export type EnterpriseTemplate = {
   draft: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
-    pageBackground?: EnterpriseTemplateBlockBackground;
-    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
   };
   published?: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
-    pageBackground?: EnterpriseTemplateBlockBackground;
-    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
   };
 };
@@ -811,85 +884,7 @@ export type Visit = {
   startedAt: string;
   endedAt?: string;
   durationSeconds?: number;
-  activityStatus: "active" | "ended" | "estimated" | "unknown";
-  lastActivityAt?: string;
-  durationEstimated: boolean;
-  visitorChannel: "web" | "wechat" | "wecom";
-  visitorIdentityType: "anonymous" | "wecom_member" | "wechat_openid" | "wecom_external";
-  visitorIdentityLabel: string;
   conversationCount: number;
-};
-
-export type VisitPageDuration = {
-  pageKey: string;
-  pageTitle: string;
-  objectType?: string;
-  objectId?: string;
-  durationSeconds: number;
-  viewCount: number;
-  lastViewedAt: string;
-};
-
-export type VisitQuestion = {
-  messageId: string;
-  conversationId: string;
-  question: string;
-  askedAt: string;
-  answerStatus?: string;
-  answer?: string;
-  answeredAt?: string;
-  responseSeconds?: number;
-};
-
-export type VisitPageTimelineItem = {
-  sequence: number;
-  pageKey: string;
-  pageTitle: string;
-  objectType?: string;
-  objectId?: string;
-  enteredAt: string;
-  lastActivityAt: string;
-  durationSeconds: number;
-  exitReason: "navigation" | "background" | "leave" | "timeout" | "active";
-};
-
-export type VisitAction = {
-  eventId: string;
-  actionType: "content_view" | "cta_click" | "share";
-  actionLabel: string;
-  objectType?: string;
-  objectId?: string;
-  occurredAt: string;
-};
-
-export type VisitBehaviorSignal = {
-  category: "engagement" | "interest" | "intent";
-  label: string;
-  evidence: string;
-  basis: "observed" | "inferred";
-  confidence: number;
-};
-
-export type VisitBehaviorAnalysis = {
-  summary: string;
-  engagementScore: number;
-  engagementLevel: "low" | "medium" | "high";
-  intentLevel: "low" | "medium" | "high";
-  trackedDurationSeconds: number;
-  uniquePages: number;
-  totalActions: number;
-  questionCount: number;
-  answeredCount: number;
-  signals: VisitBehaviorSignal[];
-};
-
-export type VisitDetail = Visit & {
-  eventCount: number;
-  pageDurations: VisitPageDuration[];
-  pageTimeline: VisitPageTimelineItem[];
-  actions: VisitAction[];
-  questions: VisitQuestion[];
-  behaviorAnalysis: VisitBehaviorAnalysis;
 };
 
 export type ConversationStatus = "active" | "closed" | "expired" | "blocked";

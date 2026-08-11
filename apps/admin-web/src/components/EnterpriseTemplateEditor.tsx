@@ -10,8 +10,11 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular,
-  Delete24Regular,
+  ArrowClockwise24Regular,
+  ArrowRedo24Regular,
+  ArrowUndo24Regular,
   Edit24Regular,
+  Eye24Regular,
   Save24Regular,
   Send24Regular,
 } from "@fluentui/react-icons";
@@ -32,31 +35,34 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
+import { StudioEditorShell, StudioIcon, StudioModuleRow, type StudioIconName } from "@cf/card-page-renderer";
 
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
 import type {
   CaseStudy,
   CompanyProfile,
+  EnterpriseTemplateActionItem,
   EnterpriseTemplateBlock,
-  EnterpriseTemplateBlockBackground,
   EnterpriseTemplateBlockType,
   EnterpriseTemplateThemeKey,
+  IdentityContactField,
+  ManagedCardInput,
   ManagedCard,
   Product,
   SelectableFaqDocument,
 } from "../api/types";
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
-import { ActionConfirmDialog } from "./ActionConfirmDialog";
 import { TemplateBlockInspector } from "./enterprise-template/TemplateBlockInspector";
+import { CardStudioEditorSurface } from "./enterprise-template/CardStudioEditorSurface";
 import { TemplateCanvas } from "./enterprise-template/TemplateCanvas";
-import { TemplatePageSettings } from "./enterprise-template/TemplatePageSettings";
 import { FormFeedback } from "./FormFeedback";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
 const CARD_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const LEGACY_OVERVIEW_DEFAULT = "把企业的业务经验变成可复用的 AI 能力，让销售更懂客户，让服务更快抵达。";
 
 export const enterpriseTemplateBlockLabels: Record<EnterpriseTemplateBlockType, string> = {
   identity: "基础名片",
@@ -68,7 +74,20 @@ export const enterpriseTemplateBlockLabels: Record<EnterpriseTemplateBlockType, 
   trust_panel: "企业资料",
   faq: "常见问题",
   cta: "行动按钮",
+  action_collection: "行动入口",
   ai_assistant: "AI 助手入口",
+};
+
+const enterpriseTemplateBlockDescriptions: Partial<Record<EnterpriseTemplateBlockType, string>> = {
+  rich_text: "标题、正文与介绍内容",
+  business_collection: "引用真实业务库",
+  image_gallery: "上传图片并编辑角标",
+  video_link: "视频封面与播放地址",
+  case_collection: "引用真实案例库",
+  trust_panel: "企业认证与公开资料",
+  faq: "引用已发布问答库",
+  cta: "单个主要行动按钮",
+  action_collection: "多个页面或联系入口",
 };
 
 function nextBlockId(type: EnterpriseTemplateBlockType) {
@@ -85,11 +104,46 @@ export function createEnterpriseTemplateBlock(
     id: nextBlockId(type),
     type,
     visible: true,
+    showTitle: type !== "identity",
     directoryEnabled: true,
     sortOrder: 0,
     title: enterpriseTemplateBlockLabels[type],
     ...(type === "faq" ? { faqMode: "all_published" as const, faqDocumentIds: [] } : {}),
+    ...(type === "identity" ? {
+      layoutVariant: "horizontal" as const,
+      presentation: {
+        identityLayout: "horizontal" as const,
+        background: {
+          fit: "cover" as const,
+          position: "center" as const,
+          aspectRatio: "auto" as const,
+          focalX: 50,
+          focalY: 50,
+          scale: 1,
+          opacity: 0.28,
+          overlay: "light" as const,
+        },
+      },
+    } : {}),
+    ...(["business_collection", "case_collection", "image_gallery"].includes(type) ? {
+      layoutVariant: "auto" as const,
+      itemLimit: 4,
+    } : {}),
+    ...(type === "action_collection" ? {
+      layoutVariant: "grid" as const,
+      itemLimit: 4,
+      actionItems: [],
+    } : {}),
   };
+}
+
+function isActionTargetValid(item: EnterpriseTemplateActionItem) {
+  const target = item.targetValue.trim();
+  if (!item.title.trim() || !target) return false;
+  if (item.targetType === "external_url") return isHttpsUrl(target);
+  if (item.targetType === "internal_path") return /^\/(?!\/)/.test(target);
+  if (item.targetType === "phone") return /^\+?[0-9()\-\s]{5,24}$/.test(target);
+  return target.length >= 2;
 }
 
 export function moveEnterpriseTemplateBlock(
@@ -125,9 +179,6 @@ export function getEnterpriseTemplateBlockIssue(
   block: EnterpriseTemplateBlock,
   selectableFaqs?: SelectableFaqDocument[],
 ) {
-  // The API deliberately ignores incomplete hidden blocks when publishing.
-  // Keep the editor's gate aligned so a hidden draft module cannot silently
-  // disable the publish action.
   if (!block.visible) return undefined;
 
   switch (block.type) {
@@ -156,6 +207,11 @@ export function getEnterpriseTemplateBlockIssue(
     case "cta":
       if (!block.ctaLabel?.trim()) return "请输入按钮文案。";
       return isHttpsUrl(block.ctaUrl) ? undefined : "请输入有效的 HTTPS 跳转地址。";
+    case "action_collection":
+      if (!block.actionItems?.length) return "请至少添加一个行动入口。";
+      return block.actionItems.every(isActionTargetValid)
+        ? undefined
+        : "请补齐入口标题，并检查跳转目标格式。";
     default:
       return undefined;
   }
@@ -176,6 +232,7 @@ export function getEnterpriseTemplatePublishChecks(
   const hasContactRoute = blocks.some(
     (block) =>
       (block.type === "cta" && isHttpsUrl(block.ctaUrl)) ||
+      (block.type === "action_collection" && block.actionItems?.some(isActionTargetValid)) ||
       block.type === "ai_assistant",
   );
   return [
@@ -193,63 +250,72 @@ function toApiError(cause: unknown, message: string, code: string) {
 
 function SortableStructureItem({
   block,
+  displayTitle,
   index,
   busy,
   selected,
   onSelect,
-  onRemove,
 }: {
   block: EnterpriseTemplateBlock;
+  displayTitle: string;
   index: number;
   busy: boolean;
   selected: boolean;
   onSelect: () => void;
-  onRemove?: () => void;
 }) {
+  const blockSourceLabels: Partial<Record<EnterpriseTemplateBlockType, string>> = {
+    identity: "企业 / 员工资料",
+    rich_text: "名片内容",
+    business_collection: "真实业务库",
+    image_gallery: "企业素材库",
+    video_link: "视频链接",
+    case_collection: "真实案例库",
+    trust_panel: "企业认证资料",
+    faq: "真实问答库",
+    cta: "行动链接",
+    action_collection: "行动入口",
+  };
+  const blockIcons: Partial<Record<EnterpriseTemplateBlockType, StudioIconName>> = {
+    identity: "user",
+    rich_text: "user",
+    business_collection: "briefcase",
+    image_gallery: "image",
+    video_link: "play",
+    case_collection: "building",
+    trust_panel: "check",
+    faq: "help",
+    cta: "external",
+    action_collection: "external",
+    ai_assistant: "message",
+  };
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
     disabled: busy,
   });
-  return (
-    <li
-      ref={setNodeRef}
-      className={`${isDragging ? "is-dragging" : ""}${selected ? " is-selected" : ""}`.trim() || undefined}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-    >
-      <div className="template-structure-row">
-        <button
-          type="button"
-          className="template-drag-handle"
-          aria-label={`拖动${enterpriseTemplateBlockLabels[block.type]}调整位置`}
-          disabled={busy}
-          {...attributes}
-          {...listeners}
-        >⠿</button>
-        <button
-          type="button"
-          className="template-structure-select"
-          aria-current={selected ? "true" : undefined}
-          onClick={onSelect}
-          disabled={busy}
-        >
-          <span>{String(index + 1).padStart(2, "0")}</span>
-          <strong>{block.title || enterpriseTemplateBlockLabels[block.type]}</strong>
-        </button>
-        {onRemove ? (
-          <button
-            type="button"
-            className="template-structure-remove"
-            aria-label={`删除${block.title || enterpriseTemplateBlockLabels[block.type]}板块`}
-            title="删除板块"
-            disabled={busy}
-            onClick={onRemove}
-          >
-            <Delete24Regular aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-    </li>
-  );
+  return <li ref={setNodeRef} className={`${isDragging ? "is-dragging" : ""}${selected ? " is-selected" : ""}`.trim() || undefined} style={{ transform: CSS.Transform.toString(transform), transition }} data-row-id={block.id}>
+    <StudioModuleRow
+      title={displayTitle}
+      ariaLabel={`${String(index + 1).padStart(2, "0")} ${displayTitle}`}
+      source={blockSourceLabels[block.type] || "页面内容"}
+      icon={blockIcons[block.type] || "grid"}
+      selected={selected}
+      required={block.type === "identity"}
+      hidden={block.visible === false}
+      onSelect={onSelect}
+      dragHandle={<button type="button" className="mini-button" aria-label={`拖动${enterpriseTemplateBlockLabels[block.type]}调整位置`} disabled={busy} {...attributes} {...listeners}><StudioIcon name="grip" /></button>}
+    />
+  </li>;
+}
+
+function templateBlockDisplayTitle(
+  block: EnterpriseTemplateBlock,
+  cardKind: "enterprise" | "employee",
+) {
+  const title = block.title || enterpriseTemplateBlockLabels[block.type];
+  if (cardKind === "employee" && block.type === "rich_text" && title === "企业介绍") {
+    return "个人介绍";
+  }
+  return title;
 }
 
 function validateImage(file: File) {
@@ -276,35 +342,21 @@ type EnterpriseTemplateEditorProps = {
       displayName: string;
       title: string;
       avatarUrl?: string;
+      identityTitles: string[];
+      contactFields: IdentityContactField[];
     };
   };
   open: boolean;
   onClose: () => void;
   onEditBasicSettings: (card: ManagedCard) => void;
-  onRequestPublish: (card: ManagedCard) => void | Promise<void>;
+  onRequestPublish: (card: ManagedCard) => void;
   onSaved: (card?: ManagedCard) => void;
   onDraftConfirm?: (document: {
     schemaVersion: 1;
     themeKey: EnterpriseTemplateThemeKey;
-    pageBackground?: EnterpriseTemplateBlockBackground;
-    pageTextTone?: "auto" | "light" | "dark";
     blocks: EnterpriseTemplateBlock[];
-  }) => void | Promise<void>;
-  dataSource?: EnterpriseTemplateEditorDataSource;
+  }, identity: { identityTitles: string[]; contactFields: IdentityContactField[] }) => void | Promise<void>;
 };
-
-export type EnterpriseTemplateEditorDataSource = Pick<
-  typeof adminApi,
-  | "getEnterpriseTemplate"
-  | "getCardComposerDefault"
-  | "listProducts"
-  | "listCaseStudies"
-  | "getCompanyProfile"
-  | "listSelectableFaqDocuments"
-  | "uploadCardAsset"
-  | "updateEnterpriseTemplate"
-  | "updateCardComposerDefault"
->;
 
 export function EnterpriseTemplateEditor({
   card,
@@ -316,17 +368,16 @@ export function EnterpriseTemplateEditor({
   onRequestPublish,
   onSaved,
   onDraftConfirm,
-  dataSource = adminApi,
 }: EnterpriseTemplateEditorProps) {
   const [blocks, setBlocks] = useState<EnterpriseTemplateBlock[]>([]);
+  const blocksRef = useRef<EnterpriseTemplateBlock[]>([]);
+  const [canvasBlocks, setCanvasBlocks] = useState<EnterpriseTemplateBlock[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [cases, setCases] = useState<CaseStudy[]>([]);
   const [selectableFaqs, setSelectableFaqs] = useState<SelectableFaqDocument[]>([]);
   const [company, setCompany] = useState<CompanyProfile>();
   const [version, setVersion] = useState<number>();
   const [themeKey, setThemeKey] = useState<EnterpriseTemplateThemeKey>("brand");
-  const [pageBackground, setPageBackground] = useState<EnterpriseTemplateBlockBackground>();
-  const [pageTextTone, setPageTextTone] = useState<"auto" | "light" | "dark">("auto");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string>();
@@ -334,21 +385,38 @@ export function EnterpriseTemplateEditor({
   const [savedNotice, setSavedNotice] = useState<string>();
   const [error, setError] = useState<ApiError>();
   const [previewMode, setPreviewMode] = useState<"draft" | "published">("draft");
+  const [previewDevice, setPreviewDevice] = useState<"mobile" | "wide">("mobile");
+  const [structureTab, setStructureTab] = useState<"structure" | "library">("structure");
+  const [mobilePane, setMobilePane] = useState<"structure" | "canvas" | "inspector">("canvas");
+  const [tabletSidePane, setTabletSidePane] = useState<"structure" | "inspector">("structure");
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
-  const [removeTarget, setRemoveTarget] = useState<EnterpriseTemplateBlock>();
-  const [publishTarget, setPublishTarget] = useState<ManagedCard>();
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState<ApiError>();
-  const [mobilePane, setMobilePane] = useState<"structure" | "preview" | "content">("structure");
+  const [identityTitles, setIdentityTitles] = useState<string[]>([]);
+  const [identityContactFields, setIdentityContactFields] = useState<IdentityContactField[]>([]);
+  const [identityDirty, setIdentityDirty] = useState(false);
+  const [undoStack, setUndoStack] = useState<Array<{ blocks: EnterpriseTemplateBlock[]; themeKey: EnterpriseTemplateThemeKey }>>([]);
+  const [redoStack, setRedoStack] = useState<Array<{ blocks: EnterpriseTemplateBlock[]; themeKey: EnterpriseTemplateThemeKey }>>([]);
   const galleryInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const coverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const backgroundInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const contentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const pageBackgroundInputRef = useRef<HTMLInputElement | null>(null);
+  const actionCoverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const collectionCoverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const canvasStageRef = useRef<HTMLDivElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  const replaceBlocks = (next: EnterpriseTemplateBlock[]) => {
+    blocksRef.current = next;
+    setBlocks(next);
+  };
+  // Parent pages may recreate equivalent card/draft objects while the user is
+  // typing. Reloading on object identity would replace every controlled input,
+  // making clicks and keystrokes appear to flash and disappear.
+  const editorSourceKey = card
+    ? `card:${card.id}:${card.version}:${card.updatedAt ?? ""}:${JSON.stringify(card.identityTitles ?? [])}:${JSON.stringify(card.contactFields ?? [])}`
+    : creationDraft
+      ? `draft:${creationDraft.cardKind}:${creationDraft.sourceCardId ?? ""}:${JSON.stringify(creationDraft.identityPreview)}`
+      : `default:${defaultKind ?? ""}`;
 
   useEffect(() => {
     if (!open || (!card && !defaultKind && !creationDraft)) return;
@@ -357,39 +425,62 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     setSavedNotice(undefined);
     setDirty(false);
-    setPublishTarget(undefined);
-    setPublishError(undefined);
+    setIdentityDirty(false);
     void Promise.all([
       card
-        ? dataSource.getEnterpriseTemplate(card.id)
+        ? adminApi.getEnterpriseTemplate(card.id)
         : creationDraft?.sourceCardId
-          ? dataSource.getEnterpriseTemplate(creationDraft.sourceCardId)
-          : dataSource.getCardComposerDefault(
+          ? adminApi.getEnterpriseTemplate(creationDraft.sourceCardId)
+          : adminApi.getCardComposerDefault(
               creationDraft?.cardKind ?? defaultKind as ManagedCard["cardKind"],
             ),
-      dataSource.listProducts(),
-      dataSource.listCaseStudies(),
-      dataSource.getCompanyProfile(),
-      dataSource.listSelectableFaqDocuments(),
+      adminApi.listProducts(),
+      adminApi.listCaseStudies(),
+      adminApi.getCompanyProfile(),
+      adminApi.listSelectableFaqDocuments(),
     ])
       .then(([template, productResult, caseResult, companyProfile, faqResult]) => {
         if (!active) return;
         const document = "draft" in template ? template.draft : template.document;
-        setBlocks(document.blocks);
+        const normalizedBlocks = normalizeEnterpriseTemplateBlockOrder(
+          document.blocks.filter((block) => block.type !== "ai_assistant"),
+        );
+        const upgradedLegacyOverview = normalizedBlocks.some((block) => (
+          block.type === "rich_text" && block.title?.trim() === "概览" && !block.body?.trim()
+        ));
+        const editableBlocks = normalizedBlocks.map((block) => (
+          block.type === "rich_text" && block.title?.trim() === "概览" && !block.body?.trim()
+            ? { ...block, body: LEGACY_OVERVIEW_DEFAULT }
+            : block
+        ));
+        const removedLegacyAiBlock = editableBlocks.length !== document.blocks.length;
+        replaceBlocks(editableBlocks);
+        setCanvasBlocks(editableBlocks);
+        setUndoStack([]);
+        setRedoStack([]);
         setVersion(template.version);
         setThemeKey(document.themeKey);
-        setPageBackground(document.pageBackground);
-        setPageTextTone(document.pageTextTone ?? "auto");
         setProducts(productResult);
         setCases(caseResult);
         setCompany(companyProfile);
+        setIdentityTitles(card?.identityTitles ?? creationDraft?.identityPreview.identityTitles ?? []);
+        setIdentityContactFields(card?.contactFields ?? creationDraft?.identityPreview.contactFields ?? []);
         setSelectableFaqs(faqResult);
         setSelectedBlockId((current) => (
-          document.blocks.some((block) => block.id === current)
+          editableBlocks.some((block) => block.id === current)
             ? current
-            : document.blocks[0]?.id
+            : editableBlocks[0]?.id
         ));
-        setPreviewMode(card?.status === "published" && card.shareUrl ? "published" : "draft");
+        if (removedLegacyAiBlock || upgradedLegacyOverview) {
+          setDirty(true);
+          setSavedNotice([
+            removedLegacyAiBlock ? "已移除旧版 AI 助手区块" : "",
+            upgradedLegacyOverview ? "已将旧版预览文案转为可编辑的真实内容" : "",
+          ].filter(Boolean).join("；") + "。保存草稿后生效。");
+        }
+        // The editor must open on the current shared renderer. Published mode
+        // is an explicit comparison target and may still show an older release.
+        setPreviewMode("draft");
       })
       .catch((cause) => {
         if (active) {
@@ -402,16 +493,64 @@ export function EnterpriseTemplateEditor({
     return () => {
       active = false;
     };
-  }, [card, creationDraft, dataSource, defaultKind, open]);
+  }, [editorSourceKey, open]);
+
+  // Keep controlled fields responsive while a large, draggable public-page
+  // preview is present. Rapid edits are coalesced into one near-real-time
+  // canvas refresh instead of rebuilding the entire card for every keypress.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCanvasBlocks(blocks), 100);
+    return () => window.clearTimeout(timer);
+  }, [blocks]);
 
   const mutateBlocks = (
     updater: (current: EnterpriseTemplateBlock[]) => EnterpriseTemplateBlock[],
   ) => {
-    setBlocks((current) => normalizeEnterpriseTemplateBlockOrder(updater(current)));
+    const current = blocksRef.current;
+    const next = normalizeEnterpriseTemplateBlockOrder(updater(current));
+    if (next === current) return;
+    blocksRef.current = next;
+    setBlocks(next);
+    setUndoStack((history) => [...history.slice(-23), { blocks: current, themeKey }]);
+    setRedoStack([]);
     setPreviewMode("draft");
     setDirty(true);
     setSavedNotice(undefined);
     setError(undefined);
+  };
+
+  const changeTheme = (nextThemeKey: EnterpriseTemplateThemeKey) => {
+    if (nextThemeKey === themeKey) return;
+    setUndoStack((history) => [...history.slice(-23), { blocks, themeKey }]);
+    setRedoStack([]);
+    setThemeKey(nextThemeKey);
+    setPreviewMode("draft");
+    setDirty(true);
+    setSavedNotice(undefined);
+  };
+
+  const undoChange = () => {
+    const previous = undoStack.at(-1);
+    if (!previous || busy) return;
+    setUndoStack((history) => history.slice(0, -1));
+    setRedoStack((history) => [...history.slice(-23), { blocks, themeKey }]);
+    replaceBlocks(previous.blocks);
+    setThemeKey(previous.themeKey);
+    setPreviewMode("draft");
+    setDirty(true);
+    setSavedNotice("已撤销上一步修改；保存后才会写入草稿。");
+  };
+
+  const redoChange = () => {
+    const next = redoStack.at(-1);
+    if (!next || busy) return;
+    setRedoStack((history) => history.slice(0, -1));
+    setUndoStack((history) => [...history.slice(-23), { blocks, themeKey }]);
+    replaceBlocks(next.blocks);
+    setThemeKey(next.themeKey);
+    setPreviewMode("draft");
+    setDirty(true);
+    setSavedNotice("已重做修改；保存后才会写入草稿。");
   };
 
   const updateBlock = (index: number, patch: Partial<EnterpriseTemplateBlock>) => {
@@ -420,18 +559,6 @@ export function EnterpriseTemplateEditor({
         position === index ? { ...block, ...patch } : block,
       ),
     );
-  };
-
-  const updatePageAppearance = (
-    background: EnterpriseTemplateBlockBackground | undefined,
-    textTone = pageTextTone,
-  ) => {
-    setPageBackground(background);
-    setPageTextTone(background ? textTone : "auto");
-    setPreviewMode("draft");
-    setDirty(true);
-    setSavedNotice(undefined);
-    setError(undefined);
   };
 
   const moveBlock = (index: number, direction: -1 | 1) => {
@@ -453,18 +580,6 @@ export function EnterpriseTemplateEditor({
     moveBlockById(String(active.id), String(over.id));
   };
 
-  const showMobilePane = (
-    pane: "structure" | "preview" | "content",
-    targetId: string,
-  ) => {
-    setMobilePane(pane);
-    document.getElementById(targetId)?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "start",
-    });
-  };
-
   const duplicateBlock = (index: number) => {
     let duplicatedId: string | undefined;
     mutateBlocks((current) => {
@@ -483,13 +598,6 @@ export function EnterpriseTemplateEditor({
     const fallback = blocks[index + 1]?.id ?? blocks[index - 1]?.id;
     mutateBlocks((items) => items.filter((block) => block.id !== current.id));
     setSelectedBlockId(fallback);
-  };
-
-  const confirmRemoveBlock = () => {
-    if (!removeTarget) return;
-    const index = blocks.findIndex((block) => block.id === removeTarget.id);
-    if (index >= 0) removeBlock(index);
-    setRemoveTarget(undefined);
   };
 
   const handleBlockKeyDown = (
@@ -515,7 +623,13 @@ export function EnterpriseTemplateEditor({
     }
     const block = blocks[index];
     if (!block) return;
-    if ((block.imageUrls?.length ?? 0) + files.length > 12) {
+    const existingGalleryItems = block.galleryItems ?? (block.imageUrls ?? []).map((imageUrl, itemIndex) => ({
+      id: `legacy-${itemIndex + 1}`,
+      imageUrl,
+      badgeMode: "title" as const,
+      title: `工作记录 ${itemIndex + 1}`,
+    }));
+    if (existingGalleryItems.length + files.length > 12) {
       setError(new ApiError("每个图片画廊最多 12 张图片。", { code: "TEMPLATE_IMAGE_LIMIT" }));
       return;
     }
@@ -523,9 +637,16 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     try {
       const uploaded = [];
-      for (const file of files) uploaded.push(await dataSource.uploadCardAsset(file));
+      for (const file of files) uploaded.push(await adminApi.uploadCardAsset(file));
+      const nextItems = [...existingGalleryItems, ...uploaded.map((item, uploadedIndex) => ({
+        id: `gallery-${crypto.randomUUID()}`,
+        imageUrl: item.url,
+        title: files[uploadedIndex]?.name.replace(/\.[^.]+$/, "") || `工作记录 ${existingGalleryItems.length + uploadedIndex + 1}`,
+        badgeMode: "title" as const,
+      }))];
       updateBlock(index, {
-        imageUrls: [...(block.imageUrls ?? []), ...uploaded.map((item) => item.url)],
+        galleryItems: nextItems,
+        imageUrls: nextItems.map((item) => item.imageUrl),
       });
     } catch (cause) {
       setError(toApiError(cause, "上传展示图片失败。", "TEMPLATE_IMAGE_UPLOAD_FAILED"));
@@ -551,7 +672,7 @@ export function EnterpriseTemplateEditor({
     setUploadingKey(`${block.id}:cover`);
     setError(undefined);
     try {
-      const uploaded = await dataSource.uploadCardAsset(file);
+      const uploaded = await adminApi.uploadCardAsset(file);
       updateBlock(index, { videoCoverUrl: uploaded.url });
     } catch (cause) {
       setError(toApiError(cause, "上传视频封面失败。", "TEMPLATE_COVER_UPLOAD_FAILED"));
@@ -560,7 +681,7 @@ export function EnterpriseTemplateEditor({
     }
   };
 
-  const uploadBackgroundImage = async (
+  const uploadIdentityBackground = async (
     index: number,
     event: ChangeEvent<HTMLInputElement>,
   ) => {
@@ -573,32 +694,39 @@ export function EnterpriseTemplateEditor({
       return;
     }
     const block = blocks[index];
-    if (!block) return;
+    if (!block || block.type !== "identity") return;
     setUploadingKey(`${block.id}:background`);
     setError(undefined);
     try {
-      const uploaded = await dataSource.uploadCardAsset(file);
+      const uploaded = await adminApi.uploadCardAsset(file);
       updateBlock(index, {
-        background: {
-          kind: "image",
-          imageUrl: uploaded.url,
-          color: block.background?.color ?? "#eef3f4",
-          fit: block.background?.imageUrl ? block.background.fit ?? "cover" : "contain",
-          positionX: block.background?.positionX ?? 50,
-          positionY: block.background?.positionY ?? 50,
-          overlayColor: block.background?.overlayColor ?? "#000000",
-          overlayOpacity: block.background?.overlayOpacity ?? 0.42,
+        presentation: {
+          ...block.presentation,
+          identityLayout: block.presentation?.identityLayout ?? "horizontal",
+          background: {
+            fit: "cover",
+            position: "center",
+            aspectRatio: "auto",
+            focalX: 50,
+            focalY: 50,
+            scale: 1,
+            opacity: 0.28,
+            overlay: "light",
+            ...block.presentation?.background,
+            assetUrl: uploaded.url,
+          },
         },
       });
     } catch (cause) {
-      setError(toApiError(cause, "上传板块背景失败。", "TEMPLATE_BACKGROUND_UPLOAD_FAILED"));
+      setError(toApiError(cause, "上传基础名片背景失败。", "TEMPLATE_BACKGROUND_UPLOAD_FAILED"));
     } finally {
       setUploadingKey(undefined);
     }
   };
 
-  const uploadContentImage = async (
+  const uploadActionCover = async (
     index: number,
+    actionId: string,
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
@@ -610,55 +738,49 @@ export function EnterpriseTemplateEditor({
       return;
     }
     const block = blocks[index];
-    if (!block || block.type !== "rich_text") return;
-    setUploadingKey(`${block.id}:content-image`);
+    if (!block || block.type !== "action_collection") return;
+    setUploadingKey(`${block.id}:action:${actionId}`);
     setError(undefined);
     try {
-      const uploaded = await dataSource.uploadCardAsset(file);
+      const uploaded = await adminApi.uploadCardAsset(file);
       updateBlock(index, {
-        contentImage: {
-          url: uploaded.url,
-          alt: block.contentImage?.alt,
-          placement: block.contentImage?.placement ?? "top",
-          fit: block.contentImage?.fit ?? "cover",
-          aspectRatio: block.contentImage?.aspectRatio ?? "wide",
-          widthPercent: block.contentImage?.widthPercent ?? 100,
-          positionX: block.contentImage?.positionX ?? 50,
-          positionY: block.contentImage?.positionY ?? 50,
-        },
+        actionItems: block.actionItems?.map((item) => (
+          item.id === actionId ? { ...item, imageUrl: uploaded.url } : item
+        )),
       });
     } catch (cause) {
-      setError(toApiError(cause, "上传内容图片失败。", "TEMPLATE_CONTENT_IMAGE_UPLOAD_FAILED"));
+      setError(toApiError(cause, "上传行动入口封面失败。", "TEMPLATE_ACTION_COVER_UPLOAD_FAILED"));
     } finally {
       setUploadingKey(undefined);
     }
   };
 
-  const uploadPageBackground = async (event: ChangeEvent<HTMLInputElement>) => {
+  const uploadCollectionCover = async (
+    index: number,
+    kind: "product" | "case",
+    itemId: string,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     const invalid = validateImage(file);
-    if (invalid) {
-      setError(invalid);
-      return;
-    }
-    setUploadingKey("page:background");
+    if (invalid) { setError(invalid); return; }
+    const block = blocks[index];
+    if (!block) return;
+    setUploadingKey(`${block.id}:${kind}:${itemId}`);
     setError(undefined);
     try {
-      const uploaded = await dataSource.uploadCardAsset(file);
-      updatePageAppearance({
-        kind: "image",
-        imageUrl: uploaded.url,
-        color: pageBackground?.color ?? "#eef3f4",
-        fit: pageBackground?.imageUrl ? pageBackground.fit ?? "cover" : "contain",
-        positionX: pageBackground?.positionX ?? 50,
-        positionY: pageBackground?.positionY ?? 50,
-        overlayColor: pageBackground?.overlayColor ?? "#000000",
-        overlayOpacity: pageBackground?.overlayOpacity ?? 0.42,
-      });
+      const uploaded = await adminApi.uploadCardAsset(file);
+      if (kind === "product") {
+        const current = block.productOverrides?.find((item) => item.id === itemId);
+        updateBlock(index, { productOverrides: [...(block.productOverrides ?? []).filter((item) => item.id !== itemId), { ...current, id: itemId, imageUrl: uploaded.url }] });
+      } else {
+        const current = block.caseOverrides?.find((item) => item.id === itemId);
+        updateBlock(index, { caseOverrides: [...(block.caseOverrides ?? []).filter((item) => item.id !== itemId), { ...current, id: itemId, imageUrl: uploaded.url }] });
+      }
     } catch (cause) {
-      setError(toApiError(cause, "上传整体背景失败。", "TEMPLATE_PAGE_BACKGROUND_UPLOAD_FAILED"));
+      setError(toApiError(cause, "上传展示图片失败。", "TEMPLATE_COLLECTION_COVER_UPLOAD_FAILED"));
     } finally {
       setUploadingKey(undefined);
     }
@@ -672,20 +794,37 @@ export function EnterpriseTemplateEditor({
     setSaving(true);
     setError(undefined);
     try {
+      let baseVersion = version;
+      let savedCard = card;
+      if (card && identityDirty) {
+        const cardInput: ManagedCardInput = {
+          cardKind: card.cardKind,
+          ownerUserId: card.ownerUserId,
+          displayName: card.displayName,
+          title: card.title,
+          avatarUrl: card.avatarUrl,
+          assistantName: card.assistantName,
+          welcomeMessage: card.welcomeMessage,
+          suggestedQuestions: card.suggestedQuestions,
+          policyVersions: card.policyVersions,
+          identityTitles,
+          contactFields: identityContactFields,
+          employeeContactVisibility: card.employeeContactVisibility ?? [],
+        };
+        savedCard = await adminApi.updateManagedCard(card.id, baseVersion, cardInput);
+        baseVersion = savedCard.version;
+      }
       const template = card
-        ? await dataSource.updateEnterpriseTemplate(card.id, version, themeKey, nextBlocks, pageBackground, pageTextTone)
-        : await dataSource.updateCardComposerDefault(
-            defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks, pageBackground, pageTextTone,
-          );
+        ? await adminApi.updateEnterpriseTemplate(card.id, baseVersion, themeKey, nextBlocks)
+        : await adminApi.updateCardComposerDefault(defaultKind as ManagedCard["cardKind"], version, themeKey, nextBlocks);
       const document = "draft" in template ? template.draft : template.document;
-      setBlocks(document.blocks);
+      replaceBlocks(document.blocks);
       setVersion(template.version);
       setThemeKey(document.themeKey);
-      setPageBackground(document.pageBackground);
-      setPageTextTone(document.pageTextTone ?? "auto");
       setDirty(false);
+      setIdentityDirty(false);
       setSavedNotice(savedNotice);
-      const updatedCard = card ? { ...card, version: template.version } : undefined;
+      const updatedCard = card && savedCard ? { ...savedCard, version: template.version } : undefined;
       onSaved(updatedCard);
       return updatedCard;
     } catch (cause) {
@@ -711,10 +850,8 @@ export function EnterpriseTemplateEditor({
       await onDraftConfirm({
         schemaVersion: 1,
         themeKey,
-        pageBackground,
-        pageTextTone,
         blocks: normalizeEnterpriseTemplateBlockOrder(blocks),
-      });
+      }, { identityTitles, contactFields: identityContactFields });
       onClose();
     } catch (cause) {
       setError(toApiError(cause, "创建名片失败，请检查填写内容后重试。", "CARD_CREATE_FAILED"));
@@ -727,7 +864,9 @@ export function EnterpriseTemplateEditor({
     if (busy || blocks.length >= 24) return;
     const nextBlock = createEnterpriseTemplateBlock(type);
     const nextBlocks = normalizeEnterpriseTemplateBlockOrder([...blocks, nextBlock]);
-    setBlocks(nextBlocks);
+    setUndoStack((history) => [...history.slice(-23), { blocks, themeKey }]);
+    setRedoStack([]);
+    replaceBlocks(nextBlocks);
     setSelectedBlockId(nextBlock.id);
     setPreviewMode("draft");
     setDirty(true);
@@ -747,37 +886,21 @@ export function EnterpriseTemplateEditor({
   const requestPublish = async () => {
     if (!card || !version || !draftValid || !publishReady || saving) return;
     if (dirty) {
-      const updatedCard = await persistDraft(
-        blocks,
-        "草稿已保存，可以确认发布。",
-      );
-      if (updatedCard) {
-        setPublishError(undefined);
-        setPublishTarget(updatedCard);
-      }
+      const updatedCard = await persistDraft(blocks, "草稿已保存，可以进入发布确认。");
+      if (updatedCard) onRequestPublish(updatedCard);
       return;
     }
-    setPublishError(undefined);
-    setPublishTarget({ ...card, version });
+    onRequestPublish({ ...card, version });
   };
 
-  const confirmPublish = async () => {
-    if (!publishTarget || publishing) return;
-    setPublishing(true);
-    setPublishError(undefined);
-    try {
-      await onRequestPublish(publishTarget);
-      setPublishTarget(undefined);
-      setSavedNotice("名片已发布，公开页现在使用本次确认的内容。");
-    } catch (cause) {
-      setPublishError(toApiError(cause, "发布名片失败。", "CARD_PUBLISH_FAILED"));
-    } finally {
-      setPublishing(false);
-    }
-  };
-
-  const publishedProducts = products.filter((item) => item.status === "published");
-  const publishedCases = cases.filter((item) => item.status === "published");
+  const publishedProducts = useMemo(
+    () => products.filter((item) => item.status === "published"),
+    [products],
+  );
+  const publishedCases = useMemo(
+    () => cases.filter((item) => item.status === "published"),
+    [cases],
+  );
   const publishChecks = card?.cardKind === "enterprise"
     ? getEnterpriseTemplatePublishChecks(card, blocks, company, selectableFaqs)
     : [];
@@ -802,9 +925,50 @@ export function EnterpriseTemplateEditor({
   const effectiveAvatarUrl = card?.avatarUrl
     || creationDraft?.identityPreview.avatarUrl
     || company?.logoUrl;
+  const previewIdentityContactFields: IdentityContactField[] = useMemo(() => [
+    ...identityContactFields,
+    ...(company?.website && !identityContactFields.some((field) => field.kind === "website")
+      ? [{ id: "company-website", kind: "website" as const, label: "企业官网", value: company.website, href: company.website }]
+      : []),
+    ...(company?.region && !identityContactFields.some((field) => field.kind === "location")
+      ? [{ id: "company-address", kind: "location" as const, label: "公司地址", value: company.region }]
+      : []),
+  ], [company?.region, company?.website, identityContactFields]);
   const selectedIndex = blocks.findIndex((block) => block.id === selectedBlockId);
   const selectedBlock = selectedIndex >= 0 ? blocks[selectedIndex] : blocks[0];
+  // The inspector must receive raw editable values. Display fallbacks belong
+  // only to the structure list and preview; feeding them into controlled
+  // inputs makes an intentionally empty value impossible to keep.
+  const selectedInspectorBlock = selectedBlock;
+  const previewBlocks = useMemo(() => canvasBlocks.map((block) => ({
+    ...block,
+    title: templateBlockDisplayTitle(block, effectiveKind),
+  })), [canvasBlocks, effectiveKind]);
   const selectedIssue = selectedIndex >= 0 ? blockIssues[selectedIndex] : blockIssues[0];
+
+  const selectStructureBlock = (blockId: string) => {
+    setSelectedBlockId(blockId);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(`bp-template-block-${blockId}`);
+      const scroller = canvasStageRef.current;
+      if (target && scroller) {
+        const targetRect = target.getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        const targetTop = targetRect.top - scrollerRect.top + scroller.scrollTop;
+        const stickySafeTop = 92;
+        const availableHeight = Math.max(120, scroller.clientHeight - stickySafeTop - 20);
+        const targetViewportTop = targetRect.height >= availableHeight
+          ? stickySafeTop
+          : stickySafeTop + (availableHeight - targetRect.height) / 2;
+        const nextScrollTop = Math.max(0, targetTop - targetViewportTop);
+        if (typeof scroller.scrollTo === "function") {
+          scroller.scrollTo({ top: nextScrollTop, behavior: "smooth" });
+        } else {
+          scroller.scrollTop = nextScrollTop;
+        }
+      }
+    });
+  };
 
   const editorTitle = creationDraft
     ? `设计${creationDraft.cardKind === "employee" ? "员工" : "企业"}名片`
@@ -820,7 +984,6 @@ export function EnterpriseTemplateEditor({
 
   if (open) {
     return (
-      <>
       <Dialog
         open
         onOpenChange={(_, data) => {
@@ -828,22 +991,52 @@ export function EnterpriseTemplateEditor({
         }}
       >
         <DialogSurface className="enterprise-template-dialog enterprise-template-dialog-v2">
-          <DialogBody>
-            <DialogTitle>
-              <div className="template-composer-title">
-                <span>{creationDraft ? "创建前设计" : card ? "页面编辑器" : "默认配置"}</span>
-                <strong>{editorTitle}</strong>
+          <CardStudioEditorSurface>
+          <DialogBody className="template-studio-dialog-body">
+            <StudioEditorShell className="template-studio-shell">
+            <DialogTitle className="template-studio-title-shell">
+              <div className="studio-topbar template-studio-topbar">
+                <div className="studio-brand template-composer-title">
+                  <button type="button" className="back-button template-editor-back" onClick={onClose} disabled={busy}>← 返回</button>
+                  <span className="studio-divider" aria-hidden="true" />
+                  <strong className="document-title">{effectiveDisplayName}的数字名片 ✎</strong>
+                  <span className={`autosave ${dirty ? "is-dirty" : "is-saved"}`}>{dirty ? "有未保存修改" : "✓ 已自动保存"}</span>
+                </div>
+                <div className="studio-history" aria-label="编辑历史">
+                  <button className="toolbar-button icon-only" type="button" title="撤销" disabled={busy || !undoStack.length} onClick={undoChange}><ArrowUndo24Regular /></button>
+                  <button className="toolbar-button icon-only" type="button" title="重做" disabled={busy || !redoStack.length} onClick={redoChange}><ArrowRedo24Regular /></button>
+                </div>
+                <div className="studio-actions template-studio-actions">
+                  <button className="toolbar-button" type="button" onClick={() => { setMobilePane("canvas"); setPreviewMode("draft"); }}><Eye24Regular />预览</button>
+                  {creationDraft ? null : (
+                    <button className="toolbar-button" aria-label={card ? "保存草稿" : "保存默认配置"} type="button" onClick={() => void saveDraft()} disabled={busy || !dirty}>
+                      <Save24Regular />
+                      {saving ? "保存中…" : card ? "保存" : "保存默认配置"}
+                    </button>
+                  )}
+                  {creationDraft ? (
+                    <button className="toolbar-button primary" type="button" onClick={() => void confirmCreationDraft()} disabled={busy || !draftValid || !onDraftConfirm}>
+                      <Send24Regular />
+                      {saving ? "创建中…" : "使用此设计创建名片"}
+                    </button>
+                  ) : (
+                    <button className="toolbar-button primary" aria-label="进入发布确认" type="button" onClick={() => void requestPublish()} disabled={busy || !publishReady || !card}>
+                      <Send24Regular />
+                      {dirty ? "保存并发布" : "发布"}
+                    </button>
+                  )}
+                </div>
               </div>
             </DialogTitle>
             <DialogContent className="template-composer-dialog-content">
-              <div className="template-composer-context">
+              {(creationDraft || !card) ? <div className="template-composer-context">
                 <p>{editorDescription}</p>
                 <div>
                   <span>{effectiveKind === "employee" ? "员工名片" : "企业名片"}</span>
                   <strong>{effectiveDisplayName}</strong>
                   {dirty ? <b>未保存</b> : <b className="is-saved">已同步</b>}
                 </div>
-              </div>
+              </div> : null}
               <FormFeedback error={error} />
               {savedNotice ? <p className="template-save-notice" role="status">{savedNotice}</p> : null}
 
@@ -854,84 +1047,84 @@ export function EnterpriseTemplateEditor({
                 </div>
               ) : (card || defaultKind || creationDraft) ? (
                 <>
-                  <nav className="template-mobile-pane-tabs" aria-label="编辑器区域切换">
+                <nav className="template-responsive-pane-tabs" aria-label="编辑器区域切换">
+                  {([
+                    ["structure", "页面结构"],
+                    ["canvas", "实时页面"],
+                    ["inspector", "模块设置"],
+                  ] as const).map(([pane, label]) => (
                     <button
+                      key={pane}
                       type="button"
-                      aria-current={mobilePane === "structure" ? "page" : undefined}
-                      onClick={() => showMobilePane("structure", "template-editor-structure")}
-                    >结构</button>
-                    <button
-                      type="button"
-                      aria-current={mobilePane === "preview" ? "page" : undefined}
-                      onClick={() => showMobilePane("preview", "template-editor-preview")}
-                    >画布</button>
-                    <button
-                      type="button"
-                      aria-current={mobilePane === "content" ? "page" : undefined}
-                      onClick={() => showMobilePane("content", "template-editor-content")}
-                    >属性</button>
-                  </nav>
-                  <div className="enterprise-template-composer">
+                      className={mobilePane === pane ? "is-active" : undefined}
+                      aria-pressed={mobilePane === pane}
+                      onClick={() => {
+                        setMobilePane(pane);
+                        if (pane !== "canvas") setTabletSidePane(pane);
+                      }}
+                    >{label}</button>
+                  ))}
+                </nav>
+                <div className="studio-grid enterprise-template-composer">
                   <aside
-                    className="template-composer-pane template-structure-pane"
+                    className="studio-panel left template-composer-pane template-structure-pane"
                     id="template-editor-structure"
+                    data-editor-pane="structure"
+                    data-mobile-active={mobilePane === "structure" ? "true" : "false"}
+                    data-tablet-active={tabletSidePane === "structure" ? "true" : "false"}
                     aria-label="页面结构与模块库"
                   >
-                    <header className="template-pane-heading">
-                      <div><span>结构</span><h2>页面与模块</h2></div>
-                      <strong>{blocks.length}/24</strong>
-                    </header>
-                    <p className="template-pane-hint">拖动手柄调整顺序；点击模块后，中间页面和右侧属性会同步选中。</p>
+                    <div className="panel-tabs template-panel-tabs" role="tablist" aria-label="页面结构工具">
+                      <button type="button" role="tab" aria-selected={structureTab === "structure"} className={`panel-tab ${structureTab === "structure" ? "active is-active" : ""}`} onClick={() => setStructureTab("structure")}>页面结构</button>
+                      <button type="button" role="tab" aria-selected={structureTab === "library"} className={`panel-tab ${structureTab === "library" ? "active is-active" : ""}`} onClick={() => setStructureTab("library")}>添加模块</button>
+                    </div>
+                    <div className="panel-scroll">
 
-                    <TemplatePageSettings
-                      background={pageBackground}
-                      textTone={pageTextTone}
-                      busy={busy}
-                      uploading={uploadingKey === "page:background"}
-                      inputRef={pageBackgroundInputRef}
-                      onChange={updatePageAppearance}
-                      onUpload={(event) => void uploadPageBackground(event)}
-                    />
-
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStructureDragEnd}>
-                      <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
-                        <ol className="template-structure-list">
-                          {blocks.map((block, index) => (
-                            <SortableStructureItem
-                              key={block.id}
-                              block={block}
-                              index={index}
-                              busy={busy}
-                              selected={block.id === selectedBlock?.id}
-                              onSelect={() => setSelectedBlockId(block.id)}
-                              onRemove={block.type === "identity" ? undefined : () => setRemoveTarget(block)}
-                            />
-                          ))}
-                        </ol>
-                      </SortableContext>
-                    </DndContext>
-
-                    <section className="template-module-library template-module-library-v2" aria-labelledby="template-module-library-title">
+                    {structureTab === "structure" ? (
+                      <div className="template-structure-tab-content">
+                        <p className="template-pane-hint">拖动手柄调整顺序。基础名片必须保留，但同样可以移动。</p>
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStructureDragEnd}>
+                          <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
+                            <ol className="template-structure-list module-list">
+                              {blocks.map((block, index) => (
+                                <SortableStructureItem
+                                  key={block.id}
+                                  block={block}
+                                  displayTitle={templateBlockDisplayTitle(block, effectiveKind)}
+                                  index={index}
+                                  busy={busy}
+                                  selected={block.id === selectedBlock?.id}
+                                  onSelect={() => selectStructureBlock(block.id)}
+                                />
+                              ))}
+                            </ol>
+                          </SortableContext>
+                        </DndContext>
+                        <button type="button" className="template-add-module-switch add-module-button" onClick={() => setStructureTab("library")}>＋ 添加内容模块</button>
+                      </div>
+                    ) : (
+                    <section className="template-module-library template-module-library-v2 is-tab-panel" aria-labelledby="template-module-library-title">
                       <div>
                         <strong id="template-module-library-title">添加模块</strong>
-                        <span>模块加入当前页面底部，随后可直接拖动到目标位置。</span>
+                        <span>模块加入页面底部，随后可拖到任意位置；数据继续引用真实业务库。</span>
                       </div>
                       <div className="template-module-library-actions">
                         {Object.entries(enterpriseTemplateBlockLabels)
-                          .filter(([value]) => value !== "identity")
+                          .filter(([value]) => value !== "identity" && value !== "ai_assistant")
                           .map(([value, label]) => (
                             <button
                               key={value}
-                              type="button"
+                              type="button" className="library-card"
                               disabled={busy || blocks.length >= 24}
-                              onClick={() => void addLibraryBlock(value as EnterpriseTemplateBlockType)}
+                              onClick={() => { void addLibraryBlock(value as EnterpriseTemplateBlockType); setStructureTab("structure"); }}
                             >
                               <Add24Regular aria-hidden="true" />
-                              <span>{label}</span>
+                              <span><strong>{label}</strong><small>{enterpriseTemplateBlockDescriptions[value as EnterpriseTemplateBlockType]}</small></span>
                             </button>
                           ))}
                       </div>
                     </section>
+                    )}
 
                     <section className="template-identity-source-summary">
                       {effectiveAvatarUrl ? <img src={resolveApiResourceUrl(effectiveAvatarUrl)} alt="名片头像" /> : <i>{effectiveDisplayName.slice(0, 1)}</i>}
@@ -942,41 +1135,35 @@ export function EnterpriseTemplateEditor({
                         </Button>
                       ) : null}
                     </section>
+                    </div>
                   </aside>
 
                   <main
-                    className="template-composer-pane template-canvas-pane"
+                    className="studio-canvas template-composer-pane template-canvas-pane"
                     id="template-editor-preview"
+                    data-editor-pane="canvas"
+                    data-mobile-active={mobilePane === "canvas" ? "true" : "false"}
+                    data-tablet-active="true"
                     aria-label="名片实时画布"
                   >
-                    <header className="template-pane-heading template-canvas-heading">
-                      <div>
-                        <span>{previewMode === "published" ? "线上版本" : "实时草稿"}</span>
-                        <h2>实际名片页面</h2>
+                    <div className="canvas-toolbar template-canvas-toolbar">
+                      <div className="segmented template-device-switch" role="group" aria-label="预览设备">
+                        <button type="button" className={previewDevice === "mobile" ? "active is-active" : undefined} aria-pressed={previewDevice === "mobile"} title="手机预览" onClick={() => setPreviewDevice("mobile")}>▯</button>
+                        <button type="button" className={previewDevice === "wide" ? "active is-active" : undefined} aria-pressed={previewDevice === "wide"} title="宽屏预览" onClick={() => setPreviewDevice("wide")}>▱</button>
                       </div>
-                      <div className="template-preview-modes" role="tablist" aria-label="名片预览模式">
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={previewMode === "draft"}
-                          className={previewMode === "draft" ? "is-active" : undefined}
-                          onClick={() => setPreviewMode("draft")}
-                        >草稿</button>
-                        {card?.shareUrl ? (
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={previewMode === "published"}
-                            className={previewMode === "published" ? "is-active" : undefined}
-                            onClick={() => setPreviewMode("published")}
-                          >线上</button>
-                        ) : null}
+                      <select className="canvas-select" aria-label="视觉模板" value={themeKey} onChange={(event) => changeTheme(event.target.value as EnterpriseTemplateThemeKey)}>
+                        <option value="brand">清透商务模板</option>
+                        <option value="clean">纯净内容模板</option>
+                        <option value="warm">温和关系模板</option>
+                      </select>
+                      <div className="template-preview-modes segmented" role="tablist" aria-label="名片预览模式">
+                        <button type="button" role="tab" aria-selected={previewMode === "draft"} className={previewMode === "draft" ? "active is-active" : undefined} onClick={() => setPreviewMode("draft")}>草稿</button>
+                        {card?.shareUrl ? <button type="button" role="tab" aria-selected={previewMode === "published"} className={previewMode === "published" ? "active is-active" : undefined} onClick={() => setPreviewMode("published")}>线上</button> : null}
                       </div>
-                    </header>
-                    <p className="template-pane-hint">这是与访客端共用的页面组件。可滚动、展开 FAQ，并从专用手柄拖动模块。</p>
-
-                    <div className="template-phone-frame template-phone-frame-v2">
-                      <div className="template-phone-screen">
+                      <button className="toolbar-button icon-only" type="button" title="刷新画布" onClick={() => setPreviewMode((current) => current)}><ArrowClockwise24Regular /></button>
+                    </div>
+                    <div className="canvas-stage" ref={canvasStageRef}>
+                      <div className={`editor-preview ${previewDevice === "wide" ? "wide" : ""}`}>
                         {previewMode === "published" && card?.shareUrl ? (
                           <iframe
                             className="template-public-page-frame"
@@ -986,9 +1173,8 @@ export function EnterpriseTemplateEditor({
                           />
                         ) : (
                           <TemplateCanvas
-                            blocks={blocks}
-                            pageBackground={pageBackground}
-                            pageTextTone={pageTextTone}
+                            blocks={previewBlocks}
+                            themeKey={themeKey}
                             products={publishedProducts}
                             cases={publishedCases}
                             faqItems={selectableFaqs}
@@ -1000,6 +1186,8 @@ export function EnterpriseTemplateEditor({
                               companyName: company?.name,
                               summary: company?.summary,
                               positioning: effectiveCompanySummary || company?.summary,
+                              identityTitles,
+                              contactFields: previewIdentityContactFields,
                             }}
                             selectedBlockId={selectedBlock?.id}
                             onSelectBlock={setSelectedBlockId}
@@ -1007,24 +1195,27 @@ export function EnterpriseTemplateEditor({
                           />
                         )}
                       </div>
+                      {card?.shareUrl ? <a className="template-open-public-link" href={card.shareUrl} target="_blank" rel="noreferrer">在新窗口打开公开页</a> : null}
                     </div>
-                    {card?.shareUrl ? (
-                      <a className="template-open-public-link" href={card.shareUrl} target="_blank" rel="noreferrer">在新窗口打开公开页</a>
-                    ) : null}
                   </main>
 
                   <aside
-                    className="template-composer-pane template-inspector-pane"
+                    className="studio-panel right template-composer-pane template-inspector-pane"
                     id="template-editor-content"
+                    data-editor-pane="inspector"
+                    data-mobile-active={mobilePane === "inspector" ? "true" : "false"}
+                    data-tablet-active={tabletSidePane === "inspector" ? "true" : "false"}
                     aria-label="区块属性"
                   >
-                    <header className="template-pane-heading">
-                      <div><span>属性</span><h2>{selectedBlock ? enterpriseTemplateBlockLabels[selectedBlock.type] : "选择模块"}</h2></div>
-                    </header>
+                    <div className="template-inspector-heading">
+                      <strong>模块设置</strong>
+                      <span>当前选中模块</span>
+                    </div>
+                    <div className="panel-scroll">
                     <p className="template-pane-hint">只编辑当前选中的模块，页面变化会实时出现在中间。</p>
-                    {selectedBlock ? (
+                    {selectedInspectorBlock ? (
                       <TemplateBlockInspector
-                        block={selectedBlock}
+                        block={selectedInspectorBlock}
                         index={selectedIndex >= 0 ? selectedIndex : 0}
                         blockCount={blocks.length}
                         busy={busy}
@@ -1034,18 +1225,34 @@ export function EnterpriseTemplateEditor({
                         cases={publishedCases}
                         selectableFaqs={selectableFaqs}
                         labels={enterpriseTemplateBlockLabels}
+                        identityTitles={identityTitles}
+                        identityContactFields={identityContactFields}
                         galleryInputRefs={galleryInputRefs}
                         coverInputRefs={coverInputRefs}
                         backgroundInputRefs={backgroundInputRefs}
-                        contentImageInputRefs={contentImageInputRefs}
+                        actionCoverInputRefs={actionCoverInputRefs}
+                        collectionCoverInputRefs={collectionCoverInputRefs}
                         onUpdate={(patch) => updateBlock(selectedIndex >= 0 ? selectedIndex : 0, patch)}
+                        onIdentityTitlesChange={(titles) => {
+                          setIdentityTitles(titles);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onIdentityContactFieldsChange={(fields) => {
+                          setIdentityContactFields(fields);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
                         onMove={(direction) => moveBlock(selectedIndex >= 0 ? selectedIndex : 0, direction)}
                         onDuplicate={() => duplicateBlock(selectedIndex >= 0 ? selectedIndex : 0)}
-                        onRemove={() => selectedBlock && setRemoveTarget(selectedBlock)}
+                        onRemove={() => removeBlock(selectedIndex >= 0 ? selectedIndex : 0)}
                         onGalleryUpload={(event) => void uploadGalleryImages(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onCoverUpload={(event) => void uploadVideoCover(selectedIndex >= 0 ? selectedIndex : 0, event)}
-                        onBackgroundUpload={(event) => void uploadBackgroundImage(selectedIndex >= 0 ? selectedIndex : 0, event)}
-                        onContentImageUpload={(event) => void uploadContentImage(selectedIndex >= 0 ? selectedIndex : 0, event)}
+                        onBackgroundUpload={(event) => void uploadIdentityBackground(selectedIndex >= 0 ? selectedIndex : 0, event)}
+                        onActionCoverUpload={(actionId, event) => void uploadActionCover(selectedIndex >= 0 ? selectedIndex : 0, actionId, event)}
+                        onCollectionCoverUpload={(kind, itemId, event) => void uploadCollectionCover(selectedIndex >= 0 ? selectedIndex : 0, kind, itemId, event)}
                       />
                     ) : <p className="template-inspector-empty">请从左侧结构或中间页面选择一个模块。</p>}
 
@@ -1062,86 +1269,17 @@ export function EnterpriseTemplateEditor({
                         </ul>
                       </section>
                     ) : null}
+                    </div>
                   </aside>
-                  </div>
+                </div>
                 </>
               ) : null}
             </DialogContent>
-            <DialogActions className="enterprise-template-actions enterprise-template-actions-v2">
-              <div className="template-action-status" aria-live="polite">
-                {dirty ? "页面有未保存修改" : creationDraft ? "创建前不会写入后台" : "当前页面已同步"}
-              </div>
-              <Button appearance="secondary" onClick={onClose} disabled={busy}>{creationDraft ? "取消创建" : "关闭"}</Button>
-              {creationDraft ? (
-                <Button
-                  appearance="primary"
-                  icon={<Send24Regular />}
-                  onClick={() => void confirmCreationDraft()}
-                  disabled={busy || !draftValid || !onDraftConfirm}
-                >{saving ? "创建中…" : "使用此设计创建名片"}</Button>
-              ) : (
-                <>
-                  <Button
-                    appearance="secondary"
-                    icon={<Save24Regular />}
-                    onClick={() => void saveDraft()}
-                    disabled={busy || !dirty}
-                  >{saving ? "保存中…" : card ? "保存草稿" : "保存默认配置"}</Button>
-                  <Button
-                    appearance="primary"
-                    icon={<Send24Regular />}
-                    onClick={() => void requestPublish()}
-                    disabled={busy || !publishReady || !card}
-                  >{dirty ? "保存并进入发布确认" : "进入发布确认"}</Button>
-                </>
-              )}
-            </DialogActions>
+            </StudioEditorShell>
           </DialogBody>
+          </CardStudioEditorSurface>
         </DialogSurface>
       </Dialog>
-      <ActionConfirmDialog
-        open={Boolean(publishTarget)}
-        title="确认发布名片"
-        description="发布后，公开链接会立即使用当前已保存的页面内容。"
-        confirmLabel="确认发布"
-        pendingLabel="正在发布"
-        pending={publishing}
-        error={publishError}
-        detail={publishTarget ? (
-          <div className="publish-target">
-            <strong>{publishTarget.displayName || "未命名名片"}</strong>
-            <span>待发布版本：{publishTarget.version}</span>
-            <ul className="publish-checklist-summary">
-              <li>企业名称、业务定位和 Logo 已复核</li>
-              <li>当前草稿中的区块、图片、视频和案例将冻结为公开快照</li>
-              <li>确认后公开页会立即更新</li>
-            </ul>
-          </div>
-        ) : undefined}
-        onCancel={() => {
-          setPublishTarget(undefined);
-          setPublishError(undefined);
-        }}
-        onConfirm={() => void confirmPublish()}
-      />
-      <ActionConfirmDialog
-        open={Boolean(removeTarget)}
-        title="删除名片板块"
-        description="该板块会从当前草稿中移除。保存草稿后删除才会写入后台，已经发布的名片在再次发布前不会变化。"
-        confirmLabel="确认删除"
-        pendingLabel="正在删除"
-        pending={false}
-        destructive
-        detail={removeTarget ? (
-          <div className="publish-target">
-            <strong>{removeTarget.title || enterpriseTemplateBlockLabels[removeTarget.type]}</strong>
-            <span>{enterpriseTemplateBlockLabels[removeTarget.type]}</span>
-          </div>
-        ) : undefined}
-        onCancel={() => setRemoveTarget(undefined)}
-        onConfirm={confirmRemoveBlock}
-      />
-      </>
     );
   }
 

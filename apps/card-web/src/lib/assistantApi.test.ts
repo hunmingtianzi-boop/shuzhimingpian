@@ -6,7 +6,7 @@ import {
   ensurePublicVisitorSession,
   parseAssistantEventStream,
   prewarmAssistantSession,
-  recordVisitEvent,
+  recordPublicCardAction,
   streamAssistantMessage,
   type AssistantStreamEvent,
 } from "./assistantApi";
@@ -112,43 +112,55 @@ describe("assistant API", () => {
     expect(getRandomValues).toHaveBeenCalledOnce();
   });
 
-  it("records a page dwell event against the active visit", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
-      jsonResponse({ data: { id: "event-1", event_type: "heartbeat" } }, 201),
-    );
+  it("records a real cta click against the current public visit", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          visit_id: "visit-action",
+          visitor_session_token: "visitor-action-token",
+          expires_at: "2099-01-01T00:00:00Z",
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: "event-action",
+          event_type: "cta_click",
+          occurred_at: "2026-08-08T00:00:00Z",
+        },
+      }, 201));
     vi.stubGlobal("fetch", fetchMock);
 
-    await recordVisitEvent({
+    await recordPublicCardAction({
       cardSlug: "tenant-a",
-      session: {
-        token: "visitor-token",
-        visitId: "visit-1",
-        expiresAt: "2099-01-01T00:00:00Z",
-        privacyVersion: "privacy-v1",
-        chatNoticeVersion: "chat-v1",
+      actionId: "conference-link",
+      actionTitle: "世界会展大会",
+      targetType: "external_url",
+      companyId: "company-a",
+      policyVersions: {
+        privacy: "privacy-v3",
+        chatNotice: "chat-v5",
+        leadConsent: "lead-v2",
+        profilePersonalization: "profile-v1",
       },
-      eventType: "heartbeat",
-      objectType: "product",
-      objectId: "product-a",
-      metadata: {
-        page_key: "detail:product:product-a",
-        page_title: "产品 A",
-        duration_ms: 12_500,
-      },
-      keepalive: true,
     });
 
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://api.example.test/api/v1/public/cards/tenant-a/visits/visit-1/events",
-    );
-    const init = fetchMock.mock.calls[0][1]!;
-    expect(init.keepalive).toBe(true);
-    expect(init.headers).toMatchObject({ Authorization: "Bearer visitor-token" });
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      event_type: "heartbeat",
-      object_type: "product",
-      object_id: "product-a",
-      metadata: { duration_ms: 12_500 },
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.example.test/api/v1/public/cards/tenant-a/visits",
+      "https://api.example.test/api/v1/public/cards/tenant-a/visits/visit-action/events",
+    ]);
+    const eventInit = fetchMock.mock.calls[1][1]!;
+    expect(eventInit.headers).toMatchObject({
+      Authorization: "Bearer visitor-action-token",
+    });
+    expect(JSON.parse(String(eventInit.body))).toMatchObject({
+      event_type: "cta_click",
+      object_type: "card",
+      object_id: "conference-link",
+      metadata: {
+        action_title: "世界会展大会",
+        target_type: "external_url",
+      },
     });
   });
 
