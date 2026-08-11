@@ -295,8 +295,8 @@ describe("EnterpriseTemplateEditor", () => {
     expect(screen.getByText(/拖动手柄调整顺序/)).toBeInTheDocument();
     expect(screen.getAllByLabelText("拖动基础名片调整位置")).toHaveLength(2);
     expect(screen.getByLabelText("视觉模板")).toHaveValue("brand");
-    await user.click(screen.getByRole("button", { name: /02\s*企业介绍/ }));
-    await user.click(screen.getByRole("button", { name: "上移" }));
+    await user.click(screen.getByRole("button", { name: /02\s*企业介绍/, hidden: true }));
+    await user.click(screen.getByRole("button", { name: "上移", hidden: true }));
     // Tabster can temporarily mark the portal surface aria-hidden in jsdom after
     // a focus change. Keep exercising the rendered controls instead of relying
     // on that browser-only focus state in this unit test.
@@ -625,11 +625,11 @@ describe("EnterpriseTemplateEditor", () => {
 
     expect(await screen.findByRole("button", { name: /02\s*个人介绍/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /02\s*企业介绍/ })).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
-    await user.click(await screen.findByRole("button", { name: /^图文介绍/ }));
+    await user.click(await screen.findByRole("tab", { name: "添加模块", hidden: true }));
+    await user.click(await screen.findByRole("button", { name: /^图文介绍/, hidden: true }));
     expect(updateDefault).not.toHaveBeenCalled();
     expect(updateCard).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "使用此设计创建名片" }));
+    await user.click(screen.getByRole("button", { name: "使用此设计创建名片", hidden: true }));
 
     await waitFor(() => expect(onDraftConfirm).toHaveBeenCalledTimes(1));
     expect(onDraftConfirm.mock.calls[0][0]).toEqual(expect.objectContaining({
