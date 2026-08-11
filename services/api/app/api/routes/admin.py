@@ -193,7 +193,9 @@ def _wecom_store(request: Request) -> WeComStore:
 def _wecom_client(request: Request) -> WeComClient:
     return WeComClient(
         settings=request.app.state.settings,
-        http_client=request.app.state.http_client,
+        http_client=getattr(
+            request.app.state, "wecom_http_client", request.app.state.http_client
+        ),
         redis=getattr(request.app.state, "redis", None),
     )
 

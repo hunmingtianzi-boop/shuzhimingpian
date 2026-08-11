@@ -74,12 +74,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
         follow_redirects=False,
     )
+    wecom_http_client = (
+        httpx.AsyncClient(
+            proxy=settings.wecom_proxy_url,
+            timeout=httpx.Timeout(settings.wecom_timeout_seconds, connect=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            follow_redirects=False,
+            trust_env=False,
+        )
+        if settings.wecom_proxy_url
+        else http_client
+    )
 
     app.state.settings = settings
     app.state.database = engine
     app.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
     app.state.redis = redis
     app.state.http_client = http_client
+    app.state.wecom_http_client = wecom_http_client
     app.state.ai_semaphore = asyncio.Semaphore(settings.llm_max_concurrency)
     app.state.ai_runtime_semaphores = {}
     app.state.ai_tasks = set()
@@ -96,6 +108,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
+        if wecom_http_client is not http_client:
+            await wecom_http_client.aclose()
         await http_client.aclose()
         await redis.aclose()
         await engine.dispose()

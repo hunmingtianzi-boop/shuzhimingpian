@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     wecom_tenant_id: UUID | None = None
     wecom_company_id: UUID | None = None
     wecom_api_base_url: str = "https://qyapi.weixin.qq.com"
+    # Optional dedicated egress proxy for WeCom API calls. Keeping this
+    # separate from the shared HTTP client prevents AI and storage traffic
+    # from depending on a temporary provider-whitelist tunnel.
+    wecom_proxy_url: str | None = None
     wecom_oauth_redirect_uri: str | None = None
     wecom_oauth_state_ttl_seconds: int = Field(default=600, ge=120, le=1_800)
     wecom_callback_token: SecretStr | None = None

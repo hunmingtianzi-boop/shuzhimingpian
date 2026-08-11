@@ -42,7 +42,9 @@ StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 def _client(request: Request) -> WeComClient:
     return WeComClient(
         settings=request.app.state.settings,
-        http_client=request.app.state.http_client,
+        http_client=getattr(
+            request.app.state, "wecom_http_client", request.app.state.http_client
+        ),
         redis=getattr(request.app.state, "redis", None),
     )
 
@@ -57,7 +59,9 @@ def _states(request: Request) -> WeComOAuthStateManager:
 def _suite_client(request: Request) -> WeComSuiteClient:
     return WeComSuiteClient(
         settings=request.app.state.settings,
-        http_client=request.app.state.http_client,
+        http_client=getattr(
+            request.app.state, "wecom_http_client", request.app.state.http_client
+        ),
         redis=getattr(request.app.state, "redis", None),
     )
 

@@ -29,7 +29,9 @@ router = APIRouter(prefix="/integrations/wecom/suite", tags=["WeCom Provider"])
 def _client(request: Request) -> WeComSuiteClient:
     return WeComSuiteClient(
         settings=request.app.state.settings,
-        http_client=request.app.state.http_client,
+        http_client=getattr(
+            request.app.state, "wecom_http_client", request.app.state.http_client
+        ),
         redis=getattr(request.app.state, "redis", None),
     )
 
