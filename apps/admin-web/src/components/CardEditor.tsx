@@ -22,10 +22,17 @@ import type { FormEvent } from "react";
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
 import { memberApi } from "../api/memberApi";
-import type { CompanyMember, ManagedCard, ManagedCardInput } from "../api/types";
+import type {
+  CompanyMember,
+  IdentityContactField,
+  IdentityContactKind,
+  ManagedCard,
+  ManagedCardInput,
+} from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
 import { FormFeedback } from "./FormFeedback";
+import { IdentityTitlesEditor } from "./IdentityTitlesEditor";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
 const CARD_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -40,6 +47,8 @@ function emptyCard(cardKind: ManagedCard["cardKind"]): ManagedCardInput {
     assistantName: "",
     welcomeMessage: "",
     suggestedQuestions: [],
+    identityTitles: [],
+    contactFields: [],
     policyVersions: {
       privacy: "",
       chatNotice: "",
@@ -62,6 +71,8 @@ function cardInput(item?: ManagedCard): ManagedCardInput {
     assistantName: item.assistantName,
     welcomeMessage: item.welcomeMessage,
     suggestedQuestions: item.suggestedQuestions,
+    identityTitles: item.identityTitles ?? [],
+    contactFields: item.contactFields ?? [],
     policyVersions: item.policyVersions,
     employeeContactVisibility: item.employeeContactVisibility ?? [],
     templateSourceCardId: "",
@@ -97,8 +108,32 @@ export type CardCreationDraft = {
     displayName: string;
     title: string;
     avatarUrl?: string;
+    identityTitles: string[];
+    contactFields: IdentityContactField[];
   };
 };
+
+const contactKindLabels: Record<IdentityContactKind, string> = {
+  phone: "电话",
+  wechat: "微信 / 企业微信",
+  email: "邮箱",
+  location: "地址",
+  website: "官网",
+  other: "其他",
+};
+
+function nextContactField(kind: IdentityContactKind = "phone"): IdentityContactField {
+  const suffix = typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+  return {
+    id: `contact-${suffix}`,
+    kind,
+    label: contactKindLabels[kind],
+    value: "",
+    href: "",
+  };
+}
 
 export function CardEditor({
   open,
@@ -217,13 +252,17 @@ export function CardEditor({
     .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean);
+  const identityTitles = form.identityTitles.map((value) => value.trim()).filter(Boolean);
   const questionsValid =
     questions.length <= 6 && questions.every((value) => value.length <= 200);
+  const titlesValid =
+    identityTitles.length <= 8 && identityTitles.every((value) => value.length <= 80);
   const ownerValid = form.cardKind === "enterprise" || Boolean(form.ownerUserId?.trim());
   const valid =
     ownerValid &&
     (form.cardKind === "employee" || (Boolean(form.displayName.trim()) && Boolean(form.title.trim()))) &&
-    questionsValid;
+    questionsValid &&
+    titlesValid;
   const selectedEmployee = employees.find((member) => member.userId === form.ownerUserId);
   const occupiedEmployeeIds = new Set(templateSources
     .filter((card) => card.cardKind === "employee" && card.id !== item?.id)
@@ -254,6 +293,29 @@ export function CardEditor({
       employeeContactVisibility: checked
         ? [...new Set([...current.employeeContactVisibility, field])]
         : current.employeeContactVisibility.filter((value) => value !== field),
+    }));
+  };
+
+  const addContactField = (kind: IdentityContactKind = "phone") => {
+    setForm((current) => ({
+      ...current,
+      contactFields: [...current.contactFields, nextContactField(kind)].slice(0, 8),
+    }));
+  };
+
+  const updateContactField = (id: string, patch: Partial<IdentityContactField>) => {
+    setForm((current) => ({
+      ...current,
+      contactFields: current.contactFields.map((field) => (
+        field.id === id ? { ...field, ...patch } : field
+      )),
+    }));
+  };
+
+  const removeContactField = (id: string) => {
+    setForm((current) => ({
+      ...current,
+      contactFields: current.contactFields.filter((field) => field.id !== id),
     }));
   };
 
@@ -307,6 +369,7 @@ export function CardEditor({
           ...form,
           avatarUrl: form.cardKind === "employee" ? "" : form.avatarUrl,
           suggestedQuestions: questions,
+          identityTitles,
           templateSourceCardId: "",
         },
         imageFile,
@@ -318,6 +381,8 @@ export function CardEditor({
           displayName: form.displayName,
           title: form.title,
           avatarUrl: imagePreview || resolveApiResourceUrl(form.avatarUrl),
+          identityTitles,
+          contactFields: form.contactFields,
         },
       });
       return;
@@ -347,6 +412,7 @@ export function CardEditor({
         // request intentionally clears its legacy duplicate field.
         avatarUrl: form.cardKind === "employee" ? "" : avatarUrl,
         suggestedQuestions: questions,
+        identityTitles,
       };
       if (item) {
         await adminApi.updateManagedCard(item.id, item.version, input);
@@ -487,6 +553,90 @@ export function CardEditor({
             </div>
             </>
           )}
+
+          <section className="card-identity-fields" aria-labelledby="card-identity-fields-title">
+            <div className="form-section-heading compact">
+              <div>
+                <h2 id="card-identity-fields-title">基础名片信息</h2>
+                <p>这些内容会真实保存，并显示在基础名片及可点击的联系快捷入口中。</p>
+              </div>
+            </div>
+            <Field label="身份头衔" hint="每次添加一个身份，每项独立成行；最多 8 个。" validationState={attempted && !titlesValid ? "error" : "none"} validationMessage={attempted && !titlesValid ? "最多 8 个头衔，每个不超过 80 个字符。" : undefined}>
+              <IdentityTitlesEditor values={form.identityTitles} disabled={saving} onChange={(values) => setForm((current) => ({ ...current, identityTitles: values }))} />
+            </Field>
+
+            <div className="card-contact-editor-heading">
+              <div>
+                <strong>联系与地址</strong>
+                <span>企业和员工名片都可配置；公开页会恢复为可点击的小方形入口。</span>
+              </div>
+              <Button
+                type="button"
+                appearance="secondary"
+                disabled={saving || form.contactFields.length >= 8}
+                onClick={() => addContactField()}
+              >
+                添加联系方式
+              </Button>
+            </div>
+            {form.contactFields.length ? (
+              <div className="card-contact-editor-list">
+                {form.contactFields.map((contact) => (
+                  <div className="card-contact-editor-row" key={contact.id}>
+                    <Field label="类型">
+                      <Select
+                        value={contact.kind}
+                        disabled={saving}
+                        onChange={(_, data) => {
+                          const kind = data.value as IdentityContactKind;
+                          updateContactField(contact.id, { kind, label: contactKindLabels[kind] });
+                        }}
+                      >
+                        {Object.entries(contactKindLabels).map(([value, label]) => (
+                          <option value={value} key={value}>{label}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="显示名称">
+                      <Input
+                        value={contact.label}
+                        disabled={saving}
+                        onChange={(_, data) => updateContactField(contact.id, { label: data.value })}
+                      />
+                    </Field>
+                    <Field label="内容">
+                      <Input
+                        value={contact.value}
+                        disabled={saving}
+                        placeholder={contact.kind === "location" ? "公司地址" : "公开显示的内容"}
+                        onChange={(_, data) => updateContactField(contact.id, { value: data.value })}
+                      />
+                    </Field>
+                    <Field label="点击目标（可选）" hint="支持 HTTPS、tel: 或 mailto:">
+                      <Input
+                        value={contact.href ?? ""}
+                        disabled={saving}
+                        placeholder={contact.kind === "website" ? "https://" : "留空则按内容自动处理"}
+                        onChange={(_, data) => updateContactField(contact.id, { href: data.value })}
+                      />
+                    </Field>
+                    <Button
+                      type="button"
+                      appearance="subtle"
+                      icon={<Delete24Regular />}
+                      aria-label={`删除${contact.label || "联系方式"}`}
+                      disabled={saving}
+                      onClick={() => removeContactField(contact.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="card-contact-editor-empty">
+                尚未添加自定义联系方式。员工手机号与邮箱仍由“企业员工”资料控制；可在这里补充微信、企业地址、官网等。
+              </div>
+            )}
+          </section>
 
           <section
             className={`card-image-upload ${form.cardKind}`}

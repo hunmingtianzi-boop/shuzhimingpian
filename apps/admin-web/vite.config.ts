@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ mode }) => {
@@ -9,6 +10,22 @@ export default defineConfig(({ mode }) => {
   return {
     envDir: "../..",
     plugins: [react()],
+    resolve: {
+      // A worktree can reuse an external pnpm store. Force libraries such as
+      // dnd-kit and the shared renderer onto the app's React instance so
+      // editor tests and dev preview never load two hook dispatchers.
+      dedupe: ["react", "react-dom"],
+      // Worktrees may share dependency stores; pin the shared renderer to the
+      // source that belongs to the current checkout so preview and public UI
+      // cannot silently fall back to an older worktree implementation.
+      alias: {
+        react: fileURLToPath(new URL("./node_modules/react", import.meta.url)),
+        "react-dom": fileURLToPath(new URL("./node_modules/react-dom", import.meta.url)),
+        "@cf/card-page-renderer": fileURLToPath(
+          new URL("../../packages/card-page-renderer/src/index.ts", import.meta.url),
+        ),
+      },
+    },
     server: {
       host: "127.0.0.1",
       port: 4174,

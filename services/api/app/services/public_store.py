@@ -83,11 +83,7 @@ from app.db.models import (
     VisitSummary,
     WeComCardContactWay,
 )
-from app.services.ai_configuration import (
-    ENVIRONMENT_LLM_SECRET_REF,
-    provision_chat_configuration,
-)
-from app.services.enterprise_template_defaults import merge_default_template_blocks
+from app.services.catalog_store import _merge_default_template_blocks
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +120,14 @@ class PublicEmployeeIdentity:
     business_summary: str | None
     email: str | None
     mobile: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicEnterpriseIdentity:
+    display_name: str
+    title: str
+    avatar_url: str | None
+    business_summary: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +184,10 @@ class PublicStore:
             )
             card_settings = card.settings if isinstance(card.settings, dict) else {}
             company_settings = company.settings if isinstance(company.settings, dict) else {}
+            enterprise_identity = _public_enterprise_identity(
+                card=card,
+                company=company,
+            )
             public_template = (
                 await _public_enterprise_template(
                     session,
@@ -243,21 +251,24 @@ class PublicStore:
                 display_name=(
                     employee_identity.display_name
                     if employee_identity is not None
-                    else card.display_name
+                    else enterprise_identity.display_name
                 ),
                 title=(
                     employee_identity.job_title or company.name
                     if employee_identity is not None
-                    else str(card_settings.get("title") or company.name)
+                    else enterprise_identity.title
                 ),
                 avatar_url=(
                     employee_identity.avatar_url
                     if employee_identity is not None
-                    else _optional_string(card_settings.get("avatar_url"))
+                    else enterprise_identity.avatar_url
                 ),
                 business_summary=(
-                    employee_identity.business_summary if employee_identity is not None else None
+                    employee_identity.business_summary
+                    if employee_identity is not None
+                    else enterprise_identity.business_summary
                 ),
+                identity_titles=_public_string_list(card_settings.get("identity_titles"), limit=8),
                 company=PublicCompany(
                     id=company.id,
                     name=company.name,
@@ -269,14 +280,20 @@ class PublicStore:
                     official_card_slug=official_card_slug,
                 ),
                 contact_fields=(
-                    _employee_contact_fields(
-                        employee_identity,
-                        _employee_contact_visibility(card_settings),
+                    _merge_public_contact_fields(
+                        _employee_contact_fields(
+                            employee_identity,
+                            _employee_contact_visibility(card_settings),
+                        ),
+                        _public_dict_list(
+                            card_settings.get("contact_fields"),
+                            allowed_keys=("id", "kind", "type", "label", "value", "href"),
+                        ),
                     )
                     if employee_identity is not None
                     else _public_dict_list(
                         card_settings.get("contact_fields"),
-                        allowed_keys=("label", "value", "href"),
+                        allowed_keys=("id", "kind", "type", "label", "value", "href"),
                     )
                 ),
                 wecom_contact=(
@@ -331,7 +348,6 @@ class PublicStore:
         slug: str,
         request: CreateVisitRequest,
         idempotency_key: str,
-        visitor_channel: str = "web",
     ) -> VisitSession:
         async with self._sessions() as session, session.begin():
             scope = await self._resolve_public_card(session, slug)
@@ -404,12 +420,6 @@ class PublicStore:
                     context={
                         "campaign": request.campaign,
                         "privacy_notice_version": request.privacy_notice_version,
-                        "visitor_channel": (
-                            visitor_channel
-                            if visitor_channel in {"web", "wechat", "wecom"}
-                            else "web"
-                        ),
-                        "visitor_identity_type": "anonymous",
                     },
                 )
                 # These models intentionally do not expose ORM relationships.
@@ -835,65 +845,6 @@ class PublicStore:
                 429,
                 "MODEL_BUDGET_EXCEEDED",
                 "今日 AI 服务额度已用完，请联系企业工作人员",
-            )
-
-    async def ensure_ai_configuration(
-        self,
-        *,
-        principal: VisitorPrincipal,
-        runtime_settings: Settings,
-        profile_id: uuid.UUID | None,
-    ) -> None:
-        """Provision the persistence metadata required by the active Chat runtime.
-
-        WeCom self-service enterprises are created without a tenant-specific
-        prompt/model row.  The model could therefore stream a complete answer and
-        only fail when ``persist_ai_answer`` tried to resolve those rows.  Keep this
-        preflight before the provider call so a visitor never sees an answer followed
-        by a contradictory configuration error.
-        """
-
-        async with self._sessions() as session, session.begin():
-            await self._set_principal_scope(session, principal)
-            card = await session.get(Card, principal.card_id)
-            if (
-                card is None
-                or card.tenant_id != principal.tenant_id
-                or card.company_id != principal.company_id
-            ):
-                raise ApiError(404, "RESOURCE_NOT_FOUND", "名片不存在")
-            publisher_id = card.responsible_user_id or card.owner_user_id
-            if publisher_id is None:
-                publisher_id = await session.scalar(
-                    select(Membership.user_id)
-                    .where(
-                        Membership.tenant_id == principal.tenant_id,
-                        Membership.company_id == principal.company_id,
-                        Membership.status == LifecycleStatus.ACTIVE,
-                    )
-                    .order_by(Membership.created_at, Membership.id)
-                    .limit(1)
-                )
-            if publisher_id is None:
-                raise ApiError(
-                    503,
-                    "AI_CONFIGURATION_MISSING",
-                    "企业 AI 配置尚未完成，请联系管理员",
-                )
-
-            await provision_chat_configuration(
-                session,
-                tenant_id=principal.tenant_id,
-                company_id=principal.company_id,
-                published_by=publisher_id,
-                published_at=datetime.now(UTC),
-                settings=runtime_settings,
-                secret_ref=(
-                    f"platform-llm-profile:{profile_id}"
-                    if profile_id is not None
-                    else ENVIRONMENT_LLM_SECRET_REF
-                ),
-                change_summary="Auto-provisioned for the active enterprise AI runtime",
             )
 
     async def load_forbidden_topic_rules(
@@ -1718,6 +1669,26 @@ async def _public_employee_identity(
     )
 
 
+def _public_enterprise_identity(*, card: Card, company: Company) -> PublicEnterpriseIdentity:
+    """Project enterprise identity from the company profile, with legacy fallbacks only."""
+
+    card_settings = card.settings if isinstance(card.settings, dict) else {}
+    company_settings = company.settings if isinstance(company.settings, dict) else {}
+    return PublicEnterpriseIdentity(
+        display_name=company.name or card.display_name,
+        title=str(
+            company_settings.get("business_positioning")
+            or company.industry
+            or card_settings.get("title")
+            or company.name
+        ),
+        avatar_url=_optional_string(company_settings.get("logo_url"))
+        or _optional_string(card_settings.get("avatar_url")),
+        business_summary=_optional_string(company_settings.get("summary"))
+        or _optional_string(card_settings.get("business_summary")),
+    )
+
+
 def _employee_contact_fields(
     identity: PublicEmployeeIdentity,
     visibility: set[str],
@@ -1725,13 +1696,46 @@ def _employee_contact_fields(
     fields: list[dict[str, str]] = []
     if "mobile" in visibility and identity.mobile:
         fields.append(
-            {"label": "工作手机", "value": identity.mobile, "href": f"tel:{identity.mobile}"}
+            {
+                "id": "employee-mobile",
+                "kind": "phone",
+                "type": "phone",
+                "label": "工作手机",
+                "value": identity.mobile,
+                "href": f"tel:{identity.mobile}",
+            }
         )
     if "email" in visibility and identity.email:
         fields.append(
-            {"label": "工作邮箱", "value": identity.email, "href": f"mailto:{identity.email}"}
+            {
+                "id": "employee-email",
+                "kind": "email",
+                "type": "email",
+                "label": "工作邮箱",
+                "value": identity.email,
+                "href": f"mailto:{identity.email}",
+            }
         )
     return fields
+
+
+def _merge_public_contact_fields(
+    canonical: list[dict[str, str]],
+    configured: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Merge explicit public card contacts without duplicating canonical employee fields."""
+
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in [*canonical, *configured]:
+        key = str(item.get("kind") or item.get("type") or item.get("label") or "").casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+        if len(result) >= 8:
+            break
+    return result
 
 
 def _employee_contact_visibility(settings: dict[str, Any]) -> set[str]:
@@ -1865,14 +1869,25 @@ async def _public_enterprise_template(
     if not isinstance(value, dict):
         return None
     raw_blocks = value.get("blocks") if isinstance(value.get("blocks"), list) else []
+    explicit_template = bool(raw_blocks)
     candidate = {
         **value,
-        "blocks": merge_default_template_blocks(raw_blocks),
+        "blocks": _merge_default_template_blocks(
+            raw_blocks,
+            explicit_template=explicit_template,
+        ),
     }
     try:
         document = EnterpriseTemplateDocument.model_validate(candidate)
     except ValidationError:
         return None
+    auto_product_collection = any(
+        block.visible
+        and block.type == "business_collection"
+        and block.id == "business"
+        and not block.product_ids
+        for block in document.blocks
+    )
     product_ids = {
         product_id
         for block in document.blocks
@@ -1880,21 +1895,35 @@ async def _public_enterprise_template(
         for product_id in block.product_ids
     }
     public_products: dict[uuid.UUID, Product] = {}
-    if product_ids:
+    ordered_public_product_ids: list[uuid.UUID] = []
+    if product_ids or auto_product_collection:
+        product_filters = [
+            Product.tenant_id == tenant_id,
+            Product.company_id == company_id,
+            Product.status == ContentStatus.PUBLISHED,
+            Product.visibility == Visibility.PUBLIC,
+            Product.published_at.is_not(None),
+            Product.published_at <= func.now(),
+            Product.deleted_at.is_(None),
+        ]
+        if not auto_product_collection:
+            product_filters.insert(0, Product.id.in_(product_ids))
         product_rows = (
             await session.scalars(
-                select(Product).where(
-                    Product.id.in_(product_ids),
-                    Product.tenant_id == tenant_id,
-                    Product.company_id == company_id,
-                    Product.status == ContentStatus.PUBLISHED,
-                    Product.visibility == Visibility.PUBLIC,
-                    Product.published_at.is_not(None),
-                    Product.deleted_at.is_(None),
-                )
+                select(Product)
+                .where(*product_filters)
+                .order_by(Product.sort_order.asc(), Product.created_at.asc(), Product.id.asc())
             )
         ).all()
         public_products = {row.id: row for row in product_rows}
+        ordered_public_product_ids = [row.id for row in product_rows]
+    auto_case_collection = any(
+        block.visible
+        and block.type == "case_collection"
+        and block.id == "cases"
+        and not block.case_ids
+        for block in document.blocks
+    )
     case_ids = {
         case_id
         for block in document.blocks
@@ -1902,32 +1931,53 @@ async def _public_enterprise_template(
         for case_id in block.case_ids
     }
     public_cases: dict[uuid.UUID, CaseStudy] = {}
-    if case_ids:
+    ordered_public_case_ids: list[uuid.UUID] = []
+    if case_ids or auto_case_collection:
+        case_filters = [
+            CaseStudy.tenant_id == tenant_id,
+            CaseStudy.company_id == company_id,
+            CaseStudy.status == ContentStatus.PUBLISHED,
+            CaseStudy.visibility == Visibility.PUBLIC,
+            CaseStudy.published_at.is_not(None),
+            CaseStudy.published_at <= func.now(),
+            CaseStudy.deleted_at.is_(None),
+        ]
+        if not auto_case_collection:
+            case_filters.insert(0, CaseStudy.id.in_(case_ids))
         case_rows = (
             await session.scalars(
-                select(CaseStudy).where(
-                    CaseStudy.id.in_(case_ids),
-                    CaseStudy.tenant_id == tenant_id,
-                    CaseStudy.company_id == company_id,
-                    CaseStudy.status == ContentStatus.PUBLISHED,
-                    CaseStudy.visibility == Visibility.PUBLIC,
-                    CaseStudy.published_at.is_not(None),
-                    CaseStudy.deleted_at.is_(None),
+                select(CaseStudy)
+                .where(*case_filters)
+                .order_by(
+                    CaseStudy.sort_order.asc(),
+                    CaseStudy.created_at.asc(),
+                    CaseStudy.id.asc(),
                 )
             )
         ).all()
         public_cases = {row.id: row for row in case_rows}
+        ordered_public_case_ids = [row.id for row in case_rows]
     blocks: list[dict[str, Any]] = []
     for block in document.blocks:
         if not block.visible:
             continue
-        asset_urls = [*block.image_urls]
+        asset_urls = [
+            *block.image_urls,
+            *(item.image_url for item in block.gallery_items),
+            *(item.image_url for item in block.product_overrides if item.image_url),
+            *(item.image_url for item in block.case_overrides if item.image_url),
+        ]
         if block.video_cover_url:
             asset_urls.append(block.video_cover_url)
-        if block.background and block.background.image_url:
-            asset_urls.append(block.background.image_url)
-        if block.content_image:
-            asset_urls.append(block.content_image.url)
+        if (
+            block.presentation is not None
+            and block.presentation.background is not None
+            and block.presentation.background.asset_url
+        ):
+            asset_urls.append(block.presentation.background.asset_url)
+        asset_urls.extend(
+            item.image_url for item in block.action_items if item.image_url is not None
+        )
         if any(not _is_scoped_card_asset(url, company_id) for url in asset_urls):
             continue
         if block.type == "business_collection" and set(block.product_ids) - set(public_products):
@@ -1935,47 +1985,116 @@ async def _public_enterprise_template(
         if block.type == "case_collection" and set(block.case_ids) - set(public_cases):
             continue
         payload = block.model_dump(mode="json")
+        if block.type == "image_gallery" and block.item_limit is not None:
+            payload["image_urls"] = payload["image_urls"][: block.item_limit]
+            payload["gallery_items"] = payload["gallery_items"][: block.item_limit]
+        if block.type == "action_collection" and block.item_limit is not None:
+            payload["action_items"] = payload["action_items"][: block.item_limit]
         if block.type == "business_collection":
+            selected_product_ids = (
+                ordered_public_product_ids
+                if block.id == "business" and not block.product_ids
+                else list(block.product_ids)
+            )
+            item_limit = block.item_limit or len(selected_product_ids)
+            overrides = {item.id: item for item in block.product_overrides}
+            payload["product_ids"] = [str(product_id) for product_id in selected_product_ids]
             payload["product_items"] = [
                 {
                     "id": str(product.id),
                     "slug": product.slug,
-                    "name": product.name,
-                    "category": product.category,
-                    "summary": product.summary,
-                    "image_url": product.image_url,
+                    "name": (
+                        override.title
+                        if (override := overrides.get(product.id)) and override.title
+                        else product.name
+                    ),
+                    "category": (
+                        override.category
+                        if override and override.category
+                        else product.category
+                    ),
+                    "summary": (
+                        override.summary
+                        if override and override.summary
+                        else product.summary
+                    ),
+                    "image_url": (
+                        override.image_url
+                        if override and override.image_url
+                        else product.image_url
+                    ),
+                    "cta_label": override.cta_label if override else None,
                 }
-                for product_id in block.product_ids
+                for product_id in selected_product_ids[:item_limit]
                 if (product := public_products.get(product_id)) is not None
             ]
         if block.type == "case_collection":
+            selected_case_ids = (
+                ordered_public_case_ids
+                if block.id == "cases" and not block.case_ids
+                else list(block.case_ids)
+            )
+            item_limit = block.item_limit or len(selected_case_ids)
+            overrides = {item.id: item for item in block.case_overrides}
+            payload["case_ids"] = [str(case_id) for case_id in selected_case_ids]
             payload["case_items"] = [
                 {
                     "id": str(case_study.id),
                     "slug": case_study.slug,
-                    "title": case_study.title,
-                    "industry": case_study.industry,
-                    "summary": case_study.result,
-                    "image_url": case_study.image_url,
+                    "title": (
+                        override.title
+                        if (override := overrides.get(case_study.id)) and override.title
+                        else case_study.title
+                    ),
+                    "industry": (
+                        override.industry
+                        if override and override.industry
+                        else case_study.industry
+                    ),
+                    "client_name": (
+                        override.client_name
+                        if override and override.client_name
+                        else case_study.client_display_name
+                    ),
+                    "background": (
+                        override.background
+                        if override and override.background
+                        else case_study.background
+                    ),
+                    "solution": (
+                        override.solution
+                        if override and override.solution
+                        else case_study.solution
+                    ),
+                    "summary": (
+                        override.summary
+                        if override and override.summary
+                        else case_study.solution
+                    ),
+                    "result": (
+                        override.result
+                        if override and override.result
+                        else case_study.result
+                    ),
+                    "metrics": (
+                        [metric.model_dump(mode="json") for metric in override.metrics]
+                        if override
+                        else []
+                    ),
+                    "image_url": (
+                        override.image_url
+                        if override and override.image_url
+                        else case_study.image_url
+                    ),
+                    "cta_label": override.cta_label if override else None,
                 }
-                for case_id in block.case_ids
+                for case_id in selected_case_ids[:item_limit]
                 if (case_study := public_cases.get(case_id)) is not None
             ]
         blocks.append(payload)
-    page_background = document.page_background
-    if (
-        page_background
-        and page_background.image_url
-        and not _is_scoped_card_asset(page_background.image_url, company_id)
-    ):
-        page_background = None
     return {
         "schema_version": document.schema_version,
         "theme_key": document.theme_key,
-        "page_background": (
-            page_background.model_dump(mode="json") if page_background else None
-        ),
-        "page_text_tone": document.page_text_tone,
         "blocks": blocks,
     }
 
@@ -2104,6 +2223,24 @@ def _public_dict_list(
         }
         if item:
             result.append(item)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _public_string_list(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw_item in value:
+        if not isinstance(raw_item, str):
+            continue
+        item = raw_item.strip()
+        key = item.casefold()
+        if item and key not in seen:
+            result.append(item)
+            seen.add(key)
         if len(result) >= limit:
             break
     return result

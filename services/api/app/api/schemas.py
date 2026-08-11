@@ -77,6 +77,7 @@ class PublicCard(StrictModel):
     title: str
     avatar_url: str | None = None
     business_summary: str | None = None
+    identity_titles: list[str] = Field(default_factory=list, max_length=8)
     contact_fields: list[dict[str, str]] = Field(default_factory=list)
     wecom_contact: PublicWeComContact | None = None
     company: PublicCompany

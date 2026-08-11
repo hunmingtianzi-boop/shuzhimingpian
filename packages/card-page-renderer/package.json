@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./card-studio-surface.css": "./src/card-studio-surface.css"
   },
   "peerDependencies": {
     "react": ">=19"

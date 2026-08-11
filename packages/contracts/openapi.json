@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "创非凡数智名片 API",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "description": "V1.0 MVP 开发契约基线。公开端点的企业作用域必须由 card slug 或访客会话在服务端推导。"
   },
   "paths": {
     "/health/live": {
@@ -488,55 +489,6 @@
         }
       }
     },
-    "/admin/setup/complete": {
-      "post": {
-        "tags": [
-          "Admin Content"
-        ],
-        "summary": "Complete Enterprise Setup",
-        "operationId": "completeEnterpriseSetup",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EnterpriseSetupEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/admin/knowledge/documents": {
       "get": {
         "tags": [
@@ -777,65 +729,6 @@
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Admin Content"
-        ],
-        "summary": "Delete Knowledge Document",
-        "operationId": "deleteKnowledgeDocument",
-        "parameters": [
-          {
-            "name": "document_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Document Id"
-            }
-          },
-          {
-            "name": "If-Match",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "If-Match"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -10734,65 +10627,6 @@
         }
       }
     },
-    "/admin/visits/{visit_id}": {
-      "get": {
-        "tags": [
-          "Business Workflow"
-        ],
-        "summary": "Get Visit Detail",
-        "operationId": "getAdminVisitDetail",
-        "parameters": [
-          {
-            "name": "visit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Visit Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VisitDetailEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/admin/conversations": {
       "get": {
         "tags": [
@@ -12587,216 +12421,6 @@
           }
         }
       }
-    },
-    "/integrations/wecom/suite/install-url": {
-      "get": {
-        "tags": [
-          "WeCom Provider"
-        ],
-        "summary": "Create Wecom Suite Install Url",
-        "operationId": "createWeComSuiteInstallUrl",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WeComOAuthUrlEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/integrations/wecom/suite/install-complete": {
-      "get": {
-        "tags": [
-          "WeCom Provider"
-        ],
-        "summary": "Complete Wecom Suite Install",
-        "operationId": "completeWeComSuiteInstall",
-        "parameters": [
-          {
-            "name": "auth_code",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 64,
-              "maxLength": 512,
-              "title": "Auth Code"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 64,
-              "maxLength": 64,
-              "title": "State"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/integrations/wecom/suite/callback": {
-      "get": {
-        "tags": [
-          "WeCom Provider"
-        ],
-        "summary": "Verify Wecom Suite Callback Url",
-        "operationId": "verifyWeComSuiteCallbackUrl",
-        "parameters": [
-          {
-            "name": "msg_signature",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 40,
-              "maxLength": 40,
-              "title": "Msg Signature"
-            }
-          },
-          {
-            "name": "timestamp",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 20,
-              "title": "Timestamp"
-            }
-          },
-          {
-            "name": "nonce",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "title": "Nonce"
-            }
-          },
-          {
-            "name": "echostr",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096,
-              "title": "Echostr"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "WeCom Provider"
-        ],
-        "summary": "Receive Wecom Suite Callback",
-        "operationId": "receiveWeComSuiteCallback",
-        "parameters": [
-          {
-            "name": "msg_signature",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 40,
-              "maxLength": 40,
-              "title": "Msg Signature"
-            }
-          },
-          {
-            "name": "timestamp",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 20,
-              "title": "Timestamp"
-            }
-          },
-          {
-            "name": "nonce",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "title": "Nonce"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -13409,10 +13033,6 @@
             "type": "string",
             "title": "Status"
           },
-          "onboarding_status": {
-            "type": "string",
-            "title": "Onboarding Status"
-          },
           "published_at": {
             "anyOf": [
               {
@@ -13445,7 +13065,6 @@
           "display_name",
           "title",
           "status",
-          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -13782,10 +13401,6 @@
             "type": "string",
             "title": "Status"
           },
-          "onboarding_status": {
-            "type": "string",
-            "title": "Onboarding Status"
-          },
           "version": {
             "type": "integer",
             "minimum": 1.0,
@@ -13805,7 +13420,6 @@
           "summary",
           "profile_personalization_policy_version",
           "status",
-          "onboarding_status",
           "version",
           "updated_at"
         ],
@@ -15973,41 +15587,6 @@
         ],
         "title": "EnterpriseRecord"
       },
-      "EnterpriseSetupEnvelope": {
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/EnterpriseSetupResult"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "EnterpriseSetupEnvelope"
-      },
-      "EnterpriseSetupResult": {
-        "properties": {
-          "completed": {
-            "type": "boolean",
-            "title": "Completed"
-          },
-          "company": {
-            "$ref": "#/components/schemas/CompanyProfile"
-          },
-          "card": {
-            "$ref": "#/components/schemas/CardProfile"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "completed",
-          "company",
-          "card"
-        ],
-        "title": "EnterpriseSetupResult"
-      },
       "EnterpriseTemplateBlock": {
         "properties": {
           "id": {
@@ -16187,70 +15766,6 @@
               }
             ],
             "title": "Cta Url"
-          },
-          "background": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "text_tone": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "light",
-              "dark"
-            ],
-            "title": "Text Tone",
-            "default": "auto"
-          },
-          "text_color": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^#[0-9a-fA-F]{6}$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Color"
-          },
-          "content_image": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnterpriseTemplateContentImage"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "size_preset": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "compact",
-              "standard",
-              "tall"
-            ],
-            "title": "Size Preset",
-            "default": "auto"
-          },
-          "padding_y": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "compact",
-              "standard",
-              "spacious"
-            ],
-            "title": "Padding Y",
-            "default": "auto"
           }
         },
         "additionalProperties": false,
@@ -16261,90 +15776,6 @@
         ],
         "title": "EnterpriseTemplateBlock",
         "description": "A deliberately small, safe block contract for public enterprise cards."
-      },
-      "EnterpriseTemplateBlockBackground": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "none",
-              "color",
-              "image"
-            ],
-            "title": "Kind",
-            "default": "none"
-          },
-          "color": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^#[0-9a-fA-F]{6}$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Color"
-          },
-          "image_url": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2048
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Url"
-          },
-          "fit": {
-            "type": "string",
-            "enum": [
-              "cover",
-              "contain"
-            ],
-            "title": "Fit",
-            "default": "cover"
-          },
-          "position_x": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Position X",
-            "default": 50
-          },
-          "position_y": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Position Y",
-            "default": 50
-          },
-          "overlay_color": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^#[0-9a-fA-F]{6}$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overlay Color",
-            "default": "#000000"
-          },
-          "overlay_opacity": {
-            "type": "number",
-            "maximum": 0.85,
-            "minimum": 0.0,
-            "title": "Overlay Opacity",
-            "default": 0
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "EnterpriseTemplateBlockBackground"
       },
       "EnterpriseTemplateCaseItem": {
         "properties": {
@@ -16411,92 +15842,6 @@
         ],
         "title": "EnterpriseTemplateCaseItem"
       },
-      "EnterpriseTemplateContentImage": {
-        "properties": {
-          "url": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Url"
-          },
-          "alt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 300
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alt"
-          },
-          "placement": {
-            "type": "string",
-            "enum": [
-              "top",
-              "bottom",
-              "left",
-              "right"
-            ],
-            "title": "Placement",
-            "default": "top"
-          },
-          "fit": {
-            "type": "string",
-            "enum": [
-              "cover",
-              "contain"
-            ],
-            "title": "Fit",
-            "default": "cover"
-          },
-          "aspect_ratio": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "square",
-              "standard",
-              "wide"
-            ],
-            "title": "Aspect Ratio",
-            "default": "wide"
-          },
-          "width_percent": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 100.0,
-                "minimum": 30.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Width Percent"
-          },
-          "position_x": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Position X",
-            "default": 50
-          },
-          "position_y": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Position Y",
-            "default": 50
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "url"
-        ],
-        "title": "EnterpriseTemplateContentImage"
-      },
       "EnterpriseTemplateDocument": {
         "properties": {
           "schema_version": {
@@ -16514,26 +15859,6 @@
             ],
             "title": "Theme Key",
             "default": "brand"
-          },
-          "page_background": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "page_text_tone": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "light",
-              "dark"
-            ],
-            "title": "Page Text Tone",
-            "default": "auto"
           },
           "blocks": {
             "items": {
@@ -23329,26 +22654,6 @@
             "title": "Theme Key",
             "default": "brand"
           },
-          "page_background": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "page_text_tone": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "light",
-              "dark"
-            ],
-            "title": "Page Text Tone",
-            "default": "auto"
-          },
           "blocks": {
             "items": {
               "$ref": "#/components/schemas/EnterpriseTemplateBlock"
@@ -23387,7 +22692,9 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2048
+                "maxLength": 2083,
+                "minLength": 1,
+                "format": "uri"
               },
               {
                 "type": "null"
@@ -23602,7 +22909,9 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2048
+                "maxLength": 2083,
+                "minLength": 1,
+                "format": "uri"
               },
               {
                 "type": "null"
@@ -23643,26 +22952,6 @@
             ],
             "title": "Theme Key",
             "default": "brand"
-          },
-          "page_background": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EnterpriseTemplateBlockBackground"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "page_text_tone": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "light",
-              "dark"
-            ],
-            "title": "Page Text Tone",
-            "default": "auto"
           },
           "blocks": {
             "items": {
@@ -24432,371 +23721,6 @@
         ],
         "title": "ValidationError"
       },
-      "VisitAction": {
-        "properties": {
-          "event_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Event Id"
-          },
-          "action_type": {
-            "type": "string",
-            "enum": [
-              "content_view",
-              "cta_click",
-              "share"
-            ],
-            "title": "Action Type"
-          },
-          "action_label": {
-            "type": "string",
-            "title": "Action Label"
-          },
-          "object_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Type"
-          },
-          "object_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Id"
-          },
-          "occurred_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Occurred At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "event_id",
-          "action_type",
-          "action_label",
-          "occurred_at"
-        ],
-        "title": "VisitAction"
-      },
-      "VisitBehaviorAnalysis": {
-        "properties": {
-          "summary": {
-            "type": "string",
-            "title": "Summary"
-          },
-          "engagement_score": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Engagement Score"
-          },
-          "engagement_level": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
-            "title": "Engagement Level"
-          },
-          "intent_level": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
-            "title": "Intent Level"
-          },
-          "tracked_duration_seconds": {
-            "type": "number",
-            "minimum": 0.0,
-            "title": "Tracked Duration Seconds"
-          },
-          "unique_pages": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Unique Pages"
-          },
-          "total_actions": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Total Actions"
-          },
-          "question_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Question Count"
-          },
-          "answered_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Answered Count"
-          },
-          "signals": {
-            "items": {
-              "$ref": "#/components/schemas/VisitBehaviorSignal"
-            },
-            "type": "array",
-            "title": "Signals"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "summary",
-          "engagement_score",
-          "engagement_level",
-          "intent_level",
-          "tracked_duration_seconds",
-          "unique_pages",
-          "total_actions",
-          "question_count",
-          "answered_count"
-        ],
-        "title": "VisitBehaviorAnalysis"
-      },
-      "VisitBehaviorSignal": {
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "engagement",
-              "interest",
-              "intent"
-            ],
-            "title": "Category"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "evidence": {
-            "type": "string",
-            "title": "Evidence"
-          },
-          "basis": {
-            "type": "string",
-            "enum": [
-              "observed",
-              "inferred"
-            ],
-            "title": "Basis"
-          },
-          "confidence": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "category",
-          "label",
-          "evidence",
-          "basis",
-          "confidence"
-        ],
-        "title": "VisitBehaviorSignal"
-      },
-      "VisitDetail": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "card_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Card Id"
-          },
-          "card_display_name": {
-            "type": "string",
-            "title": "Card Display Name"
-          },
-          "visitor_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Visitor Id"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Started At"
-          },
-          "ended_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ended At"
-          },
-          "duration_seconds": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Seconds"
-          },
-          "activity_status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "ended",
-              "estimated",
-              "unknown"
-            ],
-            "title": "Activity Status",
-            "default": "unknown"
-          },
-          "last_activity_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Activity At"
-          },
-          "duration_estimated": {
-            "type": "boolean",
-            "title": "Duration Estimated",
-            "default": false
-          },
-          "visitor_channel": {
-            "type": "string",
-            "enum": [
-              "web",
-              "wechat",
-              "wecom"
-            ],
-            "title": "Visitor Channel",
-            "default": "web"
-          },
-          "visitor_identity_type": {
-            "type": "string",
-            "enum": [
-              "anonymous",
-              "wecom_member",
-              "wechat_openid",
-              "wecom_external"
-            ],
-            "title": "Visitor Identity Type",
-            "default": "anonymous"
-          },
-          "visitor_identity_label": {
-            "type": "string",
-            "title": "Visitor Identity Label",
-            "default": "匿名网页访客"
-          },
-          "conversation_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Conversation Count"
-          },
-          "event_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Event Count"
-          },
-          "page_durations": {
-            "items": {
-              "$ref": "#/components/schemas/VisitPageDuration"
-            },
-            "type": "array",
-            "title": "Page Durations"
-          },
-          "page_timeline": {
-            "items": {
-              "$ref": "#/components/schemas/VisitPageTimelineItem"
-            },
-            "type": "array",
-            "title": "Page Timeline"
-          },
-          "actions": {
-            "items": {
-              "$ref": "#/components/schemas/VisitAction"
-            },
-            "type": "array",
-            "title": "Actions"
-          },
-          "questions": {
-            "items": {
-              "$ref": "#/components/schemas/VisitQuestion"
-            },
-            "type": "array",
-            "title": "Questions"
-          },
-          "behavior_analysis": {
-            "$ref": "#/components/schemas/VisitBehaviorAnalysis"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "card_id",
-          "card_display_name",
-          "visitor_id",
-          "started_at",
-          "conversation_count",
-          "event_count",
-          "behavior_analysis"
-        ],
-        "title": "VisitDetail"
-      },
-      "VisitDetailEnvelope": {
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/VisitDetail"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "VisitDetailEnvelope"
-      },
       "VisitEnvelope": {
         "properties": {
           "data": {
@@ -24992,60 +23916,6 @@
             ],
             "title": "Duration Seconds"
           },
-          "activity_status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "ended",
-              "estimated",
-              "unknown"
-            ],
-            "title": "Activity Status",
-            "default": "unknown"
-          },
-          "last_activity_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Activity At"
-          },
-          "duration_estimated": {
-            "type": "boolean",
-            "title": "Duration Estimated",
-            "default": false
-          },
-          "visitor_channel": {
-            "type": "string",
-            "enum": [
-              "web",
-              "wechat",
-              "wecom"
-            ],
-            "title": "Visitor Channel",
-            "default": "web"
-          },
-          "visitor_identity_type": {
-            "type": "string",
-            "enum": [
-              "anonymous",
-              "wecom_member",
-              "wechat_openid",
-              "wecom_external"
-            ],
-            "title": "Visitor Identity Type",
-            "default": "anonymous"
-          },
-          "visitor_identity_label": {
-            "type": "string",
-            "title": "Visitor Identity Label",
-            "default": "匿名网页访客"
-          },
           "conversation_count": {
             "type": "integer",
             "minimum": 0.0,
@@ -25098,220 +23968,6 @@
           "offset"
         ],
         "title": "VisitListEnvelope"
-      },
-      "VisitPageDuration": {
-        "properties": {
-          "page_key": {
-            "type": "string",
-            "title": "Page Key"
-          },
-          "page_title": {
-            "type": "string",
-            "title": "Page Title"
-          },
-          "object_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Type"
-          },
-          "object_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Id"
-          },
-          "duration_seconds": {
-            "type": "number",
-            "minimum": 0.0,
-            "title": "Duration Seconds"
-          },
-          "view_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "View Count"
-          },
-          "last_viewed_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Last Viewed At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "page_key",
-          "page_title",
-          "duration_seconds",
-          "view_count",
-          "last_viewed_at"
-        ],
-        "title": "VisitPageDuration"
-      },
-      "VisitPageTimelineItem": {
-        "properties": {
-          "sequence": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Sequence"
-          },
-          "page_key": {
-            "type": "string",
-            "title": "Page Key"
-          },
-          "page_title": {
-            "type": "string",
-            "title": "Page Title"
-          },
-          "object_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Type"
-          },
-          "object_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Object Id"
-          },
-          "entered_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Entered At"
-          },
-          "last_activity_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Last Activity At"
-          },
-          "duration_seconds": {
-            "type": "number",
-            "minimum": 0.0,
-            "title": "Duration Seconds"
-          },
-          "exit_reason": {
-            "type": "string",
-            "enum": [
-              "navigation",
-              "background",
-              "leave",
-              "timeout",
-              "active"
-            ],
-            "title": "Exit Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "sequence",
-          "page_key",
-          "page_title",
-          "entered_at",
-          "last_activity_at",
-          "duration_seconds",
-          "exit_reason"
-        ],
-        "title": "VisitPageTimelineItem"
-      },
-      "VisitQuestion": {
-        "properties": {
-          "message_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Message Id"
-          },
-          "conversation_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Conversation Id"
-          },
-          "question": {
-            "type": "string",
-            "title": "Question"
-          },
-          "asked_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Asked At"
-          },
-          "answer_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Answer Status"
-          },
-          "answer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Answer"
-          },
-          "answered_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Answered At"
-          },
-          "response_seconds": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Response Seconds"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "message_id",
-          "conversation_id",
-          "question",
-          "asked_at"
-        ],
-        "title": "VisitQuestion"
       },
       "VisitSession": {
         "properties": {
@@ -26292,5 +24948,11 @@
         "title": "WeComTestMessageRequest"
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api/v1",
+      "description": "Local"
+    }
+  ]
 }

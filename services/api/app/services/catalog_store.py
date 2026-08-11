@@ -54,12 +54,6 @@ from app.db.models import (
 from app.db.session import resolve_public_card_scope, set_rls_context
 from app.services.audit import append_audit
 from app.services.enterprise_content_store import effective_overrides
-from app.services.enterprise_template_defaults import (
-    default_enterprise_template as _default_enterprise_template,
-)
-from app.services.enterprise_template_defaults import (
-    merge_default_template_blocks as _merge_default_template_blocks,
-)
 
 _CARD_SLUG_ATTEMPTS = 8
 
@@ -1250,18 +1244,6 @@ class CatalogStore:
         document: EnterpriseTemplateDocument,
         require_public_cases: bool,
     ) -> EnterpriseTemplateDocument:
-        if (
-            document.page_background
-            and document.page_background.image_url
-            and not card_asset_belongs_to_company(
-                document.page_background.image_url, scope.company_id
-            )
-        ):
-            raise ApiError(
-                422,
-                "TEMPLATE_ASSET_OUT_OF_SCOPE",
-                "模板图片必须来自当前企业的名片素材库",
-            )
         for block in document.blocks:
             if block.case_items or block.product_items:
                 raise ApiError(
@@ -1269,11 +1251,24 @@ class CatalogStore:
                     "TEMPLATE_SERVER_FIELDS_FORBIDDEN",
                     "产品与案例展示数据由服务端生成",
                 )
+            identity_background_url = (
+                block.presentation.background.asset_url
+                if block.presentation is not None and block.presentation.background is not None
+                else None
+            )
+            action_image_urls = [item.image_url for item in block.action_items]
+            gallery_image_urls = [item.image_url for item in block.gallery_items]
+            override_image_urls = [
+                *(item.image_url for item in block.product_overrides),
+                *(item.image_url for item in block.case_overrides),
+            ]
             for image_url in [
                 *block.image_urls,
+                *gallery_image_urls,
                 block.video_cover_url,
-                block.background.image_url if block.background else None,
-                block.content_image.url if block.content_image else None,
+                identity_background_url,
+                *action_image_urls,
+                *override_image_urls,
             ]:
                 if image_url and not card_asset_belongs_to_company(image_url, scope.company_id):
                     raise ApiError(
@@ -1302,6 +1297,7 @@ class CatalogStore:
                         Product.status == ContentStatus.PUBLISHED,
                         Product.visibility == Visibility.PUBLIC,
                         Product.published_at.is_not(None),
+                        Product.published_at <= func.now(),
                     ]
                 )
             rows = (await session.scalars(select(Product).where(*filters))).all()
@@ -1333,6 +1329,7 @@ class CatalogStore:
                         CaseStudy.status == ContentStatus.PUBLISHED,
                         CaseStudy.visibility == Visibility.PUBLIC,
                         CaseStudy.published_at.is_not(None),
+                        CaseStudy.published_at <= func.now(),
                     ]
                 )
             rows = (await session.scalars(select(CaseStudy).where(*filters))).all()
@@ -1365,36 +1362,55 @@ class CatalogStore:
                     "模板问答必须是当前企业已发布且公开的 FAQ",
                 )
 
-        projected_blocks = []
+        projected_blocks: list[dict[str, Any]] = []
         for block in document.blocks:
+            product_overrides = {item.id: item for item in block.product_overrides}
             product_items = [
                 {
                     "id": str(product.id),
                     "slug": product.slug,
-                    "name": product.name,
-                    "category": product.category,
-                    "summary": product.summary,
-                    "image_url": product.image_url,
+                    "name": override.title if (override := product_overrides.get(product.id)) and override.title else product.name,
+                    "category": override.category if override and override.category else product.category,
+                    "summary": override.summary if override and override.summary else product.summary,
+                    "image_url": override.image_url if override and override.image_url else product.image_url,
+                    "cta_label": override.cta_label if override else None,
                 }
                 for product_id in block.product_ids
                 if (product := products.get(product_id)) is not None
             ]
+            case_overrides = {item.id: item for item in block.case_overrides}
             case_items = [
                 {
                     "id": str(case.id),
                     "slug": case.slug,
-                    "title": case.title,
-                    "industry": case.industry,
-                    "summary": case.result,
-                    "image_url": case.image_url,
+                    "title": override.title if (override := case_overrides.get(case.id)) and override.title else case.title,
+                    "industry": override.industry if override and override.industry else case.industry,
+                    "client_name": override.client_name if override and override.client_name else case.client_display_name,
+                    "background": override.background if override and override.background else case.background,
+                    "solution": override.solution if override and override.solution else case.solution,
+                    "summary": override.summary if override and override.summary else case.solution,
+                    "result": override.result if override and override.result else case.result,
+                    "metrics": [metric.model_dump(mode="json") for metric in override.metrics] if override else [],
+                    "image_url": override.image_url if override and override.image_url else case.image_url,
+                    "cta_label": override.cta_label if override else None,
                 }
                 for case_id in block.case_ids
                 if (case := cases.get(case_id)) is not None
             ]
             projected_blocks.append(
-                block.model_copy(update={"product_items": product_items, "case_items": case_items})
+                {
+                    **block.model_dump(mode="json"),
+                    "product_items": product_items,
+                    "case_items": case_items,
+                }
             )
-        return document.model_copy(update={"blocks": projected_blocks})
+        return EnterpriseTemplateDocument.model_validate(
+            {
+                "schema_version": document.schema_version,
+                "theme_key": document.theme_key,
+                "blocks": projected_blocks,
+            }
+        )
 
     async def _ensure_enterprise_publishable(
         self,
@@ -1410,10 +1426,15 @@ class CatalogStore:
         missing: list[str] = []
         if company is None or not company.name.strip():
             missing.append("company_name")
-        if not (_string_value(settings.get("title")) or "").strip():
+        positioning = (
+            _string_value(company_settings.get("business_positioning"))
+            or (company.industry if company is not None else None)
+            or _string_value(settings.get("title"))
+        )
+        if not (positioning or "").strip():
             missing.append("business_positioning")
-        brand_asset = _string_value(settings.get("avatar_url")) or _string_value(
-            company_settings.get("logo_url")
+        brand_asset = _string_value(company_settings.get("logo_url")) or _string_value(
+            settings.get("avatar_url")
         )
         if not brand_asset:
             missing.append("brand_identity")
@@ -1441,7 +1462,11 @@ class CatalogStore:
         )
         template_contact = any(
             block.visible
-            and ((block.type == "cta" and bool(block.cta_url)) or block.type == "ai_assistant")
+            and (
+                (block.type == "cta" and bool(block.cta_url))
+                or (block.type == "action_collection" and bool(block.action_items))
+                or block.type == "ai_assistant"
+            )
             for block in document.blocks
         )
         if not website and contact_field is None and wecom_contact is None and not template_contact:
@@ -1870,6 +1895,8 @@ class CatalogStore:
             welcome_message=_string_value(settings.get("welcome_message")),
             suggested_questions=_string_list(settings.get("suggested_questions"), limit=6),
             policy_versions=_string_dict(settings.get("policy_versions")),
+            identity_titles=_string_list(settings.get("identity_titles"), limit=8),
+            contact_fields=settings.get("contact_fields", []),
             employee_contact_visibility=_employee_contact_visibility(settings),
             status=card.status.value,
             published_at=card.published_at,
@@ -1923,6 +1950,11 @@ def _card_settings(body: CreateCardRequest | UpdateManagedCardRequest) -> dict[s
         "welcome_message": body.welcome_message,
         "suggested_questions": list(body.suggested_questions),
         "policy_versions": dict(body.policy_versions),
+        "identity_titles": list(body.identity_titles),
+        "contact_fields": [
+            item.model_dump(mode="json", exclude_none=True)
+            for item in body.contact_fields
+        ],
     }
 
 
@@ -1936,6 +1968,11 @@ def _employee_card_expression_settings(
         "welcome_message": body.welcome_message,
         "suggested_questions": list(body.suggested_questions),
         "policy_versions": dict(body.policy_versions),
+        "identity_titles": list(body.identity_titles),
+        "contact_fields": [
+            item.model_dump(mode="json", exclude_none=True)
+            for item in body.contact_fields
+        ],
         "employee_contact_visibility": list(body.employee_contact_visibility),
     }
 
@@ -1959,12 +1996,126 @@ def _employee_contact_visibility(value: object) -> list[str]:
     return [field for field in ("mobile", "email") if field in raw]
 
 
+def _default_enterprise_template() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "theme_key": "brand",
+        "blocks": [
+            {
+                "id": "identity",
+                "type": "identity",
+                "visible": True,
+                "directory_enabled": False,
+                "sort_order": 0,
+                "title": "基础名片",
+            },
+            {
+                "id": "overview",
+                "type": "rich_text",
+                "visible": True,
+                "sort_order": 1,
+                "title": "概览",
+            },
+            {
+                "id": "intro",
+                "type": "rich_text",
+                "visible": True,
+                "sort_order": 2,
+                "title": "企业介绍",
+            },
+            {
+                "id": "business",
+                "type": "business_collection",
+                "visible": True,
+                "sort_order": 3,
+                "title": "核心业务",
+            },
+            {
+                "id": "cases",
+                "type": "case_collection",
+                "visible": True,
+                "sort_order": 4,
+                "title": "代表案例",
+            },
+            {
+                "id": "trust",
+                "type": "trust_panel",
+                "visible": True,
+                "sort_order": 5,
+                "title": "企业资料",
+            },
+            {"id": "faq", "type": "faq", "visible": True, "sort_order": 6, "title": "常见问题"},
+            {
+                "id": "ai",
+                "type": "ai_assistant",
+                "visible": True,
+                "sort_order": 7,
+                "title": "企业 AI 助手",
+            },
+        ],
+    }
+
+
+def _merge_default_template_blocks(
+    blocks: list[object],
+    *,
+    explicit_template: bool | None = None,
+) -> list[object]:
+    indexed = [(index, block) for index, block in enumerate(blocks) if isinstance(block, dict)]
+    merged = [
+        block
+        for _, block in sorted(
+            indexed,
+            key=lambda item: (
+                item[1].get("sort_order")
+                if isinstance(item[1].get("sort_order"), int)
+                else item[0],
+                item[0],
+            ),
+        )
+    ]
+    # A missing/empty historical document predates the composer and therefore
+    # receives the full compatibility template.  A non-empty document is an
+    # explicit user choice: only repair the identity invariant and never
+    # resurrect optional modules that the editor removed.
+    is_explicit_template = bool(merged) if explicit_template is None else explicit_template
+    if not is_explicit_template:
+        return [dict(block) for block in _default_enterprise_template()["blocks"]]
+
+    identity_indexes = [
+        index for index, block in enumerate(merged) if block.get("type") == "identity"
+    ]
+    if identity_indexes:
+        identity_index = identity_indexes[0]
+        identity = merged[identity_index]
+        merged[identity_index] = {
+            **identity,
+            "visible": True,
+            "directory_enabled": identity.get("directory_enabled", False),
+        }
+        for duplicate_index in reversed(identity_indexes[1:]):
+            merged.pop(duplicate_index)
+    else:
+        merged.insert(
+            0,
+            {
+                "id": "identity",
+                "type": "identity",
+                "visible": True,
+                "directory_enabled": False,
+                "sort_order": 0,
+                "title": "基础名片",
+            },
+        )
+    return [{**block, "sort_order": index} for index, block in enumerate(merged)]
+
+
 def _require_complete_template_blocks(document: EnterpriseTemplateDocument) -> None:
     incomplete: list[str] = []
     for block in document.blocks:
         if not block.visible:
             continue
-        if block.type == "image_gallery" and not block.image_urls:
+        if block.type == "image_gallery" and not block.image_urls and not block.gallery_items:
             incomplete.append(block.id)
         elif block.type == "video_link" and (not block.video_url or not block.video_cover_url):
             incomplete.append(block.id)
@@ -1977,6 +2128,8 @@ def _require_complete_template_blocks(document: EnterpriseTemplateDocument) -> N
         elif block.type == "faq" and block.faq_mode == "selected" and not block.faq_document_ids:
             incomplete.append(block.id)
         elif block.type == "cta" and (not block.cta_label or not block.cta_url):
+            incomplete.append(block.id)
+        elif block.type == "action_collection" and not block.action_items:
             incomplete.append(block.id)
     if incomplete:
         raise ApiError(

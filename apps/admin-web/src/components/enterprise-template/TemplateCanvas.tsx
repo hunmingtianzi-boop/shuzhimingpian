@@ -20,12 +20,13 @@ import {
   type CardPageCase,
   type CardPageProduct,
 } from "@cf/card-page-renderer";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import type {
   CaseStudy,
   EnterpriseTemplateBlock,
-  EnterpriseTemplateBlockBackground,
+  EnterpriseTemplateThemeKey,
+  IdentityContactField,
   ManagedCard,
   Product,
   SelectableFaqDocument,
@@ -34,8 +35,7 @@ import { resolveApiResourceUrl } from "../../lib/resourceUrl";
 
 export type TemplateCanvasProps = {
   blocks: EnterpriseTemplateBlock[];
-  pageBackground?: EnterpriseTemplateBlockBackground;
-  pageTextTone?: "auto" | "light" | "dark";
+  themeKey?: EnterpriseTemplateThemeKey;
   products: Product[];
   cases: CaseStudy[];
   faqItems: SelectableFaqDocument[];
@@ -47,6 +47,8 @@ export type TemplateCanvasProps = {
     companyName?: string;
     summary?: string;
     positioning?: string;
+    identityTitles?: string[];
+    contactFields?: IdentityContactField[];
   };
   selectedBlockId?: string;
   onSelectBlock: (blockId: string) => void;
@@ -58,6 +60,19 @@ type DraftCanvasView =
   | { kind: "case"; item: CaseStudy }
   | { kind: "assistant"; question?: string }
   | null;
+
+function previewContactHref(contact: IdentityContactField) {
+  if (contact.href?.trim()) return contact.href.trim();
+  const value = contact.value.trim();
+  if (!value) return undefined;
+  if (contact.kind === "phone") return `tel:${value.replace(/[^+\d]/g, "")}`;
+  if (contact.kind === "email") return `mailto:${value}`;
+  if (contact.kind === "location") {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`;
+  }
+  if (contact.kind === "website") return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return undefined;
+}
 
 function CanvasDragHandle({ block }: { block: CardPageBlock }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -152,10 +167,9 @@ function CanvasAssistantView({
   );
 }
 
-export function TemplateCanvas({
+function TemplateCanvasComponent({
   blocks,
-  pageBackground,
-  pageTextTone,
+  themeKey = "brand",
   products,
   cases,
   faqItems,
@@ -193,11 +207,10 @@ export function TemplateCanvas({
         ) : draftView?.kind === "assistant" ? (
           <CanvasAssistantView question={draftView.question} onBack={() => setDraftView(null)} />
         ) : (
+          <div className="template-canvas-live-page">
           <CardPageExperience
             blocks={blocks}
-            pageBackground={pageBackground}
-            pageTextTone={pageTextTone}
-            className="template-shared-card-page"
+            className={`template-shared-card-page template-theme-${themeKey}`}
             data={{
               identity: {
                 kind: identity.cardKind,
@@ -208,6 +221,14 @@ export function TemplateCanvas({
                 verificationLabel: "企业认证",
                 summary: identity.summary,
                 positioning: identity.positioning,
+                titles: identity.identityTitles,
+                contacts: identity.contactFields?.map((contact) => ({
+                  id: contact.id,
+                  kind: contact.kind,
+                  label: contact.label,
+                  value: contact.value,
+                  href: previewContactHref(contact),
+                })),
               },
               products: products.map((item) => ({
                 id: item.id,
@@ -239,12 +260,15 @@ export function TemplateCanvas({
               onOpenCase: openCase,
               onAssistant: (question) => setDraftView({ kind: "assistant", question }),
             }}
+            shell={{
+              title: identity.cardKind === "employee" ? "员工数字名片" : "企业官方名片",
+              primaryAction: { label: "咨询 AI", onClick: () => setDraftView({ kind: "assistant" }) },
+              secondaryAction: { label: "提交合作需求", onClick: () => undefined },
+            }}
             directory={{
               ariaLabel: "企业名片内容导航预览",
               onNavigate: (blockId) => {
                 onSelectBlock(blockId);
-                const target = document.getElementById(`bp-template-block-${blockId}`);
-                target?.scrollIntoView({ behavior: "smooth", block: "start" });
               },
             }}
             resolveResourceUrl={(url) => resolveApiResourceUrl(url) ?? url}
@@ -254,8 +278,27 @@ export function TemplateCanvas({
               renderBlockHandle: (block) => <CanvasDragHandle block={block} />,
             }}
           />
+          </div>
         )}
       </SortableContext>
     </DndContext>
   );
 }
+
+export const TemplateCanvas = memo(TemplateCanvasComponent, (previous, next) => (
+  previous.blocks === next.blocks
+  && previous.themeKey === next.themeKey
+  && previous.products === next.products
+  && previous.cases === next.cases
+  && previous.faqItems === next.faqItems
+  && previous.selectedBlockId === next.selectedBlockId
+  && previous.identity.cardKind === next.identity.cardKind
+  && previous.identity.displayName === next.identity.displayName
+  && previous.identity.title === next.identity.title
+  && previous.identity.avatarUrl === next.identity.avatarUrl
+  && previous.identity.companyName === next.identity.companyName
+  && previous.identity.summary === next.identity.summary
+  && previous.identity.positioning === next.identity.positioning
+  && previous.identity.identityTitles === next.identity.identityTitles
+  && previous.identity.contactFields === next.identity.contactFields
+));

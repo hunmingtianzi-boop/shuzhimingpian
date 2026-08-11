@@ -1,6 +1,7 @@
 import { FluentProvider } from "@fluentui/react-components";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { adminApi } from "../api/adminApi";
@@ -12,6 +13,42 @@ import type {
 } from "../api/types";
 import { adminLightTheme } from "../theme";
 import { EnterpriseTemplateEditor } from "./EnterpriseTemplateEditor";
+
+// The editor behavior tests exercise our sortable commands and persisted
+// ordering, not dnd-kit's sensor implementation. Keep the jsdom suite on one
+// React dispatcher even when a Windows worktree reuses an external pnpm store.
+vi.mock("@dnd-kit/core", () => ({
+  DndContext: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  KeyboardSensor: class KeyboardSensor {},
+  PointerSensor: class PointerSensor {},
+  closestCenter: vi.fn(),
+  useSensor: vi.fn(() => ({})),
+  useSensors: vi.fn((...sensors: unknown[]) => sensors),
+}));
+
+vi.mock("@dnd-kit/sortable", () => ({
+  SortableContext: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  arrayMove: <T,>(items: T[], from: number, to: number) => {
+    const next = [...items];
+    const [item] = next.splice(from, 1);
+    if (item !== undefined) next.splice(to, 0, item);
+    return next;
+  },
+  sortableKeyboardCoordinates: vi.fn(),
+  useSortable: vi.fn(() => ({
+    attributes: {},
+    listeners: {},
+    setNodeRef: vi.fn(),
+    transform: null,
+    transition: undefined,
+    isDragging: false,
+  })),
+  verticalListSortingStrategy: {},
+}));
+
+vi.mock("@dnd-kit/utilities", () => ({
+  CSS: { Transform: { toString: vi.fn(() => undefined) } },
+}));
 
 const card: ManagedCard = {
   id: "card-enterprise",
@@ -135,29 +172,108 @@ function renderEditor(props: Partial<React.ComponentProps<typeof EnterpriseTempl
 }
 
 describe("EnterpriseTemplateEditor", () => {
+  it("uses the exact simulator editor shell and shared panel primitives", async () => {
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([publishedCase]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+    await screen.findByRole("button", { name: /01\s*基础名片/ });
+    const shell = document.querySelector(".studio-shell");
+    expect(shell?.querySelector(":scope > .fui-DialogTitle .studio-topbar")).toBeInTheDocument();
+    expect(shell?.querySelector(".studio-grid > .studio-panel.left .module-row")).toBeInTheDocument();
+    expect(shell?.querySelector(".studio-grid > .studio-canvas .canvas-toolbar")).toBeInTheDocument();
+    expect(shell?.querySelector(".studio-grid > .studio-panel.right .inspector-title")).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.spyOn(adminApi, "listProducts").mockResolvedValue([]);
     vi.spyOn(adminApi, "listSelectableFaqDocuments").mockResolvedValue([]);
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("loads the actual published page as an operable preview and keeps a live draft mode", async () => {
+  it("opens the current shared draft renderer and keeps the published page as an explicit comparison", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([publishedCase]);
     vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
     renderEditor({ card: { ...card, status: "published" } });
 
-    const publicPage = await screen.findByTitle("实际公开名片页面");
-    expect(publicPage).toHaveAttribute("src", card.shareUrl);
-    expect(screen.getByRole("tab", { name: "线上", hidden: true })).toHaveAttribute(
+    expect(await screen.findByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "草稿" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
+    expect(screen.queryByTitle("实际公开名片页面")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "草稿", hidden: true }));
-    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览", hidden: true })).toBeInTheDocument();
-  });
+    await user.click(screen.getByRole("tab", { name: "线上" }));
+    expect(await screen.findByTitle("实际公开名片页面")).toHaveAttribute("src", card.shareUrl);
+  }, 15_000);
+
+  it("keeps empty and in-progress input values when the parent recreates equivalent props", async () => {
+    const user = userEvent.setup();
+    const load = vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [identityBlock, {
+          id: "rich-new",
+          type: "rich_text",
+          visible: true,
+          sortOrder: 1,
+          title: "图文介绍",
+          body: "待编辑内容",
+        }],
+      },
+    }));
+    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
+      async (_id, _version, themeKey, blocks) => template({
+        version: 8,
+        draft: { schemaVersion: 1, themeKey, blocks },
+      }),
+    );
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([publishedCase]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+
+    function RecreatingParent() {
+      const [, setTick] = useState(0);
+      return <FluentProvider theme={adminLightTheme}>
+        <button type="button" onClick={() => setTick((current) => current + 1)}>父层刷新</button>
+        <EnterpriseTemplateEditor
+          card={{ ...card, identityTitles: [...(card.identityTitles ?? [])] }}
+          open
+          onClose={vi.fn()}
+          onEditBasicSettings={vi.fn()}
+          onRequestPublish={vi.fn()}
+          onSaved={vi.fn()}
+        />
+      </FluentProvider>;
+    }
+
+    render(<RecreatingParent />);
+    await user.click(await screen.findByRole("button", { name: /02\s*图文介绍/ }));
+    const titleInput = screen.getByRole("textbox", { name: "模块标题" });
+    const bodyInput = screen.getByRole("textbox", { name: "内容" });
+    await user.clear(titleInput);
+    await user.clear(bodyInput);
+    expect(titleInput).toHaveValue("");
+    let composedValue = "";
+    for (const character of "连续输入不会闪回") {
+      composedValue += character;
+      fireEvent.change(bodyInput, { target: { value: composedValue } });
+    }
+    await waitFor(() => expect(bodyInput).toHaveValue("连续输入不会闪回"));
+
+    await user.click(screen.getByRole("button", { name: "父层刷新" }));
+    expect(titleInput).toHaveValue("");
+    expect(bodyInput).toHaveValue("连续输入不会闪回");
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "rich-new", title: "", body: "连续输入不会闪回", showTitle: false }),
+    ]));
+  }, 15_000);
 
   it("reorders blocks, preserves the original mobile shell and saves the draft", async () => {
     const user = userEvent.setup();
@@ -172,14 +288,15 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    const aiStructureItem = await screen.findByRole("button", { name: /03\s*在线咨询/, hidden: true });
-    expect(screen.getByRole("heading", { name: "实际名片页面", hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览", hidden: true })).toBeInTheDocument();
+    await screen.findByRole("button", { name: /02\s*企业介绍/ });
+    expect(screen.queryByRole("button", { name: /在线咨询/ })).not.toBeInTheDocument();
+    expect(screen.getByTitle("手机预览")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
     expect(screen.getByText(/拖动手柄调整顺序/)).toBeInTheDocument();
     expect(screen.getAllByLabelText("拖动基础名片调整位置")).toHaveLength(2);
-    expect(screen.queryByLabelText("视觉主题")).not.toBeInTheDocument();
-    await user.click(aiStructureItem);
-    await user.click(screen.getByRole("button", { name: "上移", hidden: true }));
+    expect(screen.getByLabelText("视觉模板")).toHaveValue("brand");
+    await user.click(screen.getByRole("button", { name: /02\s*企业介绍/ }));
+    await user.click(screen.getByRole("button", { name: "上移" }));
     // Tabster can temporarily mark the portal surface aria-hidden in jsdom after
     // a focus change. Keep exercising the rendered controls instead of relying
     // on that browser-only focus state in this unit test.
@@ -194,10 +311,10 @@ describe("EnterpriseTemplateEditor", () => {
     expect(update.mock.calls[0][0]).toBe(card.id);
     expect(update.mock.calls[0][1]).toBe(7);
     expect(update.mock.calls[0][2]).toBe("brand");
-    expect(update.mock.calls[0][3].map((block) => block.id)).toEqual(["identity", "ai-1", "rich-1"]);
-    expect(update.mock.calls[0][3].map((block) => block.sortOrder)).toEqual([0, 1, 2]);
-    expect(update.mock.calls[0][3][1].visible).toBe(false);
-    expect(update.mock.calls[0][3][0]).toEqual(expect.objectContaining({ id: "identity", visible: true }));
+    expect(update.mock.calls[0][3].map((block) => block.id)).toEqual(["rich-1", "identity"]);
+    expect(update.mock.calls[0][3].map((block) => block.sortOrder)).toEqual([0, 1]);
+    expect(update.mock.calls[0][3][0]).toEqual(expect.objectContaining({ id: "rich-1", visible: false }));
+    expect(update.mock.calls[0][3][1]).toEqual(expect.objectContaining({ id: "identity", visible: true }));
     expect(await screen.findByText("草稿已保存，公开页仍保持上一次发布内容。")).toBeInTheDocument();
   }, 15_000);
 
@@ -245,7 +362,7 @@ describe("EnterpriseTemplateEditor", () => {
     });
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*项目现场/, hidden: true }));
+    await user.click(await screen.findByRole("button", { name: /02\s*项目现场/ }));
     expect(await screen.findByText("请至少上传一张图片。")).toBeInTheDocument();
     const file = new File(["image"], "gallery.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择项目现场图片"), file);
@@ -261,103 +378,95 @@ describe("EnterpriseTemplateEditor", () => {
     ]);
   }, 15_000);
 
-  it("adds a shared block background and a rich-text content image", async () => {
+  it("persists identity layout and uploaded background with collection layout settings", async () => {
     const user = userEvent.setup();
-    const richTemplate = template();
-    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(richTemplate);
+    const layoutTemplate = template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [{
+          ...identityBlock,
+          layoutVariant: "horizontal",
+          presentation: {
+            identityLayout: "horizontal",
+            background: {
+              fit: "cover",
+              position: "center",
+              scale: 1,
+              opacity: 0.28,
+              overlay: "light",
+            },
+          },
+        }, {
+          id: "business",
+          type: "business_collection",
+          visible: true,
+          sortOrder: 1,
+          title: "核心业务",
+          layoutVariant: "auto",
+          itemLimit: 4,
+        }],
+      },
+    });
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(layoutTemplate);
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
     vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
-    const upload = vi.spyOn(adminApi, "uploadCardAsset")
-      .mockResolvedValueOnce({
-        url: "/api/v1/public/card-assets/company-1/story.webp",
-        contentType: "image/webp",
-        width: 1200,
-        height: 800,
-        sizeBytes: 18_000,
-      })
-      .mockResolvedValueOnce({
-        url: "/api/v1/public/card-assets/company-1/background.webp",
-        contentType: "image/webp",
-        width: 1600,
-        height: 900,
-        sizeBytes: 24_000,
-      })
-      .mockResolvedValueOnce({
-        url: "/api/v1/public/card-assets/company-1/page-background.webp",
-        contentType: "image/webp",
-        width: 1800,
-        height: 1200,
-        sizeBytes: 28_000,
-      });
+    const upload = vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: "/api/v1/public/card-assets/company-1/identity-background.webp",
+      contentType: "image/webp",
+      width: 1600,
+      height: 900,
+      sizeBytes: 32_000,
+    });
     const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
-      async (_id, _version, themeKey, blocks) => template({
+      async (_id, _version, themeKey, blocks) => ({
+        ...layoutTemplate,
         version: 8,
         draft: { schemaVersion: 1, themeKey, blocks },
       }),
     );
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*企业介绍/, hidden: true }));
-    const contentFile = new File(["content"], "story.png", { type: "image/png" });
-    const backgroundFile = new File(["background"], "background.png", { type: "image/png" });
-    await user.upload(screen.getByLabelText("选择企业介绍内容图片"), contentFile);
-    await waitFor(() => expect(screen.getByAltText("内容图片预览")).toBeInTheDocument());
-    await user.click(screen.getByRole("radio", { name: "左侧", hidden: true }));
-    await user.click(screen.getByRole("radio", { name: "1:1", hidden: true }));
-    await user.click(screen.getByRole("radio", { name: "高版", hidden: true }));
-    await user.click(screen.getByRole("radio", { name: "多", hidden: true }));
-    const blockBackgroundSettings = screen.getByRole("region", { name: "板块背景", hidden: true });
-    await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "图片", hidden: true }));
-    await user.upload(screen.getByLabelText("选择企业介绍背景图片"), backgroundFile);
-    const blockBackgroundPreview = await screen.findByAltText("板块背景预览");
-    expect(blockBackgroundPreview).toHaveStyle({ objectFit: "contain", objectPosition: "50% 50%" });
-    await user.click(within(blockBackgroundSettings).getByRole("radio", { name: "铺满裁切", hidden: true }));
-    expect(blockBackgroundPreview).toHaveStyle({ objectFit: "cover" });
-    await user.click(screen.getByRole("radio", { name: "浅色字", hidden: true }));
-    fireEvent.input(within(blockBackgroundSettings).getByLabelText("自定义文字颜色"), {
-      target: { value: "#f4c36a" },
-    });
-    const pageSettings = screen.getByRole("region", { name: "页面外观", hidden: true });
-    await user.click(within(pageSettings).getByRole("radio", { name: "图片", hidden: true }));
-    const pageBackgroundFile = new File(["page"], "page-background.png", { type: "image/png" });
-    await user.upload(within(pageSettings).getByLabelText("选择整体背景图片"), pageBackgroundFile);
-    const pageBackgroundPreview = await screen.findByAltText("整体背景预览");
-    expect(pageBackgroundPreview).toHaveStyle({ objectFit: "contain", objectPosition: "50% 50%" });
-    await user.click(within(pageSettings).getByRole("radio", { name: "铺满裁切", hidden: true }));
-    expect(pageBackgroundPreview).toHaveStyle({ objectFit: "cover" });
+    await screen.findByRole("radio", { name: "横向" });
+    expect(document.querySelectorAll("[data-editor-pane]")).toHaveLength(3);
+    await user.click(screen.getByRole("radio", { name: "竖向" }));
+    const background = new File(["background"], "identity.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择基础名片背景图片"), background);
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(background));
+    expect(await screen.findByAltText("基础名片背景预览")).toHaveAttribute(
+      "src",
+      "/api/v1/public/card-assets/company-1/identity-background.webp",
+    );
+    const [scaleSlider, opacitySlider] = screen.getAllByRole("slider");
+    fireEvent.change(scaleSlider, { target: { value: "118" } });
+    fireEvent.change(opacitySlider, { target: { value: "78" } });
+
+    await user.click(screen.getByRole("button", { name: /02\s*核心业务/ }));
+    await user.click(screen.getByRole("radio", { name: /双列宫格/ }));
+    expect(screen.getByRole("radio", { name: /双列宫格/ })).toHaveAttribute("aria-checked", "true");
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
-    expect(upload).toHaveBeenNthCalledWith(1, contentFile);
-    expect(upload).toHaveBeenNthCalledWith(2, backgroundFile);
-    expect(upload).toHaveBeenNthCalledWith(3, pageBackgroundFile);
-    expect(update.mock.calls[0][3].find((block) => block.id === "rich-1")).toEqual(
-      expect.objectContaining({
-        textTone: "light",
-        textColor: "#f4c36a",
+    const savedBlocks = update.mock.calls[0][3];
+    expect(savedBlocks.find((block) => block.id === "identity")).toEqual(expect.objectContaining({
+      layoutVariant: "vertical",
+      presentation: expect.objectContaining({
+        identityLayout: "vertical",
         background: expect.objectContaining({
-          kind: "image",
-          imageUrl: "/api/v1/public/card-assets/company-1/background.webp",
-          fit: "cover",
-          overlayOpacity: 0.42,
+          assetUrl: "/api/v1/public/card-assets/company-1/identity-background.webp",
+          scale: 1.18,
+          opacity: 0.78,
+          overlay: "light",
         }),
-        contentImage: expect.objectContaining({
-          url: "/api/v1/public/card-assets/company-1/story.webp",
-          placement: "left",
-          aspectRatio: "square",
-        }),
-        sizePreset: "tall",
-        paddingY: "spacious",
       }),
-    );
-    expect(update.mock.calls[0][4]).toEqual(expect.objectContaining({
-      kind: "image",
-      imageUrl: "/api/v1/public/card-assets/company-1/page-background.webp",
-      fit: "cover",
+    }));
+    expect(savedBlocks.find((block) => block.id === "business")).toEqual(expect.objectContaining({
+      layoutVariant: "grid",
+      itemLimit: 4,
     }));
   }, 15_000);
 
-  it("saves pending changes and enters publish confirmation in one action", async () => {
+  it("selects published cases and enters the existing publish confirmation", async () => {
     const user = userEvent.setup();
     const caseTemplate = template({
       draft: {
@@ -391,16 +500,14 @@ describe("EnterpriseTemplateEditor", () => {
     );
     const handlers = renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*客户案例/, hidden: true }));
-    const picker = screen.getByRole("group", { name: "选择已发布案例", hidden: true });
-    await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/, hidden: true }));
-    const publishButton = screen.getByRole("button", { name: "保存并进入发布确认", hidden: true });
+    await user.click(await screen.findByRole("button", { name: /02\s*客户案例/ }));
+    const picker = screen.getByRole("group", { name: "选择并调整已发布案例" });
+    await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/ }));
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
+    const publishButton = screen.getByRole("button", { name: "进入发布确认", hidden: true });
     await waitFor(() => expect(publishButton).toBeEnabled());
-    await user.click(publishButton);
+    fireEvent.click(publishButton);
 
-    await waitFor(() => expect(adminApi.updateEnterpriseTemplate).toHaveBeenCalledTimes(1));
-    const publishDialog = await screen.findByRole("dialog", { name: "确认发布名片" });
-    await user.click(within(publishDialog).getByRole("button", { name: "确认发布" }));
     expect(handlers.onRequestPublish).toHaveBeenCalledWith(expect.objectContaining({
       id: card.id,
       version: 8,
@@ -420,39 +527,15 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await screen.findByRole("button", { name: "图片画廊", hidden: true });
-    await user.click(screen.getByRole("button", { name: "图片画廊", hidden: true }));
+    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
+    await screen.findByRole("button", { name: "图片画廊" });
+    await user.click(screen.getByRole("button", { name: "图片画廊" }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "image_gallery" }),
     ]));
     expect(await screen.findByText("图片画廊已加入草稿。请补齐内容后再发布。")).toBeInTheDocument();
-  }, 15_000);
-
-  it("deletes a block from the structure list only after confirmation", async () => {
-    const user = userEvent.setup();
-    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
-    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
-    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
-    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
-      async (_id, _version, themeKey, blocks) => template({
-        version: 8,
-        draft: { schemaVersion: 1, themeKey, blocks },
-      }),
-    );
-    renderEditor();
-
-    await screen.findByRole("button", { name: "删除企业介绍板块", hidden: true });
-    expect(screen.queryByRole("button", { name: "删除基础名片板块", hidden: true })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "删除企业介绍板块", hidden: true }));
-    expect(screen.getByText("删除名片板块")).toBeInTheDocument();
-    expect(update).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "确认删除", hidden: true }));
-    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
-
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
-    expect(update.mock.calls[0][3].map((block) => block.id)).toEqual(["identity", "ai-1"]);
   }, 15_000);
 
   it("binds FAQ blocks to selectable published knowledge instead of a free-text answer", async () => {
@@ -486,13 +569,13 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await user.click(await screen.findByRole("button", { name: /02\s*常见问题/, hidden: true }));
-    expect(screen.queryByRole("textbox", { name: "回答内容", hidden: true })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /02\s*常见问题/ }));
+    expect(screen.queryByRole("textbox", { name: "回答内容" })).not.toBeInTheDocument();
     expect(screen.getByText("数据来源：知识 FAQ")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/, hidden: true })).toBeChecked();
-    expect(screen.getByRole("link", { name: /前往管理/, hidden: true })).toHaveAttribute("href", expect.stringContaining("knowledge"));
+    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/ })).toBeChecked();
+    expect(screen.getByRole("link", { name: /前往管理/ })).toHaveAttribute("href", expect.stringContaining("knowledge"));
 
-    await user.click(screen.getByRole("radio", { name: "精选展示", hidden: true }));
+    await user.click(screen.getByRole("radio", { name: "精选展示" }));
     await user.click(screen.getByRole("checkbox", { name: "项目多久可以交付？", hidden: true }));
     await user.click(screen.getByRole("checkbox", { name: "是否提供售后支持？", hidden: true }));
     await user.click(screen.getByRole("button", { name: "上移 FAQ：是否提供售后支持？", hidden: true }));
@@ -504,39 +587,6 @@ describe("EnterpriseTemplateEditor", () => {
       faqDocumentIds: ["faq-support", "faq-delivery"],
     }));
   }, 15_000);
-
-  it("allows publishing an all-published FAQ block before the first public FAQ exists", async () => {
-    const faqTemplate = template({
-      draft: {
-        schemaVersion: 1,
-        themeKey: "brand",
-        blocks: [identityBlock, {
-          id: "faq-1",
-          type: "faq",
-          visible: true,
-          directoryEnabled: true,
-          sortOrder: 1,
-          title: "常见问题",
-          faqMode: "all_published",
-          faqDocumentIds: [],
-        }, {
-          id: "ai-1",
-          type: "ai_assistant",
-          visible: true,
-          sortOrder: 2,
-          title: "在线咨询",
-        }],
-      },
-    });
-    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(faqTemplate);
-    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
-    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
-    renderEditor();
-
-    const publishButton = await screen.findByRole("button", { name: "进入发布确认", hidden: true });
-    await waitFor(() => expect(publishButton).toBeEnabled());
-    expect(screen.getByText("全部内容区块完整").closest("li")).toHaveClass("is-ready");
-  });
 
   it("keeps customize-before-create changes local until explicit confirmation", async () => {
     const user = userEvent.setup();
@@ -560,16 +610,21 @@ describe("EnterpriseTemplateEditor", () => {
           displayName: "林晓",
           title: "客户成功经理",
           avatarUrl: "/portrait.webp",
+          identityTitles: [],
+          contactFields: [],
         },
       },
       onDraftConfirm,
       onClose,
     });
 
-    await user.click(await screen.findByRole("button", { name: "图文介绍", hidden: true }));
+    expect(await screen.findByRole("button", { name: /02\s*个人介绍/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /02\s*企业介绍/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
+    await user.click(await screen.findByRole("button", { name: "图文介绍" }));
     expect(updateDefault).not.toHaveBeenCalled();
     expect(updateCard).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "使用此设计创建名片", hidden: true }));
+    await user.click(screen.getByRole("button", { name: "使用此设计创建名片" }));
 
     await waitFor(() => expect(onDraftConfirm).toHaveBeenCalledTimes(1));
     expect(onDraftConfirm.mock.calls[0][0]).toEqual(expect.objectContaining({

@@ -25,9 +25,8 @@ import {
 } from "react";
 
 import type { EnterpriseCardConfig } from "../domain/card";
-import { AssistantApiError } from "../lib/assistantApi";
+import { AssistantApiError, recordPublicCardAction } from "../lib/assistantApi";
 import type { AssistantRelatedSection } from "../lib/assistantRelatedSections";
-import type { AnalyticsPage } from "../lib/visitAnalytics";
 import { copyText } from "../lib/clipboard";
 import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import { EnterpriseTemplateBlocks } from "../components/EnterpriseTemplateBlocks";
@@ -76,15 +75,6 @@ type CardSwitchTarget = {
 };
 
 type CompanySectionId = "overview" | "intro" | "business" | "cases" | "trust" | "faq" | "ai";
-const companySectionAnalyticsLabels: Record<CompanySectionId, string> = {
-  overview: "企业概览",
-  intro: "企业介绍",
-  business: "业务与产品",
-  cases: "案例",
-  trust: "信任信息",
-  faq: "常见问题",
-  ai: "AI 接待入口",
-};
 
 export type BusinessCardPrototypeAppHandle = {
   openAssistantTarget: (targetId: string) => void;
@@ -95,7 +85,6 @@ type BusinessCardPrototypeAppProps = {
   card?: PublicCardData;
   onAssistant: (question?: string) => void;
   onAssistantRelatedSectionsChange?: (sections: AssistantRelatedSection[]) => void;
-  onAnalyticsPageChange?: (page: AnalyticsPage) => void;
   onLead: () => void;
   onPrivacy: () => void;
   onProfile: () => void;
@@ -159,18 +148,24 @@ function recordLabel(record: Record<string, string>) {
   ).trim();
 }
 
+function identityContactKind(field: Record<string, string>) {
+  const hint = `${field.kind || ""} ${field.type || ""} ${field.label || ""}`.toLocaleLowerCase("zh-CN");
+  if (/手机|电话|mobile|phone|tel/.test(hint)) return "phone" as const;
+  if (/微信|企微|wechat|wecom/.test(hint)) return "wechat" as const;
+  if (/邮箱|邮件|email|mail/.test(hint)) return "email" as const;
+  if (/地址|地区|location|address/.test(hint)) return "location" as const;
+  if (/官网|网站|website|site/.test(hint)) return "website" as const;
+  return "other" as const;
+}
+
 function createStandaloneDefaultBlocks({
   kind,
   positioning,
   intro,
-  assistantTitle,
-  assistantBody,
 }: {
   kind: "employee" | "enterprise";
   positioning: string;
   intro: string;
-  assistantTitle: string;
-  assistantBody: string;
 }): PublicEnterpriseTemplateBlock[] {
   return [
     {
@@ -231,15 +226,6 @@ function createStandaloneDefaultBlocks({
       directory_enabled: true,
       sort_order: 60,
       faq_mode: "all_published",
-    },
-    {
-      id: `default-${kind}-ai`,
-      type: "ai_assistant",
-      title: assistantTitle,
-      body: assistantBody,
-      visible: true,
-      directory_enabled: true,
-      sort_order: 70,
     },
   ];
 }
@@ -566,7 +552,6 @@ export const BusinessCardPrototypeApp = forwardRef<
   card,
   onAssistant,
   onAssistantRelatedSectionsChange,
-  onAnalyticsPageChange,
   onLead,
   onPrivacy,
   onProfile,
@@ -775,6 +760,30 @@ export const BusinessCardPrototypeApp = forwardRef<
   const websiteLabel = card?.company.website
     ? `${companyName}官网`
     : tenant.brand.officialAction.label;
+  const identityContacts: NonNullable<CardPageIdentity["contacts"]> = [
+    ...contactFields.map((field, index) => ({
+      id: field.id || `contact-${index}`,
+      kind: identityContactKind(field),
+      label: field.label,
+      value: field.value,
+      href: safeContactHref(field),
+    })),
+    ...(card?.wecom_contact?.available && !contactFields.some((field) => identityContactKind(field) === "wechat")
+      ? [{ id: "wecom", kind: "wechat" as const, label: "企业微信", value: card.wecom_contact.label }]
+      : []),
+    ...(websiteHref && !contactFields.some((field) => identityContactKind(field) === "website")
+      ? [{ id: "website", kind: "website" as const, label: "企业官网", value: websiteLabel, href: websiteHref }]
+      : []),
+    ...(card?.company.region && !contactFields.some((field) => identityContactKind(field) === "location")
+      ? [{
+          id: "company-address",
+          kind: "location" as const,
+          label: "公司地址",
+          value: card.company.region,
+          href: safeContactHref({ kind: "location", value: card.company.region }),
+        }]
+      : []),
+  ];
   const adminHref =
     import.meta.env.VITE_ADMIN_BASE_URL?.trim() || `${import.meta.env.BASE_URL}admin/`;
   const onboardingHref = `${adminHref.replace(/\/*$/, "/")}platform/onboarding`;
@@ -1016,13 +1025,11 @@ export const BusinessCardPrototypeApp = forwardRef<
     intro: isStandaloneEmployee
       ? card?.business_summary || companySummary
       : companySummary,
-    assistantTitle: isStandaloneEmployee ? `${displayName}的 AI 助手` : assistantName,
-    assistantBody: card?.ai_assistant.welcome_message
-      || "基于已发布资料介绍业务，并协助整理合作需求。",
   });
-  const effectiveTemplateBlocks = isStandaloneCard
+  const effectiveTemplateBlocks = (isStandaloneCard
     ? completeStandaloneTemplateBlocks(publishedTemplateBlocks, standaloneDefaultBlocks)
-    : publishedTemplateBlocks;
+    : publishedTemplateBlocks
+  ).filter((block) => block.type !== "ai_assistant");
   const hasComposableStandalonePage = isStandaloneCard;
   const hasComposableEnterprisePage = isStandaloneEnterprise;
   const hasComposableEmployeePage = isStandaloneEmployee;
@@ -1037,77 +1044,32 @@ export const BusinessCardPrototypeApp = forwardRef<
   const templateFaqBlocks = visibleTemplateBlocks.filter((block) => block.type === "faq");
   const templateCtaBlocks = visibleTemplateBlocks.filter((block) => block.type === "cta");
   const companyNavigationKey = companyNavigationItems.map(({ id }) => id).join(",");
-
-  useEffect(() => {
-    if (!onAnalyticsPageChange) return;
-    if (view === "detail") {
-      const route = detail
-        ? { kind: detail.kind, slug: detail.item.slug, title: detail.kind === "product" ? detail.item.name : detail.item.title }
-        : requestedDetail
-          ? { ...requestedDetail, title: requestedDetail.slug }
-          : undefined;
-      if (route) {
-        onAnalyticsPageChange({
-          key: `detail:${route.kind}:${route.slug}`,
-          title: route.title,
-          objectType: route.kind,
-          objectId: route.slug,
-        });
-        return;
-      }
-    }
-    if (view === "company") {
-      onAnalyticsPageChange({
-        key: `company:${activeCompanySection}`,
-        title: `企业页·${companySectionAnalyticsLabels[activeCompanySection]}`,
-        objectType: "card",
-        objectId: `company:${activeCompanySection}`,
-      });
-      return;
-    }
-    const labels: Record<BaseView, string> = {
-      card: "个人名片",
-      company: "企业主页",
-      square: "业务广场",
-      me: "访客中心",
-    };
-    onAnalyticsPageChange({
-      key: view,
-      title: labels[view as BaseView] ?? view,
-      objectType: "card",
-      objectId: view,
-    });
-  }, [
-    activeCompanySection,
-    detail,
-    onAnalyticsPageChange,
-    requestedDetail?.kind,
-    requestedDetail?.slug,
-    view,
-  ]);
   const composedIdentity: CardPageIdentity = isStandaloneEmployee
     ? {
         kind: "employee",
         name: displayName,
         headline: title,
+        titles: card?.identity_titles || [],
         summary: card?.business_summary || undefined,
         imageUrl: avatar,
         companyName,
         verificationLabel: isPublished ? "已发布" : "本地展示",
         positioning: card?.business_summary || companySummary,
         tags,
+        contacts: identityContacts,
       }
     : {
         kind: "enterprise",
         name: companyName,
         headline: card?.company.industry || undefined,
-        summary: companySummary,
+        titles: card?.identity_titles || [],
         imageUrl: companyLogo,
         verificationLabel: isPublished ? "资料已发布" : "本地展示",
         positioning: tenant.hero.summary,
-        meta: [card?.company.industry, card?.company.region]
+        meta: [card?.company.region]
           .filter((value): value is string => Boolean(value)),
         tags,
+        contacts: identityContacts,
       };
 
   useEffect(() => {
@@ -1225,8 +1187,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   const composedTemplatePage = hasComposableStandalonePage ? (
     <EnterpriseTemplateBlocks
       blocks={effectiveTemplateBlocks}
-      pageBackground={card?.enterprise_template?.page_background}
-      pageTextTone={card?.enterprise_template?.page_text_tone}
+      themeKey={card?.enterprise_template?.theme_key}
       directory={{
         ariaLabel: isStandaloneEmployee ? "员工名片内容导航" : "企业名片内容导航",
       }}
@@ -1237,21 +1198,38 @@ export const BusinessCardPrototypeApp = forwardRef<
       onOpenProduct={(slug) => openDetailRoute({ kind: "product", slug })}
       onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
       onAssistant={assistantAvailable ? (question) => onAssistant(question) : undefined}
+      title={isStandaloneEmployee ? "员工数字名片" : "企业官方名片"}
+      onBack={() => window.history.back()}
+      onShare={onShare}
+      primaryAction={{ label: "咨询 AI", onClick: () => onAssistant(), disabled: !assistantAvailable }}
+      secondaryAction={{ label: "提交合作需求", onClick: onLead }}
+      onAction={(item) => {
+        if (!card) return;
+        void recordPublicCardAction({
+          cardSlug: card.slug,
+          actionId: item.id,
+          actionTitle: item.title,
+          targetType: item.targetType,
+          companyId: card.company.id,
+          policyVersions: {
+            privacy: card.policy_versions.privacy,
+            chatNotice: card.policy_versions.chat_notice,
+            leadConsent: card.policy_versions.lead_consent,
+            profilePersonalization: card.policy_versions.profile_personalization,
+          },
+        }).catch(() => {
+          // Analytics must never block or cancel the user's navigation.
+        });
+      }}
     />
   ) : null;
 
   const cardPage = (
     <>
-      <AppHeader
-        switchTarget={standaloneKind === "employee" && officialCompanyHref ? {
-          href: officialCompanyHref,
-          kind: "enterprise",
-          label: "切换企业",
-          ariaLabel: "切换到企业名片",
-        } : undefined}
+      {!hasComposableEmployeePage && <AppHeader
         onShare={onShare}
-      />
-      <main className="bp-page bp-card-page">
+      />}
+      <main className={`bp-page bp-card-page${hasComposableEmployeePage ? " bp-card-studio-page" : ""}`}>
         {hasComposableEmployeePage ? composedTemplatePage : (
           <>
         <div className="bp-person-head">
@@ -1357,14 +1335,14 @@ export const BusinessCardPrototypeApp = forwardRef<
         </section>
           </>
         )}
-        {isStandaloneCard && (
+        {isStandaloneCard && !hasComposableEmployeePage && (
           <div className="bp-standalone-utilities">
             <button type="button" onClick={toggleSaved}>{saved ? "取消保存" : "保存名片"}</button>
             <button type="button" onClick={onPrivacy}>隐私与个人信息</button>
           </div>
         )}
       </main>
-      {isStandaloneCard ? <div className="bp-sticky-actions bp-standalone-action-bar" aria-label="名片主要操作">
+      {!hasComposableEmployeePage && (isStandaloneCard ? <div className="bp-sticky-actions bp-standalone-action-bar" aria-label="名片主要操作">
         <button className="primary" type="button" disabled={!assistantAvailable} onClick={() => onAssistant()}>问 AI</button>
         <button type="button" onClick={onLead}>发起合作</button>
       </div> : <div className="bp-sticky-actions bp-card-actions">
@@ -1380,14 +1358,14 @@ export const BusinessCardPrototypeApp = forwardRef<
             <HandshakeIcon size={22} /> 发起合作
           </button>
         </>}
-      </div>}
+      </div>)}
       {!isStandaloneCard && bottom}
     </>
   );
 
   const companyPage = (
     <>
-      <AppHeader
+      {!hasComposableEnterprisePage && <AppHeader
         back={isStandaloneCard ? undefined : returnFromCompany}
         switchTarget={isStandaloneCard && employeeReturnHref ? {
           href: employeeReturnHref,
@@ -1397,8 +1375,8 @@ export const BusinessCardPrototypeApp = forwardRef<
         } : undefined}
         title={isStandaloneCard ? "企业官方名片" : `来自${displayName}的名片`}
         onShare={onShare}
-      />
-      <main className="bp-page bp-company-page">
+      />}
+      <main className={`bp-page bp-company-page${hasComposableEnterprisePage ? " bp-card-studio-page" : ""}`}>
         {!hasComposableEnterprisePage && <div className="bp-company-head">
           {companyLogo ? <img src={companyLogo} alt={`${companyName}标识`} /> : <i>◈</i>}
           <div>
@@ -1542,14 +1520,14 @@ export const BusinessCardPrototypeApp = forwardRef<
         </section>
           </>
         )}
-        {isStandaloneCard && (
+        {isStandaloneCard && !hasComposableEnterprisePage && (
           <div className="bp-standalone-utilities">
             <button type="button" onClick={toggleSaved}>{saved ? "取消保存" : "保存企业名片"}</button>
             <button type="button" onClick={onPrivacy}>隐私与个人信息</button>
           </div>
         )}
       </main>
-      {isStandaloneCard ? <div className="bp-sticky-actions bp-standalone-action-bar" aria-label="企业名片主要操作">
+      {!hasComposableEnterprisePage && (isStandaloneCard ? <div className="bp-sticky-actions bp-standalone-action-bar" aria-label="企业名片主要操作">
         <button className="primary" type="button" disabled={!assistantAvailable} onClick={() => onAssistant()}>咨询 AI</button>
         <button type="button" onClick={onLead}>提交合作需求</button>
       </div> : <div className="bp-sticky-actions bp-company-actions">
@@ -1560,7 +1538,7 @@ export const BusinessCardPrototypeApp = forwardRef<
           <button type="button" onClick={toggleSaved}>{saved ? "✓ 本机已保存企业名片" : "⌑ 保存到本机"}</button>
           <button className="primary" type="button" onClick={onLead}>⌁ 发起合作</button>
         </>}
-      </div>}
+      </div>)}
       {!isStandaloneCard && bottom}
     </>
   );

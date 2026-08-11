@@ -55,33 +55,6 @@ const faq: SelectableFaqDocument = {
 const blocks: EnterpriseTemplateBlock[] = [
   { id: "identity", type: "identity", visible: true, sortOrder: 0, title: "基础名片" },
   {
-    id: "story",
-    type: "rich_text",
-    visible: true,
-    sortOrder: 1,
-    title: "品牌故事",
-    body: "一张名片，也是一处持续更新的品牌内容入口。",
-    background: {
-      kind: "color",
-      color: "#173b40",
-      overlayColor: "#000000",
-      overlayOpacity: 0,
-    },
-    textTone: "light",
-    contentImage: {
-      url: "/api/v1/public/card-assets/company-1/story.webp",
-      alt: "团队共创现场",
-      placement: "left",
-      fit: "cover",
-      aspectRatio: "square",
-      widthPercent: 44,
-      positionX: 32,
-      positionY: 68,
-    },
-    sizePreset: "tall",
-    paddingY: "spacious",
-  },
-  {
     id: "products",
     type: "business_collection",
     visible: true,
@@ -136,18 +109,9 @@ describe("TemplateCanvas draft interactions", () => {
   it("opens real product and case details, previews AI, and keeps native page actions", async () => {
     const user = userEvent.setup();
     const onSelectBlock = vi.fn();
-    const { container } = render(
+    render(
       <TemplateCanvas
         blocks={blocks}
-        pageBackground={{
-          kind: "image",
-          imageUrl: "/api/v1/public/card-assets/company-1/page.webp",
-          positionX: 35,
-          positionY: 65,
-          overlayColor: "#000000",
-          overlayOpacity: 0.3,
-        }}
-        pageTextTone="light"
         products={[product]}
         cases={[caseStudy]}
         faqItems={[faq]}
@@ -162,23 +126,6 @@ describe("TemplateCanvas draft interactions", () => {
     );
 
     expect(screen.getByText(faq.answer).closest("details")).toHaveAttribute("open");
-    expect(screen.getByAltText("团队共创现场")).toHaveAttribute(
-      "src",
-      "/api/v1/public/card-assets/company-1/story.webp",
-    );
-    expect(screen.getByAltText("团队共创现场")).toHaveStyle({
-      aspectRatio: "1 / 1",
-      objectPosition: "32% 68%",
-    });
-    expect(screen.getByRole("heading", { name: "品牌故事" }).closest(".cpr-block-inner"))
-      .toHaveClass("cpr-block-inner--tone-light");
-    expect(screen.getByRole("heading", { name: "品牌故事" }).closest(".cpr-block-inner"))
-      .toHaveClass("cpr-block-inner--size-tall", "cpr-block-inner--padding-spacious");
-    expect(container.querySelector("#bp-template-block-story .cpr-block-background"))
-      .toHaveStyle({ backgroundColor: "#173b40" });
-    expect(container.querySelector(".cpr-page-background")).toHaveStyle({
-      backgroundPosition: "35% 65%",
-    });
     expect(screen.getByRole("link", { name: /播放视频/ })).toHaveAttribute(
       "href",
       "https://video.example.test/intro",

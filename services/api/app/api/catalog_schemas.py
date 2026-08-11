@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Literal, Self
@@ -264,6 +265,44 @@ class ForbiddenTopicListEnvelope(CatalogStrictModel):
     offset: int = Field(ge=0)
 
 
+CardContactKindValue = Literal[
+    "phone",
+    "wechat",
+    "email",
+    "location",
+    "website",
+    "other",
+]
+
+
+class CardContactItem(CatalogStrictModel):
+    id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
+    )
+    kind: CardContactKindValue = "other"
+    label: str = Field(min_length=1, max_length=40)
+    value: str = Field(min_length=1, max_length=240)
+    href: str | None = Field(default=None, max_length=2_048)
+
+    @field_validator("href")
+    @classmethod
+    def validate_contact_href(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if any(ord(character) < 32 for character in candidate) or "\\" in candidate:
+            raise ValueError("contact href contains unsafe characters")
+        parsed = urlsplit(candidate)
+        if parsed.scheme.casefold() not in {"https", "tel", "mailto"}:
+            raise ValueError("contact href must use https, tel or mailto")
+        return candidate
+
+
 class CardWriteFields(CatalogStrictModel):
     display_name: str = Field(min_length=1, max_length=160)
     title: str = Field(min_length=1, max_length=200)
@@ -272,6 +311,8 @@ class CardWriteFields(CatalogStrictModel):
     welcome_message: str | None = Field(default=None, max_length=2_000)
     suggested_questions: list[str] = Field(default_factory=list, max_length=6)
     policy_versions: dict[str, str] = Field(default_factory=dict)
+    identity_titles: list[str] = Field(default_factory=list, max_length=8)
+    contact_fields: list[CardContactItem] = Field(default_factory=list, max_length=8)
     employee_contact_visibility: list[Literal["mobile", "email"]] = Field(
         default_factory=list,
         max_length=2,
@@ -309,6 +350,29 @@ class CardWriteFields(CatalogStrictModel):
     ) -> list[Literal["mobile", "email"]]:
         return list(dict.fromkeys(values))
 
+    @field_validator("identity_titles")
+    @classmethod
+    def validate_identity_titles(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            title = value.strip()
+            key = title.casefold()
+            if not title or len(title) > 80:
+                raise ValueError("identity titles must contain 1-80 characters")
+            if key not in seen:
+                normalized.append(title)
+                seen.add(key)
+        return normalized
+
+    @field_validator("contact_fields")
+    @classmethod
+    def validate_contact_fields(cls, values: list[CardContactItem]) -> list[CardContactItem]:
+        ids = [item.id for item in values if item.id is not None]
+        if len(set(ids)) != len(ids):
+            raise ValueError("contact field ids must be unique")
+        return values
+
 
 class UpdateManagedCardRequest(CardWriteFields):
     card_kind: CardKindValue
@@ -334,7 +398,115 @@ EnterpriseTemplateBlockType = Literal[
     "faq",
     "cta",
     "ai_assistant",
+    "action_collection",
 ]
+
+EnterpriseTemplateLayoutVariant = Literal[
+    "auto",
+    "list",
+    "grid",
+    "carousel",
+    "featured",
+    "mosaic",
+    "horizontal",
+    "vertical",
+]
+EnterpriseTemplateActionTargetType = Literal[
+    "external_url",
+    "internal_path",
+    "phone",
+    "map",
+]
+
+EnterpriseTemplateActionTemplate = Literal[
+    "shortcuts",
+    "media",
+    "event",
+    "banner",
+    "articles",
+    "video",
+    "buttons",
+]
+
+
+class EnterpriseTemplateBackground(CatalogStrictModel):
+    asset_url: str | None = Field(default=None, max_length=2_048)
+    fit: Literal["cover", "contain", "custom"] = "cover"
+    position: Literal[
+        "center",
+        "top",
+        "bottom",
+        "left",
+        "right",
+        "top_left",
+        "top_right",
+        "bottom_left",
+        "bottom_right",
+    ] = "center"
+    aspect_ratio: Literal["auto", "16:9", "4:3", "3:2", "1:1"] = "auto"
+    focal_x: float = Field(default=50, ge=0, le=100)
+    focal_y: float = Field(default=50, ge=0, le=100)
+    scale: float = Field(default=1, ge=0.5, le=2)
+    opacity: float = Field(default=1, ge=0, le=1)
+    overlay: Literal["none", "light", "dark", "brand"] = "none"
+
+    _validate_asset = field_validator("asset_url")(validate_safe_asset_url)
+
+
+class EnterpriseTemplatePresentation(CatalogStrictModel):
+    identity_layout: Literal["horizontal", "vertical"] = "horizontal"
+    background: EnterpriseTemplateBackground | None = None
+
+
+class EnterpriseTemplateActionItem(CatalogStrictModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=160)
+    summary: str | None = Field(default=None, max_length=500)
+    label: str | None = Field(default=None, max_length=80)
+    tag: str | None = Field(default=None, max_length=80)
+    icon: Literal["external", "building", "calendar", "file", "play"] | None = None
+    date: str | None = Field(default=None, max_length=80)
+    location: str | None = Field(default=None, max_length=160)
+    source: str | None = Field(default=None, max_length=120)
+    status: str | None = Field(default=None, max_length=80)
+    duration: str | None = Field(default=None, max_length=24)
+    image_url: str | None = Field(default=None, max_length=2_048)
+    target_type: EnterpriseTemplateActionTargetType
+    target_value: str = Field(min_length=1, max_length=2_048)
+    open_mode: Literal["self", "new_tab"] = "self"
+
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
+
+    @model_validator(mode="after")
+    def validate_action_target(self) -> Self:
+        value = self.target_value.strip()
+        if any(ord(character) < 32 for character in value) or "\\" in value:
+            raise ValueError("action target contains unsafe characters")
+        if self.target_type in {"external_url", "map"}:
+            self.target_value = validate_safe_asset_url(value) or ""
+        elif self.target_type == "internal_path":
+            parsed = urlsplit(value)
+            if (
+                not value.startswith("/")
+                or value.startswith("//")
+                or parsed.scheme
+                or parsed.netloc
+                or any(part == ".." for part in parsed.path.split("/"))
+            ):
+                raise ValueError("internal action targets must be safe absolute paths")
+            self.target_value = value
+        else:
+            if not re.fullmatch(r"\+?[0-9][0-9() -]{4,24}", value):
+                raise ValueError("phone action targets must contain a valid phone number")
+            self.target_value = value
+        if self.open_mode == "new_tab" and self.target_type in {"phone", "internal_path"}:
+            raise ValueError("phone and internal actions must open in the current context")
+        return self
+
+
+class EnterpriseTemplateMetric(CatalogStrictModel):
+    value: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=80)
 
 
 class EnterpriseTemplateCaseItem(CatalogStrictModel):
@@ -343,7 +515,13 @@ class EnterpriseTemplateCaseItem(CatalogStrictModel):
     title: str = Field(min_length=1, max_length=200)
     industry: str | None = Field(default=None, max_length=120)
     summary: str | None = Field(default=None, max_length=5_000)
+    background: str | None = Field(default=None, max_length=5_000)
+    solution: str | None = Field(default=None, max_length=5_000)
+    result: str | None = Field(default=None, max_length=5_000)
+    client_name: str | None = Field(default=None, max_length=200)
+    metrics: list[EnterpriseTemplateMetric] = Field(default_factory=list, max_length=3)
     image_url: str | None = Field(default=None, max_length=2_048)
+    cta_label: str | None = Field(default=None, max_length=80)
 
     _validate_image = field_validator("image_url")(validate_safe_asset_url)
 
@@ -355,34 +533,58 @@ class EnterpriseTemplateProductItem(CatalogStrictModel):
     category: str | None = Field(default=None, max_length=120)
     summary: str | None = Field(default=None, max_length=5_000)
     image_url: str | None = Field(default=None, max_length=2_048)
+    cta_label: str | None = Field(default=None, max_length=80)
 
     _validate_image = field_validator("image_url")(validate_safe_asset_url)
 
 
-class EnterpriseTemplateBlockBackground(CatalogStrictModel):
-    kind: Literal["none", "color", "image"] = "none"
-    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+class EnterpriseTemplateGalleryItem(CatalogStrictModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    image_url: str = Field(min_length=1, max_length=2_048)
+    title: str | None = Field(default=None, max_length=160)
+    description: str | None = Field(default=None, max_length=500)
+    time_label: str | None = Field(default=None, max_length=80)
+    period_label: str | None = Field(default=None, max_length=80)
+    badge_mode: Literal["title", "time", "period", "custom", "none"] = "title"
+    badge_text: str | None = Field(default=None, max_length=80)
+    alt_text: str | None = Field(default=None, max_length=160)
+    link_url: str | None = Field(default=None, max_length=2_048)
+
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
+
+    @field_validator("link_url")
+    @classmethod
+    def validate_link_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return validate_safe_asset_url(value.strip())
+
+
+class EnterpriseTemplateProductOverride(CatalogStrictModel):
+    id: uuid.UUID
+    title: str | None = Field(default=None, max_length=200)
+    category: str | None = Field(default=None, max_length=120)
+    summary: str | None = Field(default=None, max_length=5_000)
     image_url: str | None = Field(default=None, max_length=2_048)
-    fit: Literal["cover", "contain"] = "cover"
-    position_x: int = Field(default=50, ge=0, le=100)
-    position_y: int = Field(default=50, ge=0, le=100)
-    overlay_color: str | None = Field(default="#000000", pattern=r"^#[0-9a-fA-F]{6}$")
-    overlay_opacity: float = Field(default=0, ge=0, le=0.85)
+    cta_label: str | None = Field(default=None, max_length=80)
 
     _validate_image = field_validator("image_url")(validate_safe_asset_url)
 
 
-class EnterpriseTemplateContentImage(CatalogStrictModel):
-    url: str = Field(min_length=1, max_length=2_048)
-    alt: str | None = Field(default=None, max_length=300)
-    placement: Literal["top", "bottom", "left", "right"] = "top"
-    fit: Literal["cover", "contain"] = "cover"
-    aspect_ratio: Literal["auto", "square", "standard", "wide"] = "wide"
-    width_percent: int | None = Field(default=None, ge=30, le=100)
-    position_x: int = Field(default=50, ge=0, le=100)
-    position_y: int = Field(default=50, ge=0, le=100)
+class EnterpriseTemplateCaseOverride(CatalogStrictModel):
+    id: uuid.UUID
+    title: str | None = Field(default=None, max_length=240)
+    industry: str | None = Field(default=None, max_length=120)
+    client_name: str | None = Field(default=None, max_length=200)
+    background: str | None = Field(default=None, max_length=5_000)
+    solution: str | None = Field(default=None, max_length=5_000)
+    summary: str | None = Field(default=None, max_length=5_000)
+    result: str | None = Field(default=None, max_length=5_000)
+    metrics: list[EnterpriseTemplateMetric] = Field(default_factory=list, max_length=3)
+    image_url: str | None = Field(default=None, max_length=2_048)
+    cta_label: str | None = Field(default=None, max_length=80)
 
-    _validate_image = field_validator("url")(validate_safe_asset_url)
+    _validate_image = field_validator("image_url")(validate_safe_asset_url)
 
 
 class EnterpriseTemplateBlock(CatalogStrictModel):
@@ -391,27 +593,30 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     type: EnterpriseTemplateBlockType
     visible: bool = True
+    show_title: bool = True
     directory_enabled: bool = True
     sort_order: int = Field(default=0, ge=0, le=10_000)
+    layout_variant: EnterpriseTemplateLayoutVariant = "auto"
+    item_limit: int | None = Field(default=None, ge=1, le=12)
+    action_template: EnterpriseTemplateActionTemplate | None = None
+    presentation: EnterpriseTemplatePresentation | None = None
     title: str | None = Field(default=None, max_length=160)
     body: str | None = Field(default=None, max_length=8_000)
     image_urls: list[str] = Field(default_factory=list, max_length=12)
+    gallery_items: list[EnterpriseTemplateGalleryItem] = Field(default_factory=list, max_length=12)
     video_url: str | None = Field(default=None, max_length=2_048)
     video_cover_url: str | None = Field(default=None, max_length=2_048)
     product_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
     product_items: list[EnterpriseTemplateProductItem] = Field(default_factory=list, max_length=12)
+    product_overrides: list[EnterpriseTemplateProductOverride] = Field(default_factory=list, max_length=12)
     case_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
     case_items: list[EnterpriseTemplateCaseItem] = Field(default_factory=list, max_length=12)
+    case_overrides: list[EnterpriseTemplateCaseOverride] = Field(default_factory=list, max_length=12)
     faq_mode: Literal["all_published", "selected"] | None = None
     faq_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
     cta_label: str | None = Field(default=None, max_length=80)
     cta_url: str | None = Field(default=None, max_length=2_048)
-    background: EnterpriseTemplateBlockBackground | None = None
-    text_tone: Literal["auto", "light", "dark"] = "auto"
-    text_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
-    content_image: EnterpriseTemplateContentImage | None = None
-    size_preset: Literal["auto", "compact", "standard", "tall"] = "auto"
-    padding_y: Literal["auto", "compact", "standard", "spacious"] = "auto"
+    action_items: list[EnterpriseTemplateActionItem] = Field(default_factory=list, max_length=12)
 
     _validate_images = field_validator("image_urls")(
         lambda values: [validate_safe_asset_url(value) for value in values]
@@ -436,6 +641,24 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
         # Publishing performs the stricter completeness check.
         if len(set(self.faq_document_ids)) != len(self.faq_document_ids):
             raise ValueError("faq document ids must be unique")
+        if len({item.id for item in self.action_items}) != len(self.action_items):
+            raise ValueError("action item ids must be unique")
+        if len({item.id for item in self.gallery_items}) != len(self.gallery_items):
+            raise ValueError("gallery item ids must be unique")
+        if len({item.id for item in self.product_overrides}) != len(self.product_overrides):
+            raise ValueError("product override ids must be unique")
+        if len({item.id for item in self.case_overrides}) != len(self.case_overrides):
+            raise ValueError("case override ids must be unique")
+        if self.type != "image_gallery" and self.gallery_items:
+            raise ValueError("gallery_items are only valid for image_gallery blocks")
+        if self.type != "business_collection" and self.product_overrides:
+            raise ValueError("product_overrides are only valid for business_collection blocks")
+        if self.type != "case_collection" and self.case_overrides:
+            raise ValueError("case_overrides are only valid for case_collection blocks")
+        if any(item.id not in self.product_ids for item in self.product_overrides):
+            raise ValueError("product override ids must be selected product ids")
+        if any(item.id not in self.case_ids for item in self.case_overrides):
+            raise ValueError("case override ids must be selected case ids")
         if self.type == "faq":
             self.faq_mode = self.faq_mode or "all_published"
             # Legacy editor versions stored a manual answer here. FAQ is now
@@ -446,16 +669,20 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
                 self.faq_document_ids = []
         elif self.faq_mode is not None or self.faq_document_ids:
             raise ValueError("faq selection fields are only valid for faq blocks")
-        if self.content_image is not None and self.type != "rich_text":
-            raise ValueError("content image is only valid for rich text blocks")
+        if self.type != "action_collection" and self.action_items:
+            raise ValueError("action_items are only valid for action_collection blocks")
+        if self.type == "action_collection":
+            self.action_template = self.action_template or "shortcuts"
+        elif self.action_template is not None:
+            raise ValueError("action_template is only valid for action_collection blocks")
+        if self.type != "identity" and self.presentation is not None:
+            raise ValueError("presentation is only valid for identity blocks")
         return self
 
 
 class EnterpriseTemplateDocument(CatalogStrictModel):
     schema_version: Literal[1] = 1
     theme_key: Literal["brand", "clean", "warm"] = "brand"
-    page_background: EnterpriseTemplateBlockBackground | None = None
-    page_text_tone: Literal["auto", "light", "dark"] = "auto"
     blocks: list[EnterpriseTemplateBlock] = Field(default_factory=list, max_length=24)
 
     @model_validator(mode="after")
@@ -558,9 +785,13 @@ __all__ = [
     "ManagedCardEnvelope",
     "ManagedCardListEnvelope",
     "ManagedCardRecord",
+    "EnterpriseTemplateActionItem",
+    "EnterpriseTemplateBackground",
+    "EnterpriseTemplateBlock",
     "EnterpriseTemplateDocument",
     "EnterpriseTemplateCaseItem",
     "EnterpriseTemplateEnvelope",
+    "EnterpriseTemplatePresentation",
     "EnterpriseTemplateRecord",
     "ProductEnvelope",
     "ProductListEnvelope",

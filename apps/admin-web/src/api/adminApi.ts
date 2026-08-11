@@ -100,7 +100,6 @@ function normalizeCompany(payload: unknown): CompanyProfile {
     profilePersonalizationPolicyVersion:
       optionalString(raw.profile_personalization_policy_version) ||
       "profile-personalization-v1",
-    onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
   };
@@ -129,26 +128,8 @@ function normalizeCard(payload: unknown): CardSettings {
       leadConsent: optionalString(policies.lead_consent),
     },
     status: optionalString(raw.status) || undefined,
-    onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
-  };
-}
-
-function normalizeTemplateBackground(value: unknown): EnterpriseTemplateBlock["background"] {
-  if (!isRecord(value)) return undefined;
-  const kind = ["none", "color", "image"].includes(optionalString(value.kind))
-    ? optionalString(value.kind) as NonNullable<EnterpriseTemplateBlock["background"]>["kind"]
-    : "none";
-  return {
-    kind,
-    color: optionalString(value.color) || undefined,
-    imageUrl: optionalString(value.image_url) || undefined,
-    fit: optionalString(value.fit) === "contain" ? "contain" : "cover",
-    positionX: optionalNumber(value.position_x) ?? 50,
-    positionY: optionalNumber(value.position_y) ?? 50,
-    overlayColor: optionalString(value.overlay_color) || undefined,
-    overlayOpacity: optionalNumber(value.overlay_opacity) ?? 0,
   };
 }
 
@@ -156,55 +137,146 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.type !== "string") return undefined;
   const type = value.type;
   if (![
-    "identity", "rich_text", "business_collection", "image_gallery", "video_link", "case_collection", "trust_panel", "faq", "cta", "ai_assistant",
+    "identity", "rich_text", "business_collection", "image_gallery", "video_link", "case_collection", "trust_panel", "faq", "cta", "action_collection", "ai_assistant",
   ].includes(type)) return undefined;
   const strings = (raw: unknown) => Array.isArray(raw)
     ? raw.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     : undefined;
-  const rawContentImage = isRecord(value.content_image) ? value.content_image : undefined;
-  const contentPlacement = rawContentImage && ["top", "bottom", "left", "right"].includes(optionalString(rawContentImage.placement))
-    ? optionalString(rawContentImage.placement) as NonNullable<EnterpriseTemplateBlock["contentImage"]>["placement"]
-    : "top";
+  const presentation = isRecord(value.presentation) ? value.presentation : undefined;
+  const background = presentation && isRecord(presentation.background)
+    ? presentation.background
+    : undefined;
+  const actionItems = Array.isArray(value.action_items)
+    ? value.action_items.flatMap((rawItem) => {
+        if (!isRecord(rawItem) || typeof rawItem.id !== "string" || typeof rawItem.title !== "string") return [];
+        const targetType = optionalString(rawItem.target_type);
+        const openMode = optionalString(rawItem.open_mode);
+        if (!["external_url", "internal_path", "phone", "map"].includes(targetType)) return [];
+        return [{
+          id: rawItem.id,
+          title: rawItem.title,
+          summary: optionalString(rawItem.summary) || undefined,
+          label: optionalString(rawItem.label) || undefined,
+          tag: optionalString(rawItem.tag) || undefined,
+          icon: ["external", "building", "calendar", "file", "play"].includes(optionalString(rawItem.icon))
+            ? optionalString(rawItem.icon) as NonNullable<EnterpriseTemplateBlock["actionItems"]>[number]["icon"]
+            : undefined,
+          date: optionalString(rawItem.date) || undefined,
+          location: optionalString(rawItem.location) || undefined,
+          source: optionalString(rawItem.source) || undefined,
+          status: optionalString(rawItem.status) || undefined,
+          duration: optionalString(rawItem.duration) || undefined,
+          imageUrl: optionalString(rawItem.image_url) || undefined,
+          targetType: targetType as NonNullable<EnterpriseTemplateBlock["actionItems"]>[number]["targetType"],
+          targetValue: optionalString(rawItem.target_value),
+          openMode: openMode === "new_tab" ? "new_tab" as const : "self" as const,
+        }];
+      })
+    : undefined;
+  const galleryItems = Array.isArray(value.gallery_items)
+    ? value.gallery_items.flatMap((rawItem) => {
+        if (!isRecord(rawItem) || typeof rawItem.id !== "string" || typeof rawItem.image_url !== "string") return [];
+        const badgeMode = optionalString(rawItem.badge_mode);
+        return [{
+          id: rawItem.id,
+          imageUrl: rawItem.image_url,
+          title: optionalString(rawItem.title) || undefined,
+          description: optionalString(rawItem.description) || undefined,
+          timeLabel: optionalString(rawItem.time_label) || undefined,
+          periodLabel: optionalString(rawItem.period_label) || undefined,
+          badgeMode: (["title", "time", "period", "custom", "none"].includes(badgeMode) ? badgeMode : "title") as NonNullable<EnterpriseTemplateBlock["galleryItems"]>[number]["badgeMode"],
+          badgeText: optionalString(rawItem.badge_text) || undefined,
+          altText: optionalString(rawItem.alt_text) || undefined,
+          linkUrl: optionalString(rawItem.link_url) || undefined,
+        }];
+      })
+    : undefined;
+  const normalizeOverrides = (raw: unknown, kind: "product" | "case") => Array.isArray(raw)
+    ? raw.flatMap<Record<string, unknown>>((rawItem) => {
+        if (!isRecord(rawItem) || typeof rawItem.id !== "string") return [];
+        const base = {
+          id: rawItem.id,
+          title: optionalString(rawItem.title) || undefined,
+          summary: optionalString(rawItem.summary) || undefined,
+          imageUrl: optionalString(rawItem.image_url) || undefined,
+          ctaLabel: optionalString(rawItem.cta_label) || undefined,
+        };
+        return kind === "product" ? [{
+          ...base,
+          category: optionalString(rawItem.category) || undefined,
+        }] : [{
+          ...base,
+          industry: optionalString(rawItem.industry) || undefined,
+          clientName: optionalString(rawItem.client_name) || undefined,
+          background: optionalString(rawItem.background) || undefined,
+          solution: optionalString(rawItem.solution) || undefined,
+          result: optionalString(rawItem.result) || undefined,
+          metrics: Array.isArray(rawItem.metrics) ? rawItem.metrics.flatMap((metric) => isRecord(metric) && typeof metric.value === "string" && typeof metric.label === "string" ? [{ value: metric.value, label: metric.label }] : []) : undefined,
+        }];
+      })
+    : undefined;
+  const layoutVariant = optionalString(value.layout_variant);
+  const backgroundPosition = optionalString(background?.position);
+  const normalizedBackgroundPosition = ({
+    center: "center",
+    top: "top",
+    bottom: "bottom",
+    left: "left",
+    right: "right",
+    top_left: "topLeft",
+    top_right: "topRight",
+    bottom_left: "bottomLeft",
+    bottom_right: "bottomRight",
+  } as Record<string, NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>["position"]>)[backgroundPosition];
   return {
     id: value.id,
     type: type as EnterpriseTemplateBlock["type"],
     visible: value.visible !== false,
+    showTitle: value.show_title !== false,
     directoryEnabled: value.directory_enabled !== false,
     sortOrder: optionalNumber(value.sort_order) ?? 0,
     title: optionalString(value.title) || undefined,
     body: optionalString(value.body) || undefined,
     imageUrls: strings(value.image_urls),
+    galleryItems,
     videoUrl: optionalString(value.video_url) || undefined,
     videoCoverUrl: optionalString(value.video_cover_url) || undefined,
     productIds: strings(value.product_ids),
+    productOverrides: normalizeOverrides(value.product_overrides, "product") as EnterpriseTemplateBlock["productOverrides"],
     caseIds: strings(value.case_ids),
+    caseOverrides: normalizeOverrides(value.case_overrides, "case") as EnterpriseTemplateBlock["caseOverrides"],
+    layoutVariant: ["auto", "list", "grid", "carousel", "featured", "mosaic", "horizontal", "vertical"].includes(layoutVariant)
+      ? layoutVariant as EnterpriseTemplateBlock["layoutVariant"]
+      : undefined,
+    itemLimit: optionalNumber(value.item_limit),
+    actionTemplate: type === "action_collection" && ["shortcuts", "media", "event", "banner", "articles", "video", "buttons"].includes(optionalString(value.action_template))
+      ? optionalString(value.action_template) as EnterpriseTemplateBlock["actionTemplate"]
+      : undefined,
+    presentation: presentation ? {
+      identityLayout: presentation.identity_layout === "vertical" ? "vertical" : presentation.identity_layout === "horizontal" ? "horizontal" : undefined,
+      background: background ? {
+        assetUrl: optionalString(background.asset_url) || undefined,
+        fit: ["cover", "contain", "custom"].includes(optionalString(background.fit))
+          ? optionalString(background.fit) as NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>["fit"]
+          : undefined,
+        position: normalizedBackgroundPosition,
+        aspectRatio: (["auto", "16:9", "4:3", "3:2", "1:1"] as const).includes(background.aspect_ratio as never)
+          ? background.aspect_ratio as NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>["aspectRatio"]
+          : undefined,
+        focalX: optionalNumber(background.focal_x),
+        focalY: optionalNumber(background.focal_y),
+        scale: optionalNumber(background.scale),
+        opacity: optionalNumber(background.opacity),
+        overlay: ["none", "light", "dark", "brand"].includes(optionalString(background.overlay))
+          ? optionalString(background.overlay) as NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>["overlay"]
+          : undefined,
+      } : undefined,
+    } : undefined,
+    actionItems,
     faqMode: type === "faq" && value.faq_mode === "selected" ? "selected" : type === "faq" ? "all_published" : undefined,
     faqDocumentIds: type === "faq" ? strings(value.faq_document_ids) : undefined,
     ctaLabel: optionalString(value.cta_label) || undefined,
     ctaUrl: optionalString(value.cta_url) || undefined,
-    background: normalizeTemplateBackground(value.background),
-    textTone: ["auto", "light", "dark"].includes(optionalString(value.text_tone))
-      ? optionalString(value.text_tone) as NonNullable<EnterpriseTemplateBlock["textTone"]>
-      : "auto",
-    textColor: optionalString(value.text_color) || undefined,
-    contentImage: rawContentImage && optionalString(rawContentImage.url) ? {
-      url: optionalString(rawContentImage.url),
-      alt: optionalString(rawContentImage.alt) || undefined,
-      placement: contentPlacement,
-      fit: optionalString(rawContentImage.fit) === "contain" ? "contain" : "cover",
-      aspectRatio: ["auto", "square", "standard", "wide"].includes(optionalString(rawContentImage.aspect_ratio))
-        ? optionalString(rawContentImage.aspect_ratio) as NonNullable<EnterpriseTemplateBlock["contentImage"]>["aspectRatio"]
-        : "wide",
-      widthPercent: optionalNumber(rawContentImage.width_percent),
-      positionX: optionalNumber(rawContentImage.position_x) ?? 50,
-      positionY: optionalNumber(rawContentImage.position_y) ?? 50,
-    } : undefined,
-    sizePreset: ["auto", "compact", "standard", "tall"].includes(optionalString(value.size_preset))
-      ? optionalString(value.size_preset) as NonNullable<EnterpriseTemplateBlock["sizePreset"]>
-      : "auto",
-    paddingY: ["auto", "compact", "standard", "spacious"].includes(optionalString(value.padding_y))
-      ? optionalString(value.padding_y) as NonNullable<EnterpriseTemplateBlock["paddingY"]>
-      : "auto",
   };
 }
 
@@ -217,10 +289,6 @@ function normalizeEnterpriseTemplate(payload: unknown): EnterpriseTemplate {
       themeKey: ["brand", "clean", "warm"].includes(optionalString(record.theme_key))
         ? optionalString(record.theme_key) as EnterpriseTemplateThemeKey
         : "brand",
-      pageBackground: normalizeTemplateBackground(record.page_background),
-      pageTextTone: ["auto", "light", "dark"].includes(optionalString(record.page_text_tone))
-        ? optionalString(record.page_text_tone) as "auto" | "light" | "dark"
-        : "auto",
       blocks: Array.isArray(record.blocks)
         ? record.blocks.flatMap((item) => {
             const block = normalizeTemplateBlock(item);
@@ -254,38 +322,104 @@ function normalizeCardComposerDefault(payload: unknown): CardComposerDefault {
 function enterpriseTemplatePayload(
   themeKey: EnterpriseTemplateThemeKey,
   blocks: EnterpriseTemplateBlock[],
-  pageBackground?: EnterpriseTemplateBlock["background"],
-  pageTextTone?: "auto" | "light" | "dark",
 ) {
   return {
     schema_version: 1,
     theme_key: themeKey,
-    ...(pageBackground && pageBackground.kind !== "none" ? {
-      page_background: {
-        kind: pageBackground.kind,
-        ...(pageBackground.color?.trim() ? { color: pageBackground.color.trim() } : {}),
-        ...(pageBackground.imageUrl?.trim() ? { image_url: pageBackground.imageUrl.trim() } : {}),
-        fit: pageBackground.fit === "contain" ? "contain" : "cover",
-        position_x: pageBackground.positionX ?? 50,
-        position_y: pageBackground.positionY ?? 50,
-        ...(pageBackground.overlayColor?.trim() ? { overlay_color: pageBackground.overlayColor.trim() } : {}),
-        overlay_opacity: pageBackground.overlayOpacity ?? 0,
-      },
-    } : {}),
-    ...(pageTextTone && pageTextTone !== "auto" ? { page_text_tone: pageTextTone } : {}),
     blocks: blocks.map((block, index) => ({
       id: block.id,
       type: block.type,
       visible: block.visible,
+      show_title: block.showTitle !== false,
       directory_enabled: block.directoryEnabled !== false,
       sort_order: index,
       ...(block.title?.trim() ? { title: block.title.trim() } : {}),
       ...(block.body?.trim() ? { body: block.body.trim() } : {}),
       ...(block.imageUrls?.length ? { image_urls: block.imageUrls.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.galleryItems?.length ? { gallery_items: block.galleryItems.map((item) => ({
+        id: item.id,
+        image_url: item.imageUrl.trim(),
+        ...(item.title?.trim() ? { title: item.title.trim() } : {}),
+        ...(item.description?.trim() ? { description: item.description.trim() } : {}),
+        ...(item.timeLabel?.trim() ? { time_label: item.timeLabel.trim() } : {}),
+        ...(item.periodLabel?.trim() ? { period_label: item.periodLabel.trim() } : {}),
+        badge_mode: item.badgeMode,
+        ...(item.badgeText?.trim() ? { badge_text: item.badgeText.trim() } : {}),
+        ...(item.altText?.trim() ? { alt_text: item.altText.trim() } : {}),
+        ...(item.linkUrl?.trim() ? { link_url: item.linkUrl.trim() } : {}),
+      })) } : {}),
       ...(block.videoUrl?.trim() ? { video_url: block.videoUrl.trim() } : {}),
       ...(block.videoCoverUrl?.trim() ? { video_cover_url: block.videoCoverUrl.trim() } : {}),
       ...(block.productIds?.length ? { product_ids: block.productIds.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.productOverrides?.length ? { product_overrides: block.productOverrides.map((item) => ({
+        id: item.id,
+        ...(item.title?.trim() ? { title: item.title.trim() } : {}),
+        ...(item.category?.trim() ? { category: item.category.trim() } : {}),
+        ...(item.summary?.trim() ? { summary: item.summary.trim() } : {}),
+        ...(item.imageUrl?.trim() ? { image_url: item.imageUrl.trim() } : {}),
+        ...(item.ctaLabel?.trim() ? { cta_label: item.ctaLabel.trim() } : {}),
+      })) } : {}),
       ...(block.caseIds?.length ? { case_ids: block.caseIds.map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(block.caseOverrides?.length ? { case_overrides: block.caseOverrides.map((item) => ({
+        id: item.id,
+        ...(item.title?.trim() ? { title: item.title.trim() } : {}),
+        ...(item.industry?.trim() ? { industry: item.industry.trim() } : {}),
+        ...(item.clientName?.trim() ? { client_name: item.clientName.trim() } : {}),
+        ...(item.background?.trim() ? { background: item.background.trim() } : {}),
+        ...(item.solution?.trim() ? { solution: item.solution.trim() } : {}),
+        ...(item.summary?.trim() ? { summary: item.summary.trim() } : {}),
+        ...(item.result?.trim() ? { result: item.result.trim() } : {}),
+        ...(item.imageUrl?.trim() ? { image_url: item.imageUrl.trim() } : {}),
+        ...(item.ctaLabel?.trim() ? { cta_label: item.ctaLabel.trim() } : {}),
+        ...(item.metrics?.length ? { metrics: item.metrics.filter((metric) => metric.value.trim() && metric.label.trim()).map((metric) => ({ value: metric.value.trim(), label: metric.label.trim() })) } : {}),
+      })) } : {}),
+      ...(block.layoutVariant ? { layout_variant: block.layoutVariant } : {}),
+      ...(typeof block.itemLimit === "number" ? { item_limit: block.itemLimit } : {}),
+      ...(block.actionTemplate ? { action_template: block.actionTemplate } : {}),
+      ...(block.presentation ? {
+        presentation: {
+          ...(block.presentation.identityLayout ? { identity_layout: block.presentation.identityLayout } : {}),
+          ...(block.presentation.background ? {
+            background: {
+              ...(block.presentation.background.assetUrl?.trim() ? { asset_url: block.presentation.background.assetUrl.trim() } : {}),
+              ...(block.presentation.background.fit ? { fit: block.presentation.background.fit } : {}),
+              ...(block.presentation.background.position ? {
+                position: ({
+                  topLeft: "top_left",
+                  topRight: "top_right",
+                  bottomLeft: "bottom_left",
+                  bottomRight: "bottom_right",
+                } as const)[block.presentation.background.position as "topLeft"] ?? block.presentation.background.position,
+              } : {}),
+              ...(block.presentation.background.aspectRatio ? { aspect_ratio: block.presentation.background.aspectRatio } : {}),
+              ...(typeof block.presentation.background.focalX === "number" ? { focal_x: block.presentation.background.focalX } : {}),
+              ...(typeof block.presentation.background.focalY === "number" ? { focal_y: block.presentation.background.focalY } : {}),
+              ...(typeof block.presentation.background.scale === "number" ? { scale: block.presentation.background.scale } : {}),
+              ...(typeof block.presentation.background.opacity === "number" ? { opacity: block.presentation.background.opacity } : {}),
+              ...(block.presentation.background.overlay ? { overlay: block.presentation.background.overlay } : {}),
+            },
+          } : {}),
+        },
+      } : {}),
+      ...(block.actionItems?.length ? {
+        action_items: block.actionItems.map((item) => ({
+          id: item.id,
+          title: item.title.trim(),
+          ...(item.summary?.trim() ? { summary: item.summary.trim() } : {}),
+          ...(item.label?.trim() ? { label: item.label.trim() } : {}),
+          ...(item.tag?.trim() ? { tag: item.tag.trim() } : {}),
+          ...(item.icon ? { icon: item.icon } : {}),
+          ...(item.date?.trim() ? { date: item.date.trim() } : {}),
+          ...(item.location?.trim() ? { location: item.location.trim() } : {}),
+          ...(item.source?.trim() ? { source: item.source.trim() } : {}),
+          ...(item.status?.trim() ? { status: item.status.trim() } : {}),
+          ...(item.duration?.trim() ? { duration: item.duration.trim() } : {}),
+          ...(item.imageUrl?.trim() ? { image_url: item.imageUrl.trim() } : {}),
+          target_type: item.targetType,
+          target_value: item.targetValue.trim(),
+          open_mode: item.openMode,
+        })),
+      } : {}),
       ...(block.type === "faq" ? {
         faq_mode: block.faqMode === "selected" ? "selected" : "all_published",
         ...(block.faqMode === "selected" && block.faqDocumentIds?.length
@@ -294,34 +428,6 @@ function enterpriseTemplatePayload(
       } : {}),
       ...(block.ctaLabel?.trim() ? { cta_label: block.ctaLabel.trim() } : {}),
       ...(block.ctaUrl?.trim() ? { cta_url: block.ctaUrl.trim() } : {}),
-      ...(block.background && block.background.kind !== "none" ? {
-        background: {
-          kind: block.background.kind,
-          ...(block.background.color?.trim() ? { color: block.background.color.trim() } : {}),
-          ...(block.background.imageUrl?.trim() ? { image_url: block.background.imageUrl.trim() } : {}),
-          fit: block.background.fit === "contain" ? "contain" : "cover",
-          position_x: block.background.positionX ?? 50,
-          position_y: block.background.positionY ?? 50,
-          ...(block.background.overlayColor?.trim() ? { overlay_color: block.background.overlayColor.trim() } : {}),
-          overlay_opacity: block.background.overlayOpacity ?? 0,
-        },
-      } : {}),
-      ...(block.textTone && block.textTone !== "auto" ? { text_tone: block.textTone } : {}),
-      ...(block.textColor?.trim() ? { text_color: block.textColor.trim() } : {}),
-      ...(block.type === "rich_text" && block.contentImage?.url.trim() ? {
-        content_image: {
-          url: block.contentImage.url.trim(),
-          ...(block.contentImage.alt?.trim() ? { alt: block.contentImage.alt.trim() } : {}),
-          placement: block.contentImage.placement,
-          fit: block.contentImage.fit === "contain" ? "contain" : "cover",
-          aspect_ratio: block.contentImage.aspectRatio ?? "wide",
-          ...(block.contentImage.widthPercent !== undefined ? { width_percent: block.contentImage.widthPercent } : {}),
-          position_x: block.contentImage.positionX ?? 50,
-          position_y: block.contentImage.positionY ?? 50,
-        },
-      } : {}),
-      ...(block.sizePreset && block.sizePreset !== "auto" ? { size_preset: block.sizePreset } : {}),
-      ...(block.paddingY && block.paddingY !== "auto" ? { padding_y: block.paddingY } : {}),
     })),
   };
 }
@@ -524,6 +630,24 @@ function normalizeManagedCard(rawValue: unknown): ManagedCard {
     });
   }
   const ownerUserId = optionalString(rawValue.owner_user_id) || undefined;
+  const contactFields = Array.isArray(rawValue.contact_fields)
+    ? rawValue.contact_fields.flatMap((rawContact, index) => {
+        if (!isRecord(rawContact)) return [];
+        const label = optionalString(rawContact.label);
+        const value = optionalString(rawContact.value);
+        if (!label || !value) return [];
+        const rawKind = optionalString(rawContact.kind) || optionalString(rawContact.type);
+        const kind = (["phone", "wechat", "email", "location", "website", "other"] as const)
+          .find((value) => value === rawKind) ?? "other";
+        return [{
+          id: optionalString(rawContact.id) || `contact-${index + 1}`,
+          kind,
+          label,
+          value,
+          href: optionalString(rawContact.href) || undefined,
+        }];
+      })
+    : [];
   if (cardKind === "employee" && !ownerUserId) {
     throw new ApiError("员工名片缺少有效所有者。", {
       code: "INVALID_API_RESPONSE",
@@ -550,6 +674,8 @@ function normalizeManagedCard(rawValue: unknown): ManagedCard {
       chatNotice: optionalString(policies.chat_notice),
       leadConsent: optionalString(policies.lead_consent),
     },
+    identityTitles: normalizeStringArray(rawValue.identity_titles).slice(0, 8),
+    contactFields,
     employeeContactVisibility: normalizeStringArray(rawValue.employee_contact_visibility)
       .filter((value): value is "mobile" | "email" => value === "mobile" || value === "email"),
     status: optionalString(rawValue.status) || "draft",
@@ -722,8 +848,6 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
           template_document: enterpriseTemplatePayload(
             input.templateDocument.themeKey,
             input.templateDocument.blocks,
-            input.templateDocument.pageBackground,
-            input.templateDocument.pageTextTone,
           ),
         }
       : !requireOwner && input.templateSourceCardId?.trim()
@@ -740,6 +864,20 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
       .map((value) => value.trim())
       .filter(Boolean)
       .slice(0, 6),
+    identity_titles: input.identityTitles
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 8),
+    contact_fields: input.contactFields
+      .filter((field) => field.label.trim() && field.value.trim())
+      .slice(0, 8)
+      .map((field) => ({
+        id: field.id,
+        kind: field.kind,
+        label: field.label.trim(),
+        value: field.value.trim(),
+        ...(field.href?.trim() ? { href: field.href.trim() } : {}),
+      })),
     policy_versions: policyVersions,
     ...(input.cardKind === "employee"
       ? { employee_contact_visibility: input.employeeContactVisibility }
@@ -789,10 +927,6 @@ export function createAdminApi(client: ApiClient) {
     await client.put("/admin/card", cardPayload(input), {
       version: input.version,
     });
-  },
-
-  async completeEnterpriseSetup(): Promise<void> {
-    await client.post("/admin/setup/complete", {});
   },
 
   async listKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
@@ -1090,13 +1224,11 @@ export function createAdminApi(client: ApiClient) {
     version: number,
     themeKey: EnterpriseTemplateThemeKey,
     blocks: EnterpriseTemplateBlock[],
-    pageBackground?: EnterpriseTemplateBlock["background"],
-    pageTextTone?: "auto" | "light" | "dark",
   ): Promise<EnterpriseTemplate> {
     return normalizeEnterpriseTemplate(
       await client.put(
         `/admin/cards/${encodeURIComponent(id)}/enterprise-template`,
-        enterpriseTemplatePayload(themeKey, blocks, pageBackground, pageTextTone),
+        enterpriseTemplatePayload(themeKey, blocks),
         { version },
       ),
     );
@@ -1113,13 +1245,11 @@ export function createAdminApi(client: ApiClient) {
     version: number,
     themeKey: EnterpriseTemplateThemeKey,
     blocks: EnterpriseTemplateBlock[],
-    pageBackground?: EnterpriseTemplateBlock["background"],
-    pageTextTone?: "auto" | "light" | "dark",
   ): Promise<CardComposerDefault> {
     return normalizeCardComposerDefault(
       await client.put(
         `/admin/card-composer/defaults/${encodeURIComponent(cardKind)}`,
-        enterpriseTemplatePayload(themeKey, blocks, pageBackground, pageTextTone),
+        enterpriseTemplatePayload(themeKey, blocks),
         { version },
       ),
     );

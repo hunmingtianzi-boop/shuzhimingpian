@@ -502,3 +502,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* The composed card owns its complete simulator-derived page shell. */
+.bp-card-studio-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  padding: 0 !important;
+  background: transparent;
+}
+
+.bp-card-studio-page .card-studio-host {
+  display: block;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .bp-card-studio-page { min-height: 100dvh; }
+}
