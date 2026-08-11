@@ -353,7 +353,12 @@ mapfile -t github_releases < <(
     sort -r
 )
 for (( index=KEEP_RELEASES; index<${#github_releases[@]}; index++ )); do
-  [[ "${github_releases[index]}" == "${RELEASE_DIR}" ]] || rm -rf -- "${github_releases[index]}"
+  if [[ "${github_releases[index]}" != "${RELEASE_DIR}" ]] \
+    && ! rm -rf -- "${github_releases[index]}"; then
+    log "WARNING: retrying old release cleanup with elevated permissions: ${github_releases[index]}"
+    sudo rm -rf -- "${github_releases[index]}" \
+      || log "WARNING: unable to prune old release: ${github_releases[index]}"
+  fi
 done
 
 for image_repository in \
