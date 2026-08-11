@@ -291,7 +291,7 @@ describe("EnterpriseTemplateEditor", () => {
     await screen.findByRole("button", { name: /02\s*企业介绍/ });
     expect(screen.queryByRole("button", { name: /在线咨询/ })).not.toBeInTheDocument();
     expect(screen.getByTitle("手机预览")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
     expect(screen.getByText(/拖动手柄调整顺序/)).toBeInTheDocument();
     expect(screen.getAllByLabelText("拖动基础名片调整位置")).toHaveLength(2);
     expect(screen.getByLabelText("视觉模板")).toHaveValue("brand");
