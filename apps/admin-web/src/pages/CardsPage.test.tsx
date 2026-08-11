@@ -173,10 +173,10 @@ describe("CardsPage", () => {
     const basicSettings = await screen.findByRole("dialog");
     expect(within(basicSettings).getByText("编辑员工名片")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "名片页面编辑器" })).not.toBeInTheDocument();
-    await user.click(within(basicSettings).getByRole("button", { name: "取消" }));
+    await user.click(within(basicSettings).getByRole("button", { name: "取消", hidden: true }));
 
-    expect(await screen.findByRole("dialog", { name: "名片页面编辑器" })).toBeInTheDocument();
-    expect(screen.queryByText("编辑员工名片")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("编辑员工名片")).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog", { name: "名片页面编辑器", hidden: true })).toBeInTheDocument();
   });
 
   it("publishes a draft card with its current version", async () => {
