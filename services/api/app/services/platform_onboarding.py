@@ -197,6 +197,19 @@ class PlatformOnboardingService:
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"platform-onboarding:{body.tenant_slug}:{account}"},
             )
+            existing = await session.scalar(
+                select(PlatformOnboardingSession).where(
+                    PlatformOnboardingSession.created_by == actor.user_id,
+                    PlatformOnboardingSession.tenant_slug == body.tenant_slug,
+                    PlatformOnboardingSession.admin_account == account,
+                    PlatformOnboardingSession.status.in_(_OPEN_STATUSES),
+                )
+            )
+            if existing is not None:
+                await self._expire_if_needed(existing)
+                if existing.status in _OPEN_STATUSES:
+                    await self._reconcile_import_state(session, existing)
+                    return await self._record_with_review(session, existing)
             if await session.scalar(select(Tenant.id).where(Tenant.slug == body.tenant_slug)):
                 raise ApiError(409, "TENANT_SLUG_CONFLICT", "企业租户标识已存在")
             if await session.scalar(
@@ -376,6 +389,16 @@ class PlatformOnboardingService:
         settled = len(batches) == len(batch_ids) and all(
             batch.status in terminal_statuses for batch in batches
         )
+        if settled and batch_ids:
+            async with self._sessions() as session, session.begin():
+                await self._set_platform_scope(session, actor)
+                row = await self._row(
+                    session,
+                    onboarding_id,
+                    actor_user_id=actor.user_id,
+                    lock=True,
+                )
+                await self._reconcile_import_state(session, row, settled=True)
         return PlatformOnboardingImportStatusRecord(
             session_id=session_id,
             settled=settled,
@@ -414,6 +437,7 @@ class PlatformOnboardingService:
             ).all()
             for row in rows:
                 await self._expire_if_needed(row)
+                await self._reconcile_import_state(session, row)
             return await self._records(session, list(rows)), total
 
     async def get_session(
@@ -431,6 +455,7 @@ class PlatformOnboardingService:
                 actor_user_id=actor.user_id,
             )
             await self._expire_if_needed(row)
+            await self._reconcile_import_state(session, row)
             return await self._record_with_review(session, row)
 
     async def import_scope(
@@ -851,6 +876,37 @@ class PlatformOnboardingService:
         )
         if not settled:
             raise ApiError(409, "ONBOARDING_IMPORT_PENDING", "资料仍在处理中，请稍后确认")
+
+    @staticmethod
+    async def _reconcile_import_state(
+        session: AsyncSession,
+        row: PlatformOnboardingSession,
+        *,
+        settled: bool | None = None,
+    ) -> bool:
+        """Project terminal import batches into the recoverable onboarding state.
+
+        Import processing remains owned by ``knowledge_import``.  This method
+        only repairs the derived onboarding status when a client polls, lists,
+        or reopens its session, so a worker completion cannot leave the wizard
+        permanently stuck in ``processing``.
+        """
+
+        if row.status != "processing" or not row.import_batch_ids:
+            return False
+        if settled is None:
+            settled = bool(
+                await session.scalar(
+                    text("SELECT app.platform_onboarding_imports_settled(:session_id)"),
+                    {"session_id": row.id},
+                )
+            )
+        if not settled:
+            return False
+        row.status = "manual_required"
+        row.version += 1
+        await session.flush()
+        return True
 
     @staticmethod
     async def _row(

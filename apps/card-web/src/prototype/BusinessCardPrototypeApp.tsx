@@ -767,7 +767,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   const contactFields = card?.contact_fields.filter((item) => item.label && item.value) ?? [];
   const websiteHref = isBlankTemplate
     ? undefined
-    : card?.company.website
+    : card
       ? safeContactHref({ href: card.company.website })
       : safeContactHref({ href: tenant.brand.officialAction.target });
   const websiteLabel = card?.company.website
@@ -1271,7 +1271,7 @@ export const BusinessCardPrototypeApp = forwardRef<
         ariaLabel: "切换到员工名片",
       } : undefined}
       contentAriaLabel={isStandaloneEmployee ? "员工名片内容" : "企业名片内容"}
-      primaryAction={{ label: "咨询 AI", onClick: () => onAssistant(), disabled: !assistantAvailable }}
+      primaryAction={assistantAvailable ? { label: "咨询 AI", onClick: () => onAssistant() } : undefined}
       secondaryAction={{ label: isStandaloneEmployee ? "发起合作" : "提交合作需求", onClick: onLead }}
       onAction={(item) => {
         if (!card) return;
@@ -1598,7 +1598,7 @@ export const BusinessCardPrototypeApp = forwardRef<
         )}
       </main>
       {!hasComposableEnterprisePage && (isStandaloneCard ? <div className="bp-sticky-actions bp-standalone-action-bar" aria-label="企业名片主要操作">
-        <button className="primary" type="button" disabled={!assistantAvailable} onClick={() => onAssistant()}>咨询 AI</button>
+        {assistantAvailable ? <button className="primary" type="button" onClick={() => onAssistant()}>咨询 AI</button> : null}
         <button type="button" onClick={onLead}>提交合作需求</button>
       </div> : <div className="bp-sticky-actions bp-company-actions">
         {isBlankTemplate ? <>

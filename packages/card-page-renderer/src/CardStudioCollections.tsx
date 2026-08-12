@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 export type StudioCollectionItem = Record<string, unknown>;
 
@@ -55,14 +55,41 @@ export function StudioCaseCollection({ items, layout = "featured", onOpenItem }:
   </div>;
 }
 
-export function StudioGallery({ items, layout = "mosaic", title }: { items: Array<{ id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string }>; layout?: string; title: string }) {
+export function StudioGallery({ items, layout = "mosaic", title, interactive = true }: { items: Array<{ id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string }>; layout?: string; title: string; interactive?: boolean }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (activeIndex === null) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setActiveIndex(null);
+      if (event.key === "ArrowLeft") setActiveIndex((current) => current === null ? null : (current - 1 + items.length) % items.length);
+      if (event.key === "ArrowRight") setActiveIndex((current) => current === null ? null : (current + 1) % items.length);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [activeIndex, items.length]);
   if (!items.length) return <div className="empty-state"><strong>展示图片待上传</strong><p>添加图片后会按数量自动编排。</p></div>;
   const density = items.length <= 1 ? "single" : items.length === 2 ? "pair" : "many";
-  return <div className={`gallery-grid cpr-gallery cpr-gallery--${density} layout-${layout}`}>
+  const activeItem = activeIndex === null ? undefined : items[activeIndex];
+  return <><div className={`gallery-grid cpr-gallery cpr-gallery--${density} layout-${layout}`}>
     {items.map((item, index) => {
       const badge = item.badgeMode === "none" ? "" : item.badgeMode === "time" ? item.timeLabel : item.badgeMode === "period" ? item.periodLabel : item.badgeMode === "custom" ? item.badgeText : item.title;
       const figure = <figure><img src={item.imageUrl} alt={item.altText || item.title || `${title} ${index + 1}`}/>{badge ? <figcaption><span>{badge}</span></figcaption> : null}{item.description ? <p>{item.description}</p> : null}</figure>;
-      return item.linkUrl ? <a className="gallery-link" href={item.linkUrl} key={item.id}>{figure}</a> : <div className="gallery-link" key={item.id}>{figure}</div>;
+      return interactive
+        ? <button className="gallery-link gallery-preview-trigger" type="button" key={item.id} onClick={() => setActiveIndex(index)} aria-label={`查看大图：${item.altText || item.title || `${title} ${index + 1}`}`}>{figure}</button>
+        : <div className="gallery-link" key={item.id}>{figure}</div>;
     })}
-  </div>;
+  </div>{activeItem ? <div className="gallery-lightbox" role="dialog" aria-modal="true" aria-label={`${title}大图预览`} onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveIndex(null); }}>
+    <button ref={closeRef} className="gallery-lightbox-close" type="button" onClick={() => setActiveIndex(null)} aria-label="关闭大图预览">×</button>
+    {items.length > 1 ? <button className="gallery-lightbox-nav previous" type="button" onClick={() => setActiveIndex((activeIndex! - 1 + items.length) % items.length)} aria-label="上一张">‹</button> : null}
+    <figure><img src={activeItem.imageUrl} alt={activeItem.altText || activeItem.title || `${title} ${activeIndex! + 1}`}/>{activeItem.title || activeItem.description ? <figcaption><strong>{activeItem.title}</strong>{activeItem.description ? <span>{activeItem.description}</span> : null}</figcaption> : null}</figure>
+    {items.length > 1 ? <button className="gallery-lightbox-nav next" type="button" onClick={() => setActiveIndex((activeIndex! + 1) % items.length)} aria-label="下一张">›</button> : null}
+    <span className="gallery-lightbox-count">{activeIndex! + 1} / {items.length}</span>
+  </div> : null}</>;
 }

@@ -19,6 +19,8 @@ const member = {
   user_id: "user-1",
   account: "member@example.test",
   display_name: "张三",
+  email: "member@example.test",
+  mobile: "+8613800138000",
   role: "card_owner",
   permissions: ["card.read"],
   status: "active",
@@ -62,7 +64,13 @@ describe("memberApi real contract", () => {
       account: " member@example.test ", displayName: " 张三 ", password: "SecurePassword!2026",
       email: "", mobile: "", role: "card_owner", permissions: ["card.read"], status: "active", rotatePassword: true,
     });
-    await api.updateMember("membership-1", { displayName: "张三", role: "card_owner", permissions: ["card.read"] });
+    await api.updateMember("membership-1", {
+      displayName: "张三",
+      email: " updated@example.test ",
+      mobile: " +8613900139000 ",
+      role: "card_owner",
+      permissions: ["card.read"],
+    });
     await api.setStatus("membership-1", "disabled");
     await expect(api.resetPassword("membership-1", "AnotherSecure!2026")).resolves.toMatchObject({ sessionsRevoked: 2 });
 
@@ -70,7 +78,13 @@ describe("memberApi real contract", () => {
       account: "member@example.test", display_name: "张三", password: "SecurePassword!2026",
       email: null, mobile: null, role: "card_owner", permissions: ["card.read"], status: "active", rotate_password: true,
     });
-    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({ display_name: "张三", role: "card_owner", permissions: ["card.read"] });
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({
+      display_name: "张三",
+      email: "updated@example.test",
+      mobile: "+8613900139000",
+      role: "card_owner",
+      permissions: ["card.read"],
+    });
     expect(JSON.parse(String(fetcher.mock.calls[3][1]?.body))).toEqual({ status: "disabled" });
     expect(JSON.parse(String(fetcher.mock.calls[4][1]?.body))).toEqual({ password: "AnotherSecure!2026", revoke_sessions: true });
   });

@@ -319,4 +319,70 @@ describe("EnterpriseTemplateBlocks", () => {
       }],
     });
   });
+
+  it("keeps every valid identity contact visible and drops empty custom rows", () => {
+    const { container } = render(<CardPageExperience
+      blocks={[{ id: "identity", type: "identity" }]}
+      data={{ identity: {
+        kind: "employee",
+        name: "陈雨欣",
+        contacts: [
+          { id: "empty", kind: "website", label: "", value: "", href: "https://card.example.test/c/self" },
+          ...["电话", "邮箱", "企业微信", "公司地址", "企业官网"].map((label, index) => ({ id: `contact-${index}`, kind: "other" as const, label, value: `value-${index}` })),
+        ],
+      } }}
+    />);
+
+    expect(container.querySelector('[aria-label="快捷联系方式"]')?.children).toHaveLength(5);
+    expect(screen.getByText("企业官网")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /card\.example/ })).not.toBeInTheDocument();
+  });
+
+  it("opens gallery images in an accessible lightbox and supports navigation and Escape", () => {
+    render(<CardPageExperience blocks={[{
+      id: "gallery",
+      type: "image_gallery",
+      title: "工作相册",
+      galleryItems: [
+        { id: "one", imageUrl: "/one.jpg", title: "项目启动" },
+        { id: "two", imageUrl: "/two.jpg", title: "交付验收" },
+      ],
+    }]}/>);
+
+    fireEvent.click(screen.getByRole("button", { name: "查看大图：项目启动" }));
+    expect(screen.getByRole("dialog", { name: "工作相册大图预览" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "项目启动" })).toHaveAttribute("src", "/one.jpg");
+    fireEvent.click(screen.getByRole("button", { name: "下一张" }));
+    expect(screen.getByRole("img", { name: "交付验收" })).toHaveAttribute("src", "/two.jpg");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps gallery and video passive in editor mode", () => {
+    const onSelectBlock = vi.fn();
+    render(<CardPageExperience
+      blocks={[
+        { id: "gallery", type: "image_gallery", title: "工作相册", imageUrls: ["/one.jpg"] },
+        { id: "video", type: "video_link", title: "介绍视频", videoUrl: "blob:https://card.example.test/video" },
+      ]}
+      editorAdapter={{ onSelectBlock }}
+    />);
+
+    expect(screen.queryByRole("button", { name: /查看大图/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选中介绍视频模块" }));
+    expect(onSelectBlock).toHaveBeenCalledWith("video");
+    expect(screen.queryByRole("video")).not.toBeInTheDocument();
+  });
+
+  it("plays uploaded video URLs in place and does not show a false empty CTA", () => {
+    const { container } = render(<CardPageExperience blocks={[
+      { id: "video", type: "video_link", title: "介绍视频", videoUrl: "/api/v1/public/assets/video.mp4", videoCoverUrl: "/cover.jpg" },
+      { id: "cta", type: "cta", title: "立即预约", ctaLabel: "预约咨询", ctaUrl: "https://example.test/contact" },
+    ]}/>);
+
+    fireEvent.click(screen.getByRole("button", { name: "播放介绍视频" }));
+    expect(container.querySelector("video")).toHaveAttribute("src", "/api/v1/public/assets/video.mp4");
+    expect(screen.getByRole("link", { name: "预约咨询 →" })).toBeInTheDocument();
+    expect(screen.queryByText("内容待补充")).not.toBeInTheDocument();
+  });
 });

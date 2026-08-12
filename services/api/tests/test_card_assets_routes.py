@@ -18,7 +18,9 @@ from app.services.card_assets import (
     CardAssetContent,
     CardAssetNotFoundError,
     ProcessedCardAsset,
+    ProcessedCardVideoAsset,
     StoredCardAsset,
+    StoredCardVideoAsset,
 )
 
 
@@ -27,6 +29,7 @@ class FakeCardAssetStore:
         self.asset_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
         self.put_calls: list[dict[str, Any]] = []
         self.missing = False
+        self.video_put_calls: list[dict[str, Any]] = []
 
     async def put(
         self,
@@ -48,6 +51,25 @@ class FakeCardAssetStore:
             raise CardAssetNotFoundError
         assert asset_id == self.asset_id
         return CardAssetContent(payload=b"webp-image", content_type="image/webp")
+
+    async def put_video(
+        self, *, company_id: uuid.UUID, asset: ProcessedCardVideoAsset
+    ) -> StoredCardVideoAsset:
+        self.video_put_calls.append({"company_id": company_id, "asset": asset})
+        return StoredCardVideoAsset(
+            asset_id=self.asset_id,
+            size_bytes=len(asset.payload),
+            content_type=asset.content_type,
+            extension=asset.extension,
+        )
+
+    async def get_video(
+        self, *, company_id: uuid.UUID, asset_id: uuid.UUID, extension: str
+    ) -> CardAssetContent:
+        if self.missing or extension != "mp4":
+            raise CardAssetNotFoundError
+        assert asset_id == self.asset_id
+        return CardAssetContent(payload=b"0123456789", content_type="video/mp4")
 
 
 @pytest.fixture
@@ -156,3 +178,72 @@ def test_public_card_asset_returns_immutable_image_or_404(
     assert response.headers["x-content-type-options"] == "nosniff"
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "CARD_ASSET_NOT_FOUND"
+
+
+def _mp4_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41"
+
+
+def test_video_upload_is_company_scoped_and_public_range_is_supported(
+    asset_client: tuple[TestClient, FakeCardAssetStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = asset_client
+    response = client.post(
+        "/api/v1/admin/card-video-assets",
+        files={"file": ("intro.mp4", _mp4_bytes(), "video/mp4")},
+    )
+    assert response.status_code == 201
+    assert store.video_put_calls[0]["company_id"] == principal_box["value"].company_id
+    url = response.json()["data"]["url"]
+    partial = client.get(url, headers={"Range": "bytes=2-5"})
+    assert partial.status_code == 206
+    assert partial.content == b"2345"
+    assert partial.headers["content-range"] == "bytes 2-5/10"
+    assert partial.headers["accept-ranges"] == "bytes"
+    assert partial.headers["x-content-type-options"] == "nosniff"
+
+
+def test_video_upload_rejects_spoofed_oversized_and_unauthorized_files(
+    asset_client: tuple[TestClient, FakeCardAssetStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = asset_client
+    spoofed = client.post(
+        "/api/v1/admin/card-video-assets",
+        files={"file": ("intro.mp4", b"not-video", "video/mp4")},
+    )
+    assert spoofed.status_code == 400
+    assert spoofed.json()["error"]["code"] == "CARD_VIDEO_ASSET_MIME_MISMATCH"
+
+    oversized = client.post(
+        "/api/v1/admin/card-video-assets",
+        files={
+            "file": (
+                "intro.mp4",
+                _mp4_bytes() + b"x" * (card_assets.MAX_CARD_VIDEO_ASSET_BYTES + 1),
+                "video/mp4",
+            )
+        },
+    )
+    assert oversized.status_code == 400
+    assert oversized.json()["error"]["code"] == "CARD_VIDEO_ASSET_TOO_LARGE"
+
+    principal_box["value"] = _principal(role="card_owner")
+    forbidden = client.post(
+        "/api/v1/admin/card-video-assets",
+        files={"file": ("intro.mp4", _mp4_bytes(), "video/mp4")},
+    )
+    assert forbidden.status_code == 403
+    assert store.video_put_calls == []
+
+
+def test_video_range_rejects_unsatisfiable_request(
+    asset_client: tuple[TestClient, FakeCardAssetStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, principal_box = asset_client
+    url = (
+        f"/api/v1/public/card-video-assets/{principal_box['value'].company_id}/"
+        f"{store.asset_id}.mp4"
+    )
+    response = client.get(url, headers={"Range": "bytes=99-100"})
+    assert response.status_code == 416
+    assert response.json()["error"]["code"] == "CARD_VIDEO_RANGE_INVALID"

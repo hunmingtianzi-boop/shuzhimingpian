@@ -294,6 +294,37 @@ describe("CardsPage", () => {
     });
   });
 
+  it("drops unfinished contact rows and warns when shortcuts exceed the public limit", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);
+    vi.spyOn(memberApi, "listMembers").mockResolvedValue({ items: [employeeMember], total: 1, limit: 100, offset: 0 });
+    const create = vi.spyOn(adminApi, "createManagedCard").mockResolvedValue(draftCard);
+    renderPage();
+
+    await screen.findByText("尚未创建名片");
+    await user.click(screen.getByRole("button", { name: "新建员工名片" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "选择企业员工" }),
+      employeeMember.userId,
+    );
+    await user.click(screen.getByRole("checkbox", { name: "公开工作手机" }));
+    await user.click(screen.getByRole("checkbox", { name: "公开工作邮箱" }));
+    for (let index = 0; index < 4; index += 1) {
+      await user.click(screen.getByRole("button", { name: "添加联系方式" }));
+    }
+    const values = screen.getAllByRole("textbox", { name: "内容" });
+    await user.type(values[0], "13800000001");
+    await user.type(values[1], "13800000002");
+    await user.type(values[2], "13800000003");
+
+    expect(screen.getByText(/有 1 条联系方式尚未填写内容/)).toBeInTheDocument();
+    expect(screen.getByText(/当前共有 5 个公开联系方式/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "创建名片", hidden: true }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].contactFields).toHaveLength(3);
+    expect(create.mock.calls[0][0].contactFields.every((field) => field.value.trim())).toBe(true);
+  });
+
   it("keeps employee identity canonical while allowing avatar upload from the card flow", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([]);

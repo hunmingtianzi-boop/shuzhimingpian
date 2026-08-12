@@ -1276,6 +1276,19 @@ class CatalogStore:
                         "TEMPLATE_ASSET_OUT_OF_SCOPE",
                         "模板图片必须来自当前企业的名片素材库",
                     )
+            if (
+                block.type == "video_link"
+                and block.video_url
+                and urlsplit(block.video_url).scheme == ""
+                and not card_video_asset_belongs_to_company(
+                    block.video_url, scope.company_id
+                )
+            ):
+                raise ApiError(
+                    422,
+                    "TEMPLATE_ASSET_OUT_OF_SCOPE",
+                    "模板视频必须来自当前企业的名片素材库",
+                )
 
         product_ids = {
             product_id
@@ -2197,6 +2210,31 @@ def card_asset_belongs_to_company(value: str, company_id: uuid.UUID) -> bool:
         return False
     try:
         uuid.UUID(filename.removesuffix(".webp"))
+    except ValueError:
+        return False
+    return True
+
+
+def card_video_asset_belongs_to_company(value: str, company_id: uuid.UUID) -> bool:
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        public_index = parts.index("public")
+    except ValueError:
+        return False
+    suffix = parts[public_index:]
+    if len(suffix) != 4 or suffix[:2] != ["public", "card-video-assets"]:
+        return False
+    if suffix[2] != str(company_id):
+        return False
+    filename = suffix[3]
+    extension = filename.rsplit(".", 1)[-1].casefold()
+    if extension not in {"mp4", "webm"}:
+        return False
+    try:
+        uuid.UUID(filename.rsplit(".", 1)[0])
     except ValueError:
         return False
     return True

@@ -8,11 +8,12 @@ import { adminApi } from "../api/adminApi";
 import type {
   CaseStudy,
   EnterpriseTemplate,
+  EnterpriseTemplateBlock,
   ManagedCard,
   SelectableFaqDocument,
 } from "../api/types";
 import { adminLightTheme } from "../theme";
-import { EnterpriseTemplateEditor } from "./EnterpriseTemplateEditor";
+import { EnterpriseTemplateEditor, getEnterpriseTemplateBlockIssue } from "./EnterpriseTemplateEditor";
 
 // The editor behavior tests exercise our sortable commands and persisted
 // ordering, not dnd-kit's sensor implementation. Keep the jsdom suite on one
@@ -172,6 +173,23 @@ function renderEditor(props: Partial<React.ComponentProps<typeof EnterpriseTempl
 }
 
 describe("EnterpriseTemplateEditor", () => {
+  it("accepts a tel-prefixed phone target and leaves normalization to the API mapper", () => {
+    const block = {
+      id: "actions-test",
+      type: "action_collection",
+      visible: true,
+      sortOrder: 0,
+      title: "快捷入口",
+      actionItems: [{
+        id: "phone-test",
+        title: "电话咨询",
+        targetType: "phone",
+        targetValue: "tel:+8613812345688",
+        openMode: "self",
+      }],
+    } satisfies EnterpriseTemplateBlock;
+    expect(getEnterpriseTemplateBlockIssue(block)).toBeUndefined();
+  });
   it("uses the exact simulator editor shell and shared panel primitives", async () => {
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([publishedCase]);
@@ -371,11 +389,60 @@ describe("EnterpriseTemplateEditor", () => {
       "src",
       "/api/v1/public/card-assets/company-1/gallery.webp",
     );
+    expect(screen.getByRole("link", { name: /预览原图/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/api/v1/public/card-assets/company-1/gallery.webp"),
+    );
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][3].find((block) => block.id === "gallery-1")?.imageUrls).toEqual([
       "/api/v1/public/card-assets/company-1/gallery.webp",
     ]);
+  }, 15_000);
+
+  it("uploads a real video asset and exposes a separate test-play link", async () => {
+    const user = userEvent.setup();
+    const videoTemplate = template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [identityBlock, {
+          id: "video-1",
+          type: "video_link",
+          visible: true,
+          sortOrder: 1,
+          title: "项目视频",
+          videoCoverUrl: "/api/v1/public/card-assets/company-1/video-cover.webp",
+        }],
+      },
+    });
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(videoTemplate);
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    const upload = vi.spyOn(adminApi, "uploadCardVideoAsset").mockResolvedValue({
+      url: "/api/v1/public/card-video-assets/company-1/demo.mp4",
+      contentType: "video/mp4",
+      sizeBytes: 1_048_576,
+    });
+    renderEditor();
+
+    await user.click(await screen.findByRole("button", { name: /02\s*项目视频/ }));
+    const file = new File(["video"], "demo.mp4", { type: "video/mp4" });
+    await user.upload(screen.getByLabelText("选择项目视频文件"), file);
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
+    expect(await screen.findByText("视频文件已上传并写入当前模块。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /测试播放/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/api/v1/public/card-video-assets/company-1/demo.mp4"),
+    );
+    expect(getEnterpriseTemplateBlockIssue({
+      id: "video-1",
+      type: "video_link",
+      visible: true,
+      sortOrder: 1,
+      videoUrl: "/api/v1/public/card-video-assets/company-1/demo.mp4",
+      videoCoverUrl: "/cover.webp",
+    })).toBeUndefined();
   }, 15_000);
 
   it("persists identity layout and uploaded background with collection layout settings", async () => {
@@ -437,7 +504,7 @@ describe("EnterpriseTemplateEditor", () => {
       "src",
       "/api/v1/public/card-assets/company-1/identity-background.webp",
     );
-    const [scaleSlider, opacitySlider] = screen.getAllByRole("slider");
+    const [scaleSlider, opacitySlider] = screen.getAllByRole("slider", { hidden: true });
     fireEvent.change(scaleSlider, { target: { value: "118" } });
     fireEvent.change(opacitySlider, { target: { value: "78" } });
 
@@ -577,10 +644,10 @@ describe("EnterpriseTemplateEditor", () => {
     await user.click(await screen.findByRole("button", { name: /02\s*常见问题/ }));
     expect(screen.queryByRole("textbox", { name: "回答内容" })).not.toBeInTheDocument();
     expect(screen.getByText("数据来源：知识 FAQ")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /自动同步全部公开 FAQ/, hidden: true })).toBeChecked();
     expect(screen.getByRole("link", { name: /前往管理/ })).toHaveAttribute("href", expect.stringContaining("knowledge"));
 
-    await user.click(screen.getByRole("radio", { name: "精选展示" }));
+    await user.click(screen.getByRole("radio", { name: "精选展示", hidden: true }));
     await user.click(screen.getByRole("checkbox", { name: "项目多久可以交付？", hidden: true }));
     await user.click(screen.getByRole("checkbox", { name: "是否提供售后支持？", hidden: true }));
     await user.click(screen.getByRole("button", { name: "上移 FAQ：是否提供售后支持？", hidden: true }));

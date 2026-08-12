@@ -73,6 +73,8 @@ function companyMember(value: unknown): CompanyMember {
     jobTitle: typeof item.job_title === "string" ? item.job_title : undefined,
     avatarUrl: typeof item.avatar_url === "string" ? item.avatar_url : undefined,
     businessSummary: typeof item.business_summary === "string" ? item.business_summary : undefined,
+    email: typeof item.email === "string" ? item.email : undefined,
+    mobile: typeof item.mobile === "string" ? item.mobile : undefined,
     role: memberRole(item.role),
     permissions,
     status: memberStatus(item.status),
@@ -166,6 +168,8 @@ export function createMemberApi(client: ApiClient) {
       if (input.jobTitle !== undefined) body.job_title = input.jobTitle.trim() || null;
       if (input.avatarUrl !== undefined) body.avatar_url = input.avatarUrl.trim() || null;
       if (input.businessSummary !== undefined) body.business_summary = input.businessSummary.trim() || null;
+      if (input.email !== undefined) body.email = input.email.trim() || null;
+      if (input.mobile !== undefined) body.mobile = input.mobile.trim() || null;
       if (input.role !== undefined) body.role = input.role;
       if (input.permissions !== undefined) body.permissions = input.permissions;
       return companyMember(unwrapData(await client.patch(`/admin/members/${encodeURIComponent(membershipId)}`, body)));

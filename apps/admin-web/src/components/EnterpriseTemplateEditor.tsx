@@ -62,6 +62,8 @@ import { FormFeedback } from "./FormFeedback";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
 const CARD_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_CARD_VIDEO_BYTES = 50 * 1024 * 1024;
+const CARD_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
 const LEGACY_OVERVIEW_DEFAULT = "把企业的业务经验变成可复用的 AI 能力，让销售更懂客户，让服务更快抵达。";
 
 export const enterpriseTemplateBlockLabels: Record<EnterpriseTemplateBlockType, string> = {
@@ -142,7 +144,10 @@ function isActionTargetValid(item: EnterpriseTemplateActionItem) {
   if (!item.title.trim() || !target) return false;
   if (item.targetType === "external_url") return isHttpsUrl(target);
   if (item.targetType === "internal_path") return /^\/(?!\/)/.test(target);
-  if (item.targetType === "phone") return /^\+?[0-9()\-\s]{5,24}$/.test(target);
+  if (item.targetType === "phone") {
+    const phone = target.replace(/^tel:/i, "");
+    return /^\+?[0-9][0-9()\-\s]{4,24}$/.test(phone);
+  }
   return target.length >= 2;
 }
 
@@ -175,6 +180,14 @@ function isHttpsUrl(value?: string) {
   }
 }
 
+function isPlayableVideoUrl(value?: string) {
+  const target = value?.trim();
+  return Boolean(target && (
+    isHttpsUrl(target)
+    || /^\/api\/v1\/public\/card-video-assets\//.test(target)
+  ));
+}
+
 export function getEnterpriseTemplateBlockIssue(
   block: EnterpriseTemplateBlock,
   selectableFaqs?: SelectableFaqDocument[],
@@ -185,7 +198,7 @@ export function getEnterpriseTemplateBlockIssue(
     case "image_gallery":
       return block.imageUrls?.length ? undefined : "请至少上传一张图片。";
     case "video_link":
-      if (!isHttpsUrl(block.videoUrl)) return "请输入有效的 HTTPS 视频地址。";
+      if (!isPlayableVideoUrl(block.videoUrl)) return "请上传视频或输入有效的 HTTPS 视频地址。";
       if (!block.videoCoverUrl) return "请上传视频封面。";
       return undefined;
     case "business_collection":
@@ -332,6 +345,31 @@ function validateImage(file: File) {
   return undefined;
 }
 
+function validateVideo(file: File) {
+  if (!CARD_VIDEO_TYPES.has(file.type)) {
+    return new ApiError("仅支持 MP4 或 WebM 视频。", {
+      code: "CARD_VIDEO_ASSET_UNSUPPORTED_TYPE",
+    });
+  }
+  if (file.size > MAX_CARD_VIDEO_BYTES) {
+    return new ApiError("视频不能超过 50 MiB。", {
+      code: "CARD_VIDEO_ASSET_TOO_LARGE",
+    });
+  }
+  return undefined;
+}
+
+function normalizeIdentityContactFields(fields: IdentityContactField[]) {
+  return fields
+    .map((field) => ({
+      ...field,
+      label: field.label.trim(),
+      value: field.value.trim(),
+      href: field.href?.trim() || undefined,
+    }))
+    .filter((field) => Boolean(field.value));
+}
+
 type EnterpriseTemplateEditorProps = {
   card?: ManagedCard;
   defaultKind?: ManagedCard["cardKind"];
@@ -368,6 +406,7 @@ export type EnterpriseTemplateEditorDataSource = Pick<
   | "getCompanyProfile"
   | "listSelectableFaqDocuments"
   | "uploadCardAsset"
+  | "uploadCardVideoAsset"
   | "updateManagedCard"
   | "updateEnterpriseTemplate"
   | "updateCardComposerDefault"
@@ -412,6 +451,7 @@ export function EnterpriseTemplateEditor({
   const [undoStack, setUndoStack] = useState<Array<{ blocks: EnterpriseTemplateBlock[]; themeKey: EnterpriseTemplateThemeKey }>>([]);
   const [redoStack, setRedoStack] = useState<Array<{ blocks: EnterpriseTemplateBlock[]; themeKey: EnterpriseTemplateThemeKey }>>([]);
   const galleryInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const videoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const coverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const backgroundInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const actionCoverInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -480,7 +520,9 @@ export function EnterpriseTemplateEditor({
         setCases(caseResult);
         setCompany(companyProfile);
         setIdentityTitles(card?.identityTitles ?? creationDraft?.identityPreview.identityTitles ?? []);
-        setIdentityContactFields(card?.contactFields ?? creationDraft?.identityPreview.contactFields ?? []);
+        setIdentityContactFields(normalizeIdentityContactFields(
+          card?.contactFields ?? creationDraft?.identityPreview.contactFields ?? [],
+        ));
         setSelectableFaqs(faqResult);
         setSelectedBlockId((current) => (
           editableBlocks.some((block) => block.id === current)
@@ -697,6 +739,33 @@ export function EnterpriseTemplateEditor({
     }
   };
 
+  const uploadVideoAsset = async (
+    index: number,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateVideo(file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    const block = blocks[index];
+    if (!block || block.type !== "video_link") return;
+    setUploadingKey(`${block.id}:video`);
+    setError(undefined);
+    try {
+      const uploaded = await dataSource.uploadCardVideoAsset(file);
+      updateBlock(index, { videoUrl: uploaded.url });
+      setSavedNotice(`视频“${file.name}”已上传，保存页面后正式生效。`);
+    } catch (cause) {
+      setError(toApiError(cause, "上传视频失败。", "TEMPLATE_VIDEO_UPLOAD_FAILED"));
+    } finally {
+      setUploadingKey(undefined);
+    }
+  };
+
   const uploadIdentityBackground = async (
     index: number,
     event: ChangeEvent<HTMLInputElement>,
@@ -824,7 +893,7 @@ export function EnterpriseTemplateEditor({
           suggestedQuestions: card.suggestedQuestions,
           policyVersions: card.policyVersions,
           identityTitles,
-          contactFields: identityContactFields,
+          contactFields: normalizeIdentityContactFields(identityContactFields),
           employeeContactVisibility: card.employeeContactVisibility ?? [],
         };
         savedCard = await dataSource.updateManagedCard(card.id, baseVersion, cardInput);
@@ -867,7 +936,7 @@ export function EnterpriseTemplateEditor({
         schemaVersion: 1,
         themeKey,
         blocks: normalizeEnterpriseTemplateBlockOrder(blocks),
-      }, { identityTitles, contactFields: identityContactFields });
+      }, { identityTitles, contactFields: normalizeIdentityContactFields(identityContactFields) });
       onClose();
     } catch (cause) {
       setError(toApiError(cause, "创建名片失败，请检查填写内容后重试。", "CARD_CREATE_FAILED"));
@@ -900,7 +969,23 @@ export function EnterpriseTemplateEditor({
   };
 
   const requestPublish = async () => {
-    if (!card || !version || !draftValid || !publishReady || saving) return;
+    if (!card || !version || saving) return;
+    if (!draftValid || !publishReady) {
+      const issueIndex = blockIssues.findIndex(Boolean);
+      if (issueIndex >= 0) {
+        setSelectedBlockId(blocks[issueIndex]?.id);
+        setMobilePane("inspector");
+      }
+      const issue = issueIndex >= 0 ? blockIssues[issueIndex] : undefined;
+      const missing = publishChecks.filter((item) => !item.ready).map((item) => item.label);
+      setError(new ApiError(
+        issue
+          ? `${templateBlockDisplayTitle(blocks[issueIndex], effectiveKind)}：${issue}`
+          : `发布前请补齐：${missing.join("、") || "名片必填信息"}。`,
+        { code: "CARD_PUBLISH_INCOMPLETE" },
+      ));
+      return;
+    }
     if (dirty) {
       const updatedCard = await persistDraft(blocks, "草稿已保存，可以进入发布确认。");
       if (updatedCard) onRequestPublish(updatedCard);
@@ -1036,7 +1121,7 @@ export function EnterpriseTemplateEditor({
                       {saving ? "创建中…" : "使用此设计创建名片"}
                     </button>
                   ) : (
-                    <button className="toolbar-button primary" aria-label="进入发布确认" type="button" onClick={() => void requestPublish()} disabled={busy || !publishReady || !card}>
+                    <button className="toolbar-button primary" aria-label="进入发布确认" type="button" onClick={() => void requestPublish()} disabled={busy || !card}>
                       <Send24Regular />
                       {dirty ? "保存并发布" : "发布"}
                     </button>
@@ -1244,6 +1329,7 @@ export function EnterpriseTemplateEditor({
                         identityTitles={identityTitles}
                         identityContactFields={identityContactFields}
                         galleryInputRefs={galleryInputRefs}
+                        videoInputRefs={videoInputRefs}
                         coverInputRefs={coverInputRefs}
                         backgroundInputRefs={backgroundInputRefs}
                         actionCoverInputRefs={actionCoverInputRefs}
@@ -1265,6 +1351,7 @@ export function EnterpriseTemplateEditor({
                         onDuplicate={() => duplicateBlock(selectedIndex >= 0 ? selectedIndex : 0)}
                         onRemove={() => removeBlock(selectedIndex >= 0 ? selectedIndex : 0)}
                         onGalleryUpload={(event) => void uploadGalleryImages(selectedIndex >= 0 ? selectedIndex : 0, event)}
+                        onVideoUpload={(event) => void uploadVideoAsset(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onCoverUpload={(event) => void uploadVideoCover(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onBackgroundUpload={(event) => void uploadIdentityBackground(selectedIndex >= 0 ? selectedIndex : 0, event)}
                         onActionCoverUpload={(actionId, event) => void uploadActionCover(selectedIndex >= 0 ? selectedIndex : 0, actionId, event)}

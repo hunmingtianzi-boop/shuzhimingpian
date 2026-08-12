@@ -36,6 +36,22 @@ import { IdentityTitlesEditor } from "./IdentityTitlesEditor";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
 const CARD_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PUBLIC_CONTACT_SHORTCUT_LIMIT = 4;
+
+export function normalizeCardContactFields(
+  fields: IdentityContactField[],
+): IdentityContactField[] {
+  return fields
+    .map((field) => ({
+      ...field,
+      label: field.label.trim(),
+      value: field.value.trim(),
+      href: field.href?.trim() || undefined,
+    }))
+    // A newly-added row has a default label, so value is the reliable signal
+    // that the user actually completed it. Never persist placeholder rows.
+    .filter((field) => Boolean(field.value));
+}
 
 function emptyCard(cardKind: ManagedCard["cardKind"]): ManagedCardInput {
   return {
@@ -72,7 +88,7 @@ function cardInput(item?: ManagedCard): ManagedCardInput {
     welcomeMessage: item.welcomeMessage,
     suggestedQuestions: item.suggestedQuestions,
     identityTitles: item.identityTitles ?? [],
-    contactFields: item.contactFields ?? [],
+    contactFields: normalizeCardContactFields(item.contactFields ?? []),
     policyVersions: item.policyVersions,
     employeeContactVisibility: item.employeeContactVisibility ?? [],
     templateSourceCardId: "",
@@ -253,6 +269,10 @@ export function CardEditor({
     .map((value) => value.trim())
     .filter(Boolean);
   const identityTitles = form.identityTitles.map((value) => value.trim()).filter(Boolean);
+  const normalizedContactFields = normalizeCardContactFields(form.contactFields);
+  const incompleteContactCount = form.contactFields.length - normalizedContactFields.length;
+  const publicContactCount = normalizedContactFields.length
+    + (form.cardKind === "employee" ? form.employeeContactVisibility.length : 0);
   const questionsValid =
     questions.length <= 6 && questions.every((value) => value.length <= 200);
   const titlesValid =
@@ -370,6 +390,7 @@ export function CardEditor({
           avatarUrl: form.cardKind === "employee" ? "" : form.avatarUrl,
           suggestedQuestions: questions,
           identityTitles,
+          contactFields: normalizedContactFields,
           templateSourceCardId: "",
         },
         imageFile,
@@ -382,7 +403,7 @@ export function CardEditor({
           title: form.title,
           avatarUrl: imagePreview || resolveApiResourceUrl(form.avatarUrl),
           identityTitles,
-          contactFields: form.contactFields,
+          contactFields: normalizedContactFields,
         },
       });
       return;
@@ -413,6 +434,7 @@ export function CardEditor({
         avatarUrl: form.cardKind === "employee" ? "" : avatarUrl,
         suggestedQuestions: questions,
         identityTitles,
+        contactFields: normalizedContactFields,
       };
       if (item) {
         await adminApi.updateManagedCard(item.id, item.version, input);
@@ -557,6 +579,7 @@ export function CardEditor({
           <section className="card-identity-fields" aria-labelledby="card-identity-fields-title">
             <div className="form-section-heading compact">
               <div>
+                <span className="form-step-label">第 1 步 · 对外身份</span>
                 <h2 id="card-identity-fields-title">基础名片信息</h2>
                 <p>这些内容会真实保存，并显示在基础名片及可点击的联系快捷入口中。</p>
               </div>
@@ -568,7 +591,7 @@ export function CardEditor({
             <div className="card-contact-editor-heading">
               <div>
                 <strong>联系与地址</strong>
-                <span>企业和员工名片都可配置；公开页会恢复为可点击的小方形入口。</span>
+                <span>企业和员工名片都可配置；未填写内容的空行会在保存时自动忽略。</span>
               </div>
               <Button
                 type="button"
@@ -636,6 +659,16 @@ export function CardEditor({
                 尚未添加自定义联系方式。员工手机号与邮箱仍由“企业员工”资料控制；可在这里补充微信、企业地址、官网等。
               </div>
             )}
+            {incompleteContactCount > 0 ? (
+              <div className="card-contact-editor-notice" role="status">
+                有 {incompleteContactCount} 条联系方式尚未填写内容，保存时不会写入公开名片。
+              </div>
+            ) : null}
+            {publicContactCount > PUBLIC_CONTACT_SHORTCUT_LIMIT ? (
+              <div className="card-contact-editor-notice is-warning" role="status">
+                当前共有 {publicContactCount} 个公开联系方式；公开页首屏快捷入口最多展示 {PUBLIC_CONTACT_SHORTCUT_LIMIT} 个，超出的项目仍会保存，但不会出现在首屏快捷栏。
+              </div>
+            ) : null}
           </section>
 
           <section
@@ -657,6 +690,7 @@ export function CardEditor({
               )}
             </div>
             <div className="card-image-upload-copy">
+              <span className="form-step-label">第 2 步 · 视觉资料</span>
               <strong>{form.cardKind === "enterprise" ? "企业 Logo" : "员工头像"}</strong>
               <span>
                 {form.cardKind === "employee"
@@ -665,7 +699,7 @@ export function CardEditor({
                     : "请先选择企业员工，再为其上传头像。"
                   : "支持 PNG、JPEG、WebP，最大 5 MiB；保存时自动上传并压缩。"}
               </span>
-              {imageFile && <em>{imageFile.name}</em>}
+              {imageFile && <em role="status">已选择：{imageFile.name}（保存时上传）</em>}
               <div className="card-image-upload-actions">
                 <input
                   ref={imageInputRef}
@@ -710,6 +744,7 @@ export function CardEditor({
           {!item && (
             <section className="card-composer-start" aria-labelledby="card-composer-start-title">
               <div>
+                <span className="form-step-label">第 3 步 · 页面方式</span>
                 <strong id="card-composer-start-title">选择页面配置</strong>
                 <span>默认配置和复制配置可以快速创建；自定义会先设计完整页面，确认后才创建名片。</span>
               </div>
@@ -737,6 +772,9 @@ export function CardEditor({
             </section>
           )}
 
+          <details className="advanced-details card-editor-advanced">
+            <summary>AI 助手与政策版本（可选）</summary>
+            <p className="card-editor-advanced-hint">不配置也可以先创建名片；需要启用 AI 接待或发布治理时再补充。</p>
           <div className="form-grid two-columns">
             {form.cardKind === "enterprise" && <Field label="图片地址（可选）" hint="也可填写站内路径或公开 HTTPS 地址。">
               <Input
@@ -813,6 +851,7 @@ export function CardEditor({
               />
             </Field>
           </div>
+          </details>
 
           <div className="drawer-form-actions">
             <Button type="button" appearance="secondary" onClick={onClose} disabled={saving}>

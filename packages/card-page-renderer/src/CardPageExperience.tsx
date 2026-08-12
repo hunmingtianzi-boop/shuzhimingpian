@@ -54,6 +54,15 @@ export function safeCardPageExternalUrl(value?: string) {
   try { const url = new URL(value); return url.protocol === "https:" ? url.toString() : undefined; } catch { return undefined; }
 }
 
+export function safeCardPageVideoUrl(value?: string, resolveResourceUrl: (url: string) => string = (url) => url) {
+  const resolved = value?.trim() ? resolveResourceUrl(value.trim()) : "";
+  if (!resolved || /[\\\u0000-\u001f]/.test(resolved)) return undefined;
+  try {
+    const url = new URL(resolved, "https://card.local");
+    return ["https:", "http:", "blob:"].includes(url.protocol) ? resolved : undefined;
+  } catch { return undefined; }
+}
+
 export function safeCardPageActionHref(item: CardPageActionItem) {
   const value = item.targetValue.trim();
   if (!value || /[\\\u0000-\u001f]/.test(value)) return undefined;
@@ -111,7 +120,7 @@ export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceU
       base.galleryItems = limited(block.galleryItems || (block.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index + 1}`, imageUrl, title: block.title, badgeMode: "title" as const })), block.itemLimit).map((item) => ({ ...item, imageUrl: resolveResourceUrl(item.imageUrl) }));
       base.imageUrls = base.galleryItems.map((item) => item.imageUrl);
     } else if (block.type === "video_link") {
-      base.videoUrl = safeCardPageExternalUrl(block.videoUrl); base.videoCoverUrl = block.videoCoverUrl ? resolveResourceUrl(block.videoCoverUrl) : undefined;
+      base.videoUrl = safeCardPageVideoUrl(block.videoUrl, resolveResourceUrl); base.videoCoverUrl = block.videoCoverUrl ? resolveResourceUrl(block.videoCoverUrl) : undefined;
     } else if (block.type === "faq") {
       base.items = limited(resolveCardPageFaqItems(block, data.faqItems || []), block.itemLimit).map((item) => ({ ...item }));
     } else if (block.type === "action_collection") {

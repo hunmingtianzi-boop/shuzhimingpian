@@ -62,6 +62,17 @@ async def get_platform_overview(
 ) -> PlatformOverviewEnvelope:
     _require_platform_admin(principal)
     record = await _store(request).get_overview(actor=_actor(principal))
+    # The database read model can prove that the import schema exists, but it
+    # cannot prove that a worker is alive and authenticated.  Do not advertise
+    # imports as ready when the process that drains them cannot pass its own
+    # dependency probe.
+    worker = await _probe(
+        "worker",
+        _http_ready_ping(request, "http://worker:8020/health/ready"),
+    )
+    record = record.model_copy(
+        update={"import_ready": record.import_ready and worker.status == "healthy"}
+    )
     return PlatformOverviewEnvelope(data=record)
 
 

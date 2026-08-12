@@ -126,6 +126,31 @@ describe("adminApi real contract", () => {
     expect((request?.headers as Headers).has("Content-Type")).toBe(false);
   });
 
+  it("uploads a card video through the dedicated media endpoint", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          url: "/api/v1/public/card-video-assets/company-1/demo.mp4",
+          content_type: "video/mp4",
+          size_bytes: 1_048_576,
+        },
+      }, 201));
+    const api = await authenticatedApi(fetcher);
+    const file = new File(["video"], "demo.mp4", { type: "video/mp4" });
+
+    await expect(api.uploadCardVideoAsset(file)).resolves.toEqual({
+      url: "/api/v1/public/card-video-assets/company-1/demo.mp4",
+      contentType: "video/mp4",
+      sizeBytes: 1_048_576,
+    });
+    expect(fetcher.mock.calls[1][0]).toBe("https://api.example.test/api/v1/admin/card-video-assets");
+    const request = fetcher.mock.calls[1][1];
+    expect(request?.body).toBeInstanceOf(FormData);
+    expect((request?.body as FormData).get("file")).toBe(file);
+  });
+
   it("loads only selectable published FAQ projections", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

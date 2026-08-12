@@ -15,6 +15,7 @@ from app.services.catalog_store import (
     _merge_default_template_blocks,
     _publish_card_snapshot,
     card_asset_belongs_to_company,
+    card_video_asset_belongs_to_company,
 )
 from app.services.public_store import _public_enterprise_template
 
@@ -169,6 +170,34 @@ def test_uploaded_asset_scope_is_bound_to_company() -> None:
     assert not card_asset_belongs_to_company(_asset_url(uuid.uuid4()), company_id)
     assert not card_asset_belongs_to_company("https://cdn.example.com/image.webp", company_id)
     assert not card_asset_belongs_to_company(f"https://attacker.example{scoped_path}", company_id)
+
+    video_path = (
+        f"/api/v1/public/card-video-assets/{company_id}/{uuid.uuid4()}.mp4"
+    )
+    assert card_video_asset_belongs_to_company(video_path, company_id)
+    assert not card_video_asset_belongs_to_company(video_path, uuid.uuid4())
+    assert not card_video_asset_belongs_to_company(
+        f"https://attacker.example{video_path}", company_id
+    )
+
+
+def test_uploaded_video_url_is_accepted_by_template_contract() -> None:
+    company_id = uuid.uuid4()
+    video_url = f"/api/v1/public/card-video-assets/{company_id}/{uuid.uuid4()}.webm"
+    document = EnterpriseTemplateDocument.model_validate(
+        {
+            "blocks": [
+                {"id": "identity", "type": "identity", "sort_order": 0},
+                {
+                    "id": "video",
+                    "type": "video_link",
+                    "sort_order": 1,
+                    "video_url": video_url,
+                },
+            ]
+        }
+    )
+    assert document.blocks[1].video_url == video_url
 
 
 def test_managed_template_keeps_draft_and_published_snapshots_separate() -> None:

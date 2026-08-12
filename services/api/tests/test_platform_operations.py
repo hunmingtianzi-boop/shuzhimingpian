@@ -209,6 +209,16 @@ def route_client(
     app.dependency_overrides[get_staff_principal] = lambda: principal_box["value"]
     monkeypatch.setattr(platform_routes, "_store", lambda _request: store)
     monkeypatch.setattr(operation_routes, "_store", lambda _request: store)
+    async def healthy_probe(service: str, operation: object):
+        if hasattr(operation, "close"):
+            operation.close()
+        return operation_routes.PlatformServiceHealthRecord(
+            service=service,
+            status="healthy",
+            checked_at=datetime.now(UTC),
+            latency_ms=0,
+        )
+    monkeypatch.setattr(operation_routes, "_probe", healthy_probe)
     with TestClient(app) as client:
         yield client, store, principal_box
 
@@ -299,6 +309,29 @@ def test_overview_and_detail_return_allowlisted_projection(
     serialized = str(payload).casefold()
     for forbidden in ("email", "mobile", "conversation_body", "lead_body", "raw_text"):
         assert forbidden not in serialized
+
+
+def test_overview_does_not_claim_import_ready_when_worker_probe_fails(
+    route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _, _ = route_client
+
+    async def unavailable_worker(service: str, operation: object):
+        if hasattr(operation, "close"):
+            operation.close()
+        return operation_routes.PlatformServiceHealthRecord(
+            service=service,
+            status="unavailable",
+            checked_at=datetime.now(UTC),
+            latency_ms=1,
+            error_code="WORKER_UNAVAILABLE",
+        )
+
+    monkeypatch.setattr(operation_routes, "_probe", unavailable_worker)
+    response = client.get("/api/v1/platform/overview")
+    assert response.status_code == 200
+    assert response.json()["data"]["import_ready"] is False
 
 
 def test_lifecycle_transition_requires_reason_version_and_returns_no_private_data(

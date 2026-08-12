@@ -26,6 +26,8 @@ export type CompanyMember = {
   jobTitle?: string;
   avatarUrl?: string;
   businessSummary?: string;
+  email?: string;
+  mobile?: string;
   role: MemberRole;
   permissions: string[];
   status: MemberLifecycleStatus;
@@ -54,6 +56,8 @@ export type MemberAccessInput = {
   jobTitle?: string;
   avatarUrl?: string;
   businessSummary?: string;
+  email?: string;
+  mobile?: string;
   role?: MemberRole;
   permissions?: string[];
 };
@@ -628,6 +632,12 @@ export type CardAssetUpload = {
   contentType: "image/webp";
   width: number;
   height: number;
+  sizeBytes: number;
+};
+
+export type CardVideoAssetUpload = {
+  url: string;
+  contentType: "video/mp4" | "video/webm";
   sizeBytes: number;
 };
 

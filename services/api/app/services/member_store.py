@@ -307,7 +307,7 @@ class MemberStore:
             )
             rows = (await session.execute(statement)).all()
             return [
-                _member_record(membership, user, credential)
+                _member_record(membership, user, credential, self._cipher)
                 for membership, user, credential in rows
             ], total
 
@@ -324,7 +324,7 @@ class MemberStore:
                 scope=scope,
                 membership_id=membership_id,
             )
-            return _member_record(membership, user, credential)
+            return _member_record(membership, user, credential, self._cipher)
 
     async def update_self_profile(
         self,
@@ -353,7 +353,7 @@ class MemberStore:
             membership.avatar_url = body.avatar_url or None
             await session.flush()
             await _refresh_member_timestamps(session, membership, user, credential)
-            member = _member_record(membership, user, credential)
+            member = _member_record(membership, user, credential, self._cipher)
             await append_audit(
                 session,
                 tenant_id=scope.tenant_id,
@@ -421,6 +421,8 @@ class MemberStore:
                 "job_title": membership.job_title,
                 "avatar_url": membership.avatar_url,
                 "business_summary": membership.business_summary,
+                "email_hmac": user.email_hmac,
+                "mobile_hmac": user.mobile_hmac,
                 "role": membership.role.value,
                 "permissions": list(membership.permissions),
             }
@@ -453,13 +455,26 @@ class MemberStore:
                 membership.avatar_url = body.avatar_url or None
             if "business_summary" in body.model_fields_set:
                 membership.business_summary = body.business_summary or None
+            if "email" in body.model_fields_set:
+                user.email_hmac = self._cipher.hmac(body.email) if body.email else None
+                user.email_ciphertext = self._cipher.encrypt(body.email) if body.email else None
+            if "mobile" in body.model_fields_set:
+                user.mobile_hmac = self._cipher.hmac(body.mobile) if body.mobile else None
+                user.mobile_ciphertext = self._cipher.encrypt(body.mobile) if body.mobile else None
             if body.role is not None:
                 membership.role = desired_role
             if body.permissions is not None:
                 membership.permissions = sorted(dict.fromkeys(body.permissions))
-            await session.flush()
+            try:
+                await session.flush()
+            except IntegrityError as exc:
+                raise ApiError(
+                    409,
+                    "MEMBER_CONFLICT",
+                    "The email or mobile number conflicts with an existing member.",
+                ) from exc
             await _refresh_member_timestamps(session, membership, user, credential)
-            member = _member_record(membership, user, credential)
+            member = _member_record(membership, user, credential, self._cipher)
             await append_audit(
                 session,
                 tenant_id=scope.tenant_id,
@@ -478,6 +493,10 @@ class MemberStore:
                     "identity_profile_changed": any(
                         before[field] != getattr(member, field)
                         for field in ("job_title", "avatar_url", "business_summary")
+                    ),
+                    "contact_info_changed": (
+                        before["email_hmac"] != user.email_hmac
+                        or before["mobile_hmac"] != user.mobile_hmac
                     ),
                 },
             )
@@ -614,7 +633,7 @@ class MemberStore:
                 trace_id=trace_id,
                 event_data={"status": desired.value, "changed": changed},
             )
-            return _member_record(membership, user, credential)
+            return _member_record(membership, user, credential, self._cipher)
 
     async def _member_row(
         self,
@@ -715,7 +734,7 @@ class MemberStore:
         await session.flush()
         await _refresh_member_timestamps(session, membership, user, credential)
         return ("updated" if changed else "unchanged"), _member_record(
-            membership, user, credential
+            membership, user, credential, self._cipher
         )
 
     async def _create_row(
@@ -781,7 +800,7 @@ class MemberStore:
         session.add(credential)
         await session.flush()
         await _refresh_member_timestamps(session, membership, user, credential)
-        return _member_record(membership, user, credential)
+        return _member_record(membership, user, credential, self._cipher)
 
     async def _apply_updates(
         self,
@@ -1123,6 +1142,7 @@ def _member_record(
     membership: Membership,
     user: User,
     credential: StaffCredential,
+    cipher: PiiCipher,
 ) -> MemberRecord:
     timestamps = [membership.updated_at, user.updated_at, credential.updated_at]
     return MemberRecord(
@@ -1133,6 +1153,8 @@ def _member_record(
         job_title=membership.job_title,
         avatar_url=membership.avatar_url,
         business_summary=membership.business_summary,
+        email=cipher.decrypt(user.email_ciphertext) if user.email_ciphertext else None,
+        mobile=cipher.decrypt(user.mobile_ciphertext) if user.mobile_ciphertext else None,
         role=membership.role.value,
         permissions=list(membership.permissions),
         status=membership.status.value,

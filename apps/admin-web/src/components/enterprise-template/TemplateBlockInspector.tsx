@@ -50,6 +50,7 @@ type Props = {
   identityTitles: string[];
   identityContactFields: IdentityContactField[];
   galleryInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
+  videoInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   coverInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   backgroundInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   actionCoverInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -61,6 +62,7 @@ type Props = {
   onDuplicate: () => void;
   onRemove: () => void;
   onGalleryUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  onVideoUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onCoverUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onBackgroundUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onActionCoverUpload: (actionId: string, event: ChangeEvent<HTMLInputElement>) => void;
@@ -76,6 +78,8 @@ const identityContactKindLabels: Record<IdentityContactKind, string> = {
   other: "其他",
 };
 
+const PUBLIC_CONTACT_SHORTCUT_LIMIT = 4;
+
 function isHttpsUrl(value?: string) {
   if (!value) return false;
   try {
@@ -83,6 +87,14 @@ function isHttpsUrl(value?: string) {
   } catch {
     return false;
   }
+}
+
+function isPlayableVideoUrl(value?: string) {
+  const target = value?.trim();
+  return Boolean(target && (
+    isHttpsUrl(target)
+    || /^\/api\/v1\/public\/card-video-assets\//.test(target)
+  ));
 }
 
 function moveItem(items: string[], id: string, direction: -1 | 1) {
@@ -181,6 +193,7 @@ export function TemplateBlockInspector({
   identityTitles,
   identityContactFields,
   galleryInputRefs,
+  videoInputRefs,
   coverInputRefs,
   backgroundInputRefs,
   actionCoverInputRefs,
@@ -192,12 +205,15 @@ export function TemplateBlockInspector({
   onDuplicate,
   onRemove,
   onGalleryUpload,
+  onVideoUpload,
   onCoverUpload,
   onBackgroundUpload,
   onActionCoverUpload,
   onCollectionCoverUpload,
 }: Props) {
   const isIdentity = block.type === "identity";
+  const completedIdentityContacts = identityContactFields.filter((field) => field.value.trim());
+  const incompleteIdentityContactCount = identityContactFields.length - completedIdentityContacts.length;
   const updateIdentityContact = (id: string, patch: Partial<IdentityContactField>) => {
     onIdentityContactFieldsChange(identityContactFields.map((field) => (
       field.id === id ? { ...field, ...patch } : field
@@ -217,6 +233,7 @@ export function TemplateBlockInspector({
     }]);
   };
   const galleryUploading = uploadingKey === `${block.id}:gallery`;
+  const videoUploading = uploadingKey === `${block.id}:video`;
   const coverUploading = uploadingKey === `${block.id}:cover`;
   const backgroundUploading = uploadingKey === `${block.id}:background`;
   const galleryItems: EnterpriseTemplateGalleryItem[] = block.galleryItems ?? (block.imageUrls ?? []).map((imageUrl, itemIndex) => ({
@@ -371,6 +388,16 @@ export function TemplateBlockInspector({
             ))}
             {!identityContactFields.length ? <p>暂无自定义入口；可直接补充微信、公司地址、官网等真实资料。</p> : null}
           </div>
+          {incompleteIdentityContactCount > 0 ? (
+            <p className="template-field-warning" role="status">
+              有 {incompleteIdentityContactCount} 条入口未填写内容，保存时会自动忽略。
+            </p>
+          ) : null}
+          {completedIdentityContacts.length > PUBLIC_CONTACT_SHORTCUT_LIMIT ? (
+            <p className="template-field-warning" role="status">
+              已配置 {completedIdentityContacts.length} 条；公开页首屏快捷入口最多展示 {PUBLIC_CONTACT_SHORTCUT_LIMIT} 条，超出项不会出现在首屏快捷栏。
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -694,6 +721,12 @@ export function TemplateBlockInspector({
                 <details className="template-collection-item" key={item.id} open={imageIndex === 0}>
                   <summary><img src={resolveApiResourceUrl(item.imageUrl)} alt=""/><span><strong>{item.title || `图片 ${imageIndex + 1}`}</strong><small>点击编辑角标与说明</small></span></summary>
                   <div className="template-collection-fields">
+                    <a
+                      className="template-test-action-link"
+                      href={resolveApiResourceUrl(item.imageUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >预览原图 <Open24Regular aria-hidden="true" /></a>
                     <Field label="图片标题"><Input value={item.title ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, title: data.value } : current) })}/></Field>
                     <Field label="图片说明"><Textarea rows={3} value={item.description ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, description: data.value } : current) })}/></Field>
                     <div className="template-inline-fields"><Field label="时间"><Input value={item.timeLabel ?? ""} placeholder="2026.08" onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, timeLabel: data.value } : current) })}/></Field><Field label="阶段"><Input value={item.periodLabel ?? ""} placeholder="项目交付期" onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, periodLabel: data.value } : current) })}/></Field></div>
@@ -728,11 +761,35 @@ export function TemplateBlockInspector({
 
       {block.type === "video_link" ? (
         <>
+          <div className="template-media-field">
+            <div className="template-media-heading">
+              <div><strong>上传视频文件</strong><span>推荐 MP4；也支持 WebM，最大 50 MiB。</span></div>
+            </div>
+            <input
+              ref={(node) => { videoInputRefs.current[block.id] = node; }}
+              className="visually-hidden"
+              type="file"
+              accept="video/mp4,video/webm"
+              aria-label={`选择${block.title || "视频"}文件`}
+              disabled={busy}
+              onChange={onVideoUpload}
+            />
+            <Button
+              appearance="secondary"
+              icon={<ArrowUpload24Regular />}
+              disabled={busy}
+              onClick={() => videoInputRefs.current[block.id]?.click()}
+            >{videoUploading ? "上传中…" : block.videoUrl?.startsWith("/api/v1/public/card-video-assets/") ? "更换已上传视频" : "上传视频"}</Button>
+            {block.videoUrl?.startsWith("/api/v1/public/card-video-assets/") ? (
+              <p className="template-upload-success" role="status">视频文件已上传并写入当前模块。</p>
+            ) : null}
+          </div>
           <Field
-            label="视频 HTTPS 地址"
+            label="外部视频地址（高级）"
             required
-            validationState={block.videoUrl && !isHttpsUrl(block.videoUrl) ? "error" : "none"}
-            validationMessage={block.videoUrl && !isHttpsUrl(block.videoUrl) ? "请输入 HTTPS 地址。" : undefined}
+            hint="上传文件后会自动填入站内地址；也可手动填写公开 HTTPS 视频地址。"
+            validationState={block.videoUrl && !isPlayableVideoUrl(block.videoUrl) ? "error" : "none"}
+            validationMessage={block.videoUrl && !isPlayableVideoUrl(block.videoUrl) ? "请上传视频或输入 HTTPS 地址。" : undefined}
           >
             <Input
               type="url"
@@ -741,6 +798,14 @@ export function TemplateBlockInspector({
               onChange={(_, data) => onUpdate({ videoUrl: data.value })}
             />
           </Field>
+          {isPlayableVideoUrl(block.videoUrl) ? (
+            <a
+              className="template-test-action-link"
+              href={resolveApiResourceUrl(block.videoUrl)}
+              target="_blank"
+              rel="noreferrer"
+            >测试播放 <Open24Regular aria-hidden="true" /></a>
+          ) : <span className="template-test-action-link is-disabled">上传视频或补齐地址后可测试播放</span>}
           <div className="template-media-field">
             <div className="template-media-heading"><div><strong>视频封面</strong><span>使用企业素材上传。</span></div></div>
             {block.videoCoverUrl ? (

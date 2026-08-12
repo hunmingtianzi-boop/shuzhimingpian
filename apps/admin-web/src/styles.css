@@ -5816,3 +5816,49 @@ div.template-inspector-empty {
     margin: 0;
   }
 }
+.form-step-label {
+  display: block;
+  color: #167b88;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.card-contact-editor-notice,
+.template-field-warning,
+.template-upload-success {
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #b8e1e4;
+  border-radius: 10px;
+  background: #f2fbfb;
+  color: #35656b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.card-contact-editor-notice.is-warning,
+.template-field-warning {
+  border-color: #f0d29b;
+  background: #fff9ed;
+  color: #77531f;
+}
+
+.card-editor-advanced {
+  padding: 12px 14px;
+  border: 1px solid #dce6e8;
+  border-radius: 12px;
+  background: #fbfdfd;
+}
+
+.card-editor-advanced > summary {
+  cursor: pointer;
+  color: #16324a;
+  font-weight: 700;
+}
+
+.card-editor-advanced-hint {
+  margin: 8px 0 14px;
+  color: #667985;
+  font-size: 13px;
+}

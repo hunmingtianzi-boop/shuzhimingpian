@@ -137,7 +137,7 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
   const cardStyle: CSSProperties = background?.aspectRatio && background.aspectRatio !== "auto"
     ? { aspectRatio: background.aspectRatio.replace(":", " / ") }
     : {};
-  const contacts = (identity.contacts || []).filter((item) => item.label && item.value).slice(0, 4);
+  const contacts = (identity.contacts || []).filter((item) => item.label.trim() && item.value.trim());
   return <section style={cardStyle} className={`identity-block cpr-identity cpr-identity--${identity.kind} cpr-identity--${identity.layout || "horizontal"} ${background?.imageUrl ? "cpr-identity--has-background" : ""} layout-${identity.layout || "horizontal"}`} aria-label="基础名片">
     <div className="identity-background cpr-identity-background" style={style} aria-hidden="true"/><div className={`identity-wash cpr-identity-overlay cpr-identity-overlay--${background?.overlay || "light"} overlay-${background?.overlay || "light"}`} aria-hidden="true"/>
     <div className="identity-content"><div className="identity-main">
@@ -153,7 +153,7 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
         {identity.kind === "employee" && contacts.length ? <div className="identity-contact-lines">{contacts.slice(0, 3).map((item, index) => <span key={item.id || index}><StudioIcon name={contactIcon(item.kind)}/>{item.value}</span>)}</div> : null}
         {identity.tags?.length ? <div className="identity-tags">{identity.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
       </div>
-    </div>{contacts.length ? <div className={`quick-actions count-${contacts.length}`} aria-label="快捷联系方式">{contacts.map((item, index) => { const content = <><StudioIcon name={contactIcon(item.kind)}/><span>{identity.kind === "enterprise" && item.kind === "website" ? `访问${item.label}` : item.label}</span>{identity.kind === "enterprise" ? <StudioIcon name="external"/> : null}</>; return item.href ? <a className="quick-action" href={item.href} key={item.id || index}>{content}</a> : <button className="quick-action" type="button" key={item.id || index}>{content}</button>; })}</div> : null}</div>
+    </div>{contacts.length ? <div className={`quick-actions count-${contacts.length}`} data-item-count={contacts.length} aria-label="快捷联系方式">{contacts.map((item, index) => { const content = <><StudioIcon name={contactIcon(item.kind)}/><span>{identity.kind === "enterprise" && item.kind === "website" ? `访问${item.label}` : item.label}</span>{identity.kind === "enterprise" ? <StudioIcon name="external"/> : null}</>; return item.href ? <a className="quick-action" href={item.href} key={item.id || index}>{content}</a> : <button className="quick-action" type="button" key={item.id || index}>{content}</button>; })}</div> : null}</div>
   </section>;
 }
 
@@ -166,8 +166,8 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
     return <section className="content-module"><ModuleHeading module={module} more/><StudioServiceCollection items={items} layout={module.layout} onOpenItem={(item) => onOpenItem?.(module, item)}/></section>;
   }
   if (module.type === "cases") return <section className="content-module"><ModuleHeading module={module} more/><StudioCaseCollection items={items} layout={module.layout} onOpenItem={(item) => onOpenItem?.(module, item)}/></section>;
-  if (module.type === "gallery") return <section className="content-module"><ModuleHeading module={module} more/><StudioGallery items={module.galleryItems || (module.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index}`, imageUrl }))} layout={module.layout} title={module.title}/></section>;
-  if (module.type === "video") return <section className="content-module"><ModuleHeading module={module}/>{module.videoUrl ? <a className="video-card" href={module.videoUrl} target="_blank" rel="noreferrer">{module.videoCoverUrl ? <img src={module.videoCoverUrl} alt={`${module.title}封面`}/> : null}<span className="video-play"><StudioIcon name="play"/></span><span className="video-caption"><strong>{module.title}</strong><span>打开视频 ↗</span></span></a> : <div className="empty-state"><strong>视频待配置</strong><p>请添加安全的视频地址。</p></div>}</section>;
+  if (module.type === "gallery") return <section className="content-module"><ModuleHeading module={module} more/><StudioGallery items={module.galleryItems || (module.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index}`, imageUrl }))} layout={module.layout} title={module.title} interactive={!editor}/></section>;
+  if (module.type === "video") return <VideoModule module={module} editor={editor}/>;
   if (module.type === "faq") return <FaqModule module={module}/>;
   if (module.type === "actions") {
     const template = module.actionTemplate || (items.some((item) => item.imageUrl) ? "media" : "shortcuts");
@@ -177,7 +177,21 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
   if (module.type === "contact") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel">{items.map((item, index) => <div className="contact-row" key={String(item.id || index)}><span className="contact-icon"><StudioIcon name={contactIcon(String(item.kind || "other"))}/></span><div><small>{String(item.label || "联系方式")}</small><strong>{String(item.value || "")}</strong></div><button type="button">{String(item.action || "使用")}</button></div>)}</div></section>;
   if (module.type === "trust") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel"><div className="contact-row"><span className="contact-icon"><StudioIcon name="check"/></span><div><small>资料状态</small><strong>{module.body || "企业公开资料已确认"}</strong></div></div></div></section>;
   if (module.type === "ai") return <section className="content-module"><ModuleHeading module={module}/><div className="overview-panel"><small>AI 接待</small><p>{module.body || "基于企业已审核资料，为访客介绍业务并整理合作需求。"}</p>{onAssistant ? <button type="button" className="module-more" onClick={() => onAssistant()}>开始咨询</button> : null}</div></section>;
+  if (module.type === "cta") return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy">{module.body?.trim() ? <p>{module.body}</p> : null}{module.ctaUrl ? <a className="module-more" href={module.ctaUrl}>{module.ctaLabel || "了解更多"} →</a> : module.ctaLabel ? <span className="module-more" aria-disabled="true">{module.ctaLabel}</span> : <p>行动按钮待配置</p>}</div></section>;
   return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy"><p>{module.body || "内容待补充"}</p>{module.ctaUrl ? <a className="module-more" href={module.ctaUrl}>{module.ctaLabel || "了解更多"} →</a> : null}</div></section>;
+}
+
+function VideoModule({ module, editor }: { module: StudioModule; editor: boolean }) {
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!playing) return;
+    void videoRef.current?.play().catch(() => undefined);
+  }, [playing]);
+  if (!module.videoUrl) return <section className="content-module"><ModuleHeading module={module}/><div className="empty-state"><strong>视频待配置</strong><p>请上传视频或添加安全的视频地址。</p></div></section>;
+  return <section className="content-module"><ModuleHeading module={module}/>{playing && !editor
+    ? <div className="video-card is-playing"><video ref={videoRef} src={module.videoUrl} poster={module.videoCoverUrl} controls playsInline preload="metadata">当前浏览器无法播放该视频。</video><a className="video-fallback-link" href={module.videoUrl} target="_blank" rel="noreferrer">在新窗口打开视频</a></div>
+    : <button className="video-card video-card-trigger" type="button" aria-label={editor ? `选中${module.title}模块` : `播放${module.title}`} onClick={() => { if (!editor) setPlaying(true); }}>{module.videoCoverUrl ? <img src={module.videoCoverUrl} alt={`${module.title}封面`}/> : null}<span className="video-play"><StudioIcon name="play"/></span><span className="video-caption"><strong>{module.title}</strong><span>{editor ? "在右侧测试播放" : "点击播放"}</span></span></button>}</section>;
 }
 
 function FaqModule({ module, className, ...sectionProps }: { module: StudioModule } & HTMLAttributes<HTMLElement>) {

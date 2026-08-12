@@ -627,7 +627,7 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     )
     _validate_cover = field_validator("video_cover_url")(validate_safe_asset_url)
 
-    @field_validator("video_url", "cta_url")
+    @field_validator("cta_url")
     @classmethod
     def validate_https_url(cls, value: str | None) -> str | None:
         if value is None or not value.strip():
@@ -636,6 +636,19 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
         if parsed.scheme.casefold() != "https" or not parsed.hostname:
             raise ValueError("external links must use HTTPS")
         return validate_safe_asset_url(value.strip())
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_video_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        candidate = value.strip()
+        parsed = urlsplit(candidate)
+        if not parsed.scheme and not parsed.netloc:
+            return validate_safe_asset_url(candidate)
+        if parsed.scheme.casefold() != "https" or not parsed.hostname:
+            raise ValueError("external video links must use HTTPS")
+        return validate_safe_asset_url(candidate)
 
     @model_validator(mode="after")
     def validate_block_shape(self) -> Self:

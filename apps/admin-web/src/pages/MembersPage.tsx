@@ -166,6 +166,8 @@ function MemberEditor({
           jobTitle: member.jobTitle ?? "",
           avatarUrl: member.avatarUrl ?? "",
           businessSummary: member.businessSummary ?? "",
+          email: member.email ?? "",
+          mobile: member.mobile ?? "",
           role: member.role,
           permissions: member.permissions,
           status: member.status === "active" ? "active" : "disabled",
@@ -204,6 +206,8 @@ function MemberEditor({
           jobTitle: form.jobTitle,
           avatarUrl,
           businessSummary: form.businessSummary,
+          email: form.email,
+          mobile: form.mobile,
           role: form.role,
           permissions: form.permissions,
         });
@@ -299,8 +303,7 @@ function MemberEditor({
                 <Field label="个人业务摘要" hint="用于员工名片的业务介绍；不改变企业公共资料。" className="form-field-span-2">
                   <Textarea value={form.businessSummary} disabled={pending} onChange={(_, data) => setForm((value) => ({ ...value, businessSummary: data.value }))} />
                 </Field>
-                {!member && (
-                  <>
+                <>
                     <Field label="邮箱" hint="可选；邮箱账号会自动作为邮箱。">
                       <Input
                         type="email"
@@ -316,7 +319,7 @@ function MemberEditor({
                         onChange={(_, data) => setForm((value) => ({ ...value, mobile: data.value }))}
                       />
                     </Field>
-                    <Field label="初始状态">
+                    {!member ? <Field label="初始状态">
                       <Select
                         value={form.status}
                         disabled={pending}
@@ -325,15 +328,14 @@ function MemberEditor({
                         <option value="active">启用</option>
                         <option value="disabled">停用</option>
                       </Select>
-                    </Field>
-                    <Switch
+                    </Field> : null}
+                    {!member ? <Switch
                       checked={Boolean(form.rotatePassword)}
                       label="首次登录后提醒轮换密码"
                       disabled={pending}
                       onChange={(_, data) => setForm((value) => ({ ...value, rotatePassword: data.checked }))}
-                    />
+                    /> : null}
                   </>
-                )}
               </div>
               <PermissionPicker
                 values={form.permissions}

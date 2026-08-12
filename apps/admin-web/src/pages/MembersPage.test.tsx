@@ -23,7 +23,8 @@ const adminMember: CompanyMember = {
 };
 const cardOwner: CompanyMember = {
   ...adminMember, membershipId: "membership-member", userId: "user-member",
-  account: "member@example.test", displayName: "张三", role: "card_owner", permissions: ["card.read"],
+  account: "member@example.test", displayName: "张三", email: "member@example.test",
+  mobile: "+8613800138000", role: "card_owner", permissions: ["card.read"],
 };
 
 function renderPage() {
@@ -90,10 +91,31 @@ describe("MembersPage", () => {
       name: "移除企业管理员角色",
     });
     await user.click(
-      within(confirmation).getByRole("button", { name: "确认调整角色" }),
+      within(confirmation).getByRole("button", { name: "确认调整角色", hidden: true }),
     );
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update).toHaveBeenCalledWith("membership-admin", expect.objectContaining({ role: "card_owner" }));
+  });
+
+  it("edits the employee contact fields that feed the public card", async () => {
+    const user = userEvent.setup();
+    const update = vi.spyOn(memberApi, "updateMember").mockResolvedValue({
+      ...cardOwner,
+      mobile: "+8613900139000",
+    });
+    renderPage();
+    await screen.findByText("member@example.test");
+    await user.click(screen.getAllByRole("button", { name: "编辑" })[1]);
+    const editor = await screen.findByRole("dialog", { name: "编辑企业员工" });
+    expect(within(editor).getByRole("textbox", { name: "邮箱" })).toHaveValue("member@example.test");
+    const mobile = within(editor).getByRole("textbox", { name: "手机号" });
+    expect(mobile).toHaveValue("+8613800138000");
+    fireEvent.change(mobile, { target: { value: "+8613900139000" } });
+    await user.click(within(editor).getByRole("button", { name: "保存员工" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(
+      "membership-member",
+      expect.objectContaining({ email: "member@example.test", mobile: "+8613900139000" }),
+    ));
   });
 
   it("confirms status changes and resets passwords with session feedback", async () => {

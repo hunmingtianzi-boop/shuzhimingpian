@@ -38,8 +38,16 @@ async def readiness_probe(settings: WorkerSettings) -> tuple[bool, dict[str, Any
                                  'app.claim_outbox_events(text,integer,integer)',
                                  'EXECUTE'
                                )
+                               AND has_function_privilege(
+                                 current_user,
+                                 'app.claim_knowledge_import_items(text,integer,integer)',
+                                 'EXECUTE'
+                               )
                                AND has_table_privilege(
                                  current_user, 'outbox_events', 'SELECT'
+                               )
+                               AND has_table_privilege(
+                                 current_user, 'knowledge_import_items', 'SELECT,UPDATE'
                                )
                             """
                         )

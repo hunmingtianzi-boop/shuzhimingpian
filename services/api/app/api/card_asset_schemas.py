@@ -19,4 +19,19 @@ class CardAssetEnvelope(CardAssetStrictModel):
     data: CardAssetRecord
 
 
-__all__ = ["CardAssetEnvelope", "CardAssetRecord"]
+class CardVideoAssetRecord(CardAssetStrictModel):
+    url: str = Field(min_length=1, max_length=2_048)
+    content_type: str
+    size_bytes: int = Field(ge=1, le=50 * 1024 * 1024)
+
+
+class CardVideoAssetEnvelope(CardAssetStrictModel):
+    data: CardVideoAssetRecord
+
+
+__all__ = [
+    "CardAssetEnvelope",
+    "CardAssetRecord",
+    "CardVideoAssetEnvelope",
+    "CardVideoAssetRecord",
+]

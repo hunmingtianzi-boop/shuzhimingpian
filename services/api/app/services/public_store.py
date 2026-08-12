@@ -352,6 +352,7 @@ class PublicStore:
         slug: str,
         request: CreateVisitRequest,
         idempotency_key: str,
+        visitor_channel: str = "web",
     ) -> VisitSession:
         async with self._sessions() as session, session.begin():
             scope = await self._resolve_public_card(session, slug)
@@ -424,6 +425,11 @@ class PublicStore:
                     context={
                         "campaign": request.campaign,
                         "privacy_notice_version": request.privacy_notice_version,
+                        "visitor_channel": (
+                            visitor_channel
+                            if visitor_channel in {"web", "wechat", "wecom"}
+                            else "web"
+                        ),
                     },
                 )
                 # These models intentionally do not expose ORM relationships.

@@ -361,6 +361,64 @@ def test_business_analysis_contract_covers_directions_conflicts_and_evidence_gap
     assert "禁止输出空话" in _SUGGESTION_SYSTEM_PROMPT
 
 
+@pytest.mark.asyncio
+async def test_settled_import_reconciles_processing_session_for_recovery() -> None:
+    class ScalarSession:
+        flushed = False
+
+        async def scalar(self, _statement: object, _params: object = None) -> bool:
+            return True
+
+        async def flush(self) -> None:
+            self.flushed = True
+
+    session = ScalarSession()
+    row = type(
+        "OnboardingRow",
+        (),
+        {
+            "status": "processing",
+            "import_batch_ids": [uuid.uuid4()],
+            "version": 2,
+            "id": uuid.uuid4(),
+        },
+    )()
+    changed = await PlatformOnboardingService._reconcile_import_state(  # noqa: SLF001
+        session, row  # type: ignore[arg-type]
+    )
+    assert changed is True
+    assert row.status == "manual_required"
+    assert row.version == 3
+    assert session.flushed is True
+
+
+@pytest.mark.asyncio
+async def test_unsettled_import_keeps_processing_session_unchanged() -> None:
+    class ScalarSession:
+        async def scalar(self, _statement: object, _params: object = None) -> bool:
+            return False
+
+        async def flush(self) -> None:
+            raise AssertionError("unsettled session must not flush")
+
+    row = type(
+        "OnboardingRow",
+        (),
+        {
+            "status": "processing",
+            "import_batch_ids": [uuid.uuid4()],
+            "version": 2,
+            "id": uuid.uuid4(),
+        },
+    )()
+    changed = await PlatformOnboardingService._reconcile_import_state(  # noqa: SLF001
+        ScalarSession(), row  # type: ignore[arg-type]
+    )
+    assert changed is False
+    assert row.status == "processing"
+    assert row.version == 2
+
+
 def test_migration_stores_no_plain_password_and_has_narrow_draft_functions() -> None:
     migration = (
         Path(__file__).resolve().parents[1]

@@ -157,6 +157,8 @@ class MemberRecord(MemberModel):
     job_title: str | None = None
     avatar_url: str | None = None
     business_summary: str | None = None
+    email: str | None = None
+    mobile: str | None = None
     role: MemberRole
     permissions: list[str]
     status: MemberLifecycleStatus
@@ -220,10 +222,15 @@ class UpdateMemberAccessRequest(MemberModel):
     job_title: str | None = Field(default=None, max_length=200)
     avatar_url: str | None = Field(default=None, max_length=2_048)
     business_summary: str | None = Field(default=None, max_length=2_000)
+    email: str | None = Field(default=None, max_length=320)
+    mobile: str | None = Field(default=None, max_length=24)
     role: MemberRole | None = None
     permissions: list[str] | None = Field(default=None, max_length=40)
 
     _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
+
+    _validate_email = field_validator("email")(BulkMemberRow.validate_email)
+    _validate_mobile = field_validator("mobile")(BulkMemberRow.validate_mobile)
 
     @field_validator("permissions")
     @classmethod

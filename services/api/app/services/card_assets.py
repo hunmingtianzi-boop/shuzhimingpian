@@ -15,12 +15,15 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from app.core.config import Settings
 
 MAX_CARD_ASSET_BYTES = 5 * 1024 * 1024
+MAX_CARD_VIDEO_ASSET_BYTES = 50 * 1024 * 1024
 MAX_CARD_ASSET_PIXELS = 20_000_000
 MAX_CARD_ASSET_EDGE = 8_192
 OUTPUT_CARD_ASSET_EDGE = 1_600
 ALLOWED_CARD_ASSET_MIMES = frozenset({"image/jpeg", "image/png", "image/webp"})
 _FORMAT_MIMES = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 _NOT_FOUND_CODES = frozenset({"NoSuchBucket", "NoSuchKey", "NoSuchObject"})
+ALLOWED_CARD_VIDEO_MIMES = frozenset({"video/mp4", "video/webm"})
+_VIDEO_EXTENSIONS = {"video/mp4": "mp4", "video/webm": "webm"}
 
 
 class CardAssetValidationError(ValueError):
@@ -58,6 +61,21 @@ class StoredCardAsset:
 class CardAssetContent:
     payload: bytes
     content_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedCardVideoAsset:
+    payload: bytes
+    content_type: str
+    extension: str
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCardVideoAsset:
+    asset_id: uuid.UUID
+    size_bytes: int
+    content_type: str
+    extension: str
 
 
 def process_card_asset(payload: bytes, declared_content_type: str | None) -> ProcessedCardAsset:
@@ -118,6 +136,33 @@ def process_card_asset(payload: bytes, declared_content_type: str | None) -> Pro
     )
 
 
+def process_card_video_asset(
+    payload: bytes,
+    declared_content_type: str | None,
+    file_name: str | None,
+) -> ProcessedCardVideoAsset:
+    if not payload:
+        raise CardAssetValidationError("CARD_VIDEO_ASSET_EMPTY")
+    if len(payload) > MAX_CARD_VIDEO_ASSET_BYTES:
+        raise CardAssetValidationError("CARD_VIDEO_ASSET_TOO_LARGE")
+    mime = (declared_content_type or "").split(";", 1)[0].strip().casefold()
+    if mime not in ALLOWED_CARD_VIDEO_MIMES:
+        raise CardAssetValidationError("CARD_VIDEO_ASSET_UNSUPPORTED_TYPE")
+    extension = _VIDEO_EXTENSIONS[mime]
+    supplied_extension = (file_name or "").rsplit(".", 1)[-1].casefold()
+    if supplied_extension != extension:
+        raise CardAssetValidationError("CARD_VIDEO_ASSET_MIME_MISMATCH")
+    is_mp4 = len(payload) >= 12 and payload[4:8] == b"ftyp"
+    is_webm = payload.startswith(b"\x1aE\xdf\xa3")
+    if (mime == "video/mp4" and not is_mp4) or (mime == "video/webm" and not is_webm):
+        raise CardAssetValidationError("CARD_VIDEO_ASSET_MIME_MISMATCH")
+    return ProcessedCardVideoAsset(
+        payload=payload,
+        content_type=mime,
+        extension=extension,
+    )
+
+
 class CardAssetStore:
     def __init__(self, settings: Settings) -> None:
         parsed = urlsplit(settings.object_storage_endpoint.strip())
@@ -161,8 +206,38 @@ class CardAssetStore:
     async def get(self, *, company_id: uuid.UUID, asset_id: uuid.UUID) -> CardAssetContent:
         return await asyncio.to_thread(self._get, company_id, asset_id)
 
+    async def put_video(
+        self,
+        *,
+        company_id: uuid.UUID,
+        asset: ProcessedCardVideoAsset,
+    ) -> StoredCardVideoAsset:
+        asset_id = uuid.uuid4()
+        await asyncio.to_thread(self._put_video, company_id, asset_id, asset)
+        return StoredCardVideoAsset(
+            asset_id=asset_id,
+            size_bytes=len(asset.payload),
+            content_type=asset.content_type,
+            extension=asset.extension,
+        )
+
+    async def get_video(
+        self,
+        *,
+        company_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        extension: str,
+    ) -> CardAssetContent:
+        return await asyncio.to_thread(self._get_video, company_id, asset_id, extension)
+
     def _object_name(self, company_id: uuid.UUID, asset_id: uuid.UUID) -> str:
         return f"card-assets/{company_id}/{asset_id}.webp"
+
+    @staticmethod
+    def _video_object_name(
+        company_id: uuid.UUID, asset_id: uuid.UUID, extension: str
+    ) -> str:
+        return f"card-video-assets/{company_id}/{asset_id}.{extension}"
 
     def _ensure_bucket(self) -> None:
         if self._bucket_ready:
@@ -199,6 +274,25 @@ class CardAssetStore:
         except Exception as exc:
             raise CardAssetStorageError("object storage is unavailable") from exc
 
+    def _put_video(
+        self,
+        company_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        asset: ProcessedCardVideoAsset,
+    ) -> None:
+        self._ensure_bucket()
+        try:
+            self._client.put_object(
+                self._bucket,
+                self._video_object_name(company_id, asset_id, asset.extension),
+                io.BytesIO(asset.payload),
+                len(asset.payload),
+                content_type=asset.content_type,
+                metadata={"company-id": str(company_id)},
+            )
+        except Exception as exc:
+            raise CardAssetStorageError("object storage is unavailable") from exc
+
     def _get(self, company_id: uuid.UUID, asset_id: uuid.UUID) -> CardAssetContent:
         response = None
         try:
@@ -223,16 +317,55 @@ class CardAssetStore:
                 response.close()
                 response.release_conn()
 
+    def _get_video(
+        self,
+        company_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        extension: str,
+    ) -> CardAssetContent:
+        if extension not in {"mp4", "webm"}:
+            raise CardAssetNotFoundError
+        response = None
+        try:
+            response = self._client.get_object(
+                self._bucket,
+                self._video_object_name(company_id, asset_id, extension),
+            )
+            payload = response.read(MAX_CARD_VIDEO_ASSET_BYTES + 1)
+            if not payload or len(payload) > MAX_CARD_VIDEO_ASSET_BYTES:
+                raise CardAssetStorageError("stored card video asset is invalid")
+            return CardAssetContent(
+                payload=payload,
+                content_type="video/mp4" if extension == "mp4" else "video/webm",
+            )
+        except S3Error as exc:
+            if exc.code in _NOT_FOUND_CODES:
+                raise CardAssetNotFoundError from exc
+            raise CardAssetStorageError("object storage is unavailable") from exc
+        except CardAssetStorageError:
+            raise
+        except Exception as exc:
+            raise CardAssetStorageError("object storage is unavailable") from exc
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+
 
 __all__ = [
     "ALLOWED_CARD_ASSET_MIMES",
+    "ALLOWED_CARD_VIDEO_MIMES",
     "CardAssetContent",
     "CardAssetNotFoundError",
     "CardAssetStorageError",
     "CardAssetStore",
     "CardAssetValidationError",
     "MAX_CARD_ASSET_BYTES",
+    "MAX_CARD_VIDEO_ASSET_BYTES",
     "ProcessedCardAsset",
+    "ProcessedCardVideoAsset",
     "StoredCardAsset",
+    "StoredCardVideoAsset",
     "process_card_asset",
+    "process_card_video_asset",
 ]

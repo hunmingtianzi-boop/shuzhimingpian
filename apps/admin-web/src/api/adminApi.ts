@@ -2,6 +2,7 @@ import { apiClient, ApiClient, ApiError, unwrapData } from "./client";
 import type {
   AdminUser,
   CardAssetUpload,
+  CardVideoAssetUpload,
   CardComposerDefault,
   EnterpriseTemplate,
   EnterpriseTemplateBlock,
@@ -418,7 +419,9 @@ function enterpriseTemplatePayload(
           ...(item.duration?.trim() ? { duration: item.duration.trim() } : {}),
           ...(item.imageUrl?.trim() ? { image_url: item.imageUrl.trim() } : {}),
           target_type: item.targetType,
-          target_value: item.targetValue.trim(),
+          target_value: item.targetType === "phone"
+            ? item.targetValue.trim().replace(/^tel:/i, "")
+            : item.targetValue.trim(),
           open_mode: item.openMode,
         })),
       } : {}),
@@ -715,6 +718,21 @@ function normalizeCardAssetUpload(rawValue: unknown): CardAssetUpload {
     width: requireNumber(data.width, "名片图片 width"),
     height: requireNumber(data.height, "名片图片 height"),
     sizeBytes: requireNumber(data.size_bytes, "名片图片 size_bytes"),
+  };
+}
+
+function normalizeCardVideoAssetUpload(rawValue: unknown): CardVideoAssetUpload {
+  const data = requireRecord(rawValue, "名片视频");
+  const contentType = requireString(data.content_type, "名片视频 content_type");
+  if (contentType !== "video/mp4" && contentType !== "video/webm") {
+    throw new ApiError("名片视频接口返回了不支持的格式。", {
+      code: "INVALID_API_RESPONSE",
+    });
+  }
+  return {
+    url: requireString(data.url, "名片视频 url"),
+    contentType,
+    sizeBytes: requireNumber(data.size_bytes, "名片视频 size_bytes"),
   };
 }
 
@@ -1180,6 +1198,14 @@ export function createAdminApi(client: ApiClient) {
     body.append("file", file);
     return normalizeCardAssetUpload(
       unwrapData(await client.postForm("/admin/card-assets", body)),
+    );
+  },
+
+  async uploadCardVideoAsset(file: File): Promise<CardVideoAssetUpload> {
+    const body = new FormData();
+    body.append("file", file);
+    return normalizeCardVideoAssetUpload(
+      unwrapData(await client.postForm("/admin/card-video-assets", body)),
     );
   },
 
