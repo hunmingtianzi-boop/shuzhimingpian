@@ -1,5 +1,11 @@
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   MessageBar,
   MessageBarBody,
   Table,
@@ -14,6 +20,7 @@ import {
   Archive24Regular,
   Delete24Regular,
   Edit24Regular,
+  History24Regular,
   Send24Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -25,10 +32,11 @@ import {
   type ScheduledPublication,
   type ScheduledPublicationTargetType,
 } from "../api/scheduledPublicationsApi";
-import type { CaseStudy, Product } from "../api/types";
+import type { CaseStudy, Product, PublicationImpact, PublicationRevision } from "../api/types";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { CaseStudyEditor, ProductEditor } from "../components/CatalogEditor";
 import { ContentDistributionControl } from "../components/ContentDistributionControl";
+import { ImportWorkbenchButton } from "../components/ImportWorkbenchButton";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import {
@@ -131,6 +139,14 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   const [action, setAction] = useState<PendingAction>();
   const [mutating, setMutating] = useState(false);
   const [actionError, setActionError] = useState<ApiError>();
+  const [publicationImpact, setPublicationImpact] = useState<PublicationImpact>();
+  const [historyTarget, setHistoryTarget] = useState<CatalogRecord>();
+  const [revisions, setRevisions] = useState<PublicationRevision[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [rollbackRevision, setRollbackRevision] = useState<PublicationRevision>();
+  const [rollbackImpact, setRollbackImpact] = useState<PublicationImpact>();
+  const [rollbackError, setRollbackError] = useState<ApiError>();
+  const [rollingBack, setRollingBack] = useState(false);
   const [notice, setNotice] = useState<string>();
 
   const openCreate = () => {
@@ -154,25 +170,34 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   const requestAction = (type: CatalogAction, target: CatalogRecord) => {
     setAction({ type, target });
     setActionError(undefined);
+    setPublicationImpact(undefined);
     setNotice(undefined);
+    if (type === "publish") {
+      const preview = kind === "product"
+        ? adminApi.previewProductPublication(target.id)
+        : adminApi.previewCasePublication(target.id);
+      void preview.then(setPublicationImpact).catch((caught) => {
+        setActionError(caught instanceof ApiError ? caught : new ApiError("无法核对关联名片。", { code: "UNKNOWN_ERROR" }));
+      });
+    }
   };
 
   const executeAction = async () => {
-    if (!action || mutating) return;
+    if (!action || mutating || (action.type === "publish" && !publicationImpact)) return;
     setMutating(true);
     setActionError(undefined);
     try {
       const { target, type } = action;
       if (kind === "product") {
         if (type === "publish") {
-          await adminApi.publishProduct(target.id, target.version);
+          await adminApi.publishProductConfirmed(target.id, target.version, publicationImpact!.impactDigest);
         } else if (type === "archive") {
           await adminApi.archiveProduct(target.id, target.version);
         } else {
           await adminApi.deleteProduct(target.id, target.version);
         }
       } else if (type === "publish") {
-        await adminApi.publishCaseStudy(target.id, target.version);
+        await adminApi.publishCaseStudyConfirmed(target.id, target.version, publicationImpact!.impactDigest);
       } else if (type === "archive") {
         await adminApi.archiveCaseStudy(target.id, target.version);
       } else {
@@ -197,6 +222,56 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
     }
   };
 
+  const openHistory = async (target: CatalogRecord) => {
+    setHistoryTarget(target);
+    setRevisions([]);
+    setHistoryLoading(true);
+    try {
+      setRevisions(kind === "product"
+        ? await adminApi.listProductPublicationRevisions(target.id)
+        : await adminApi.listCasePublicationRevisions(target.id));
+    } catch (caught) {
+      setRollbackError(caught instanceof ApiError ? caught : new ApiError("发布历史加载失败。", { code: "UNKNOWN_ERROR" }));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const requestRollback = async (revision: PublicationRevision) => {
+    if (!historyTarget) return;
+    setRollbackRevision(revision);
+    setRollbackImpact(undefined);
+    setRollbackError(undefined);
+    try {
+      setRollbackImpact(kind === "product"
+        ? await adminApi.previewProductPublication(historyTarget.id)
+        : await adminApi.previewCasePublication(historyTarget.id));
+    } catch (caught) {
+      setRollbackError(caught instanceof ApiError ? caught : new ApiError("无法核对回退影响。", { code: "UNKNOWN_ERROR" }));
+    }
+  };
+
+  const executeRollback = async () => {
+    if (!historyTarget || !rollbackRevision || !rollbackImpact || rollingBack) return;
+    setRollingBack(true);
+    setRollbackError(undefined);
+    try {
+      if (kind === "product") {
+        await adminApi.rollbackProduct(historyTarget.id, historyTarget.version, rollbackRevision.id, rollbackImpact.impactDigest);
+      } else {
+        await adminApi.rollbackCaseStudy(historyTarget.id, historyTarget.version, rollbackRevision.id, rollbackImpact.impactDigest);
+      }
+      setNotice(`已回退到发布版本 ${rollbackRevision.revisionNumber}，并同步更新关联名片。`);
+      setRollbackRevision(undefined);
+      setHistoryTarget(undefined);
+      resource.reload();
+    } catch (caught) {
+      setRollbackError(caught instanceof ApiError ? caught : new ApiError("回退失败。", { code: "UNKNOWN_ERROR" }));
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
   const copy = actionCopy(action);
   const activeSchedule = (targetId: string) =>
     schedules.data?.find(
@@ -215,11 +290,10 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
         title={config.pageTitle}
         description={config.description}
         actions={
-          resource.status === "permission" ? undefined : (
-            <Button appearance="primary" icon={<Add24Regular />} onClick={openCreate}>
-              {config.createLabel}
-            </Button>
-          )
+          resource.status === "permission" ? undefined : <>
+            <ImportWorkbenchButton />
+            <Button appearance="primary" icon={<Add24Regular />} onClick={openCreate}>{config.createLabel}</Button>
+          </>
         }
       />
 
@@ -290,6 +364,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
                     </TableCell>
                     <TableCell className="status-column">
                       <StatusBadge status={record.status} />
+                      {record.hasUnpublishedChanges ? <span className="draft-change-note">有未发布修改</span> : null}
                       <ScheduledPublicationStatus publication={schedule} />
                     </TableCell>
                     <TableCell className="updated-column">
@@ -311,7 +386,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
                           resourceLabel={recordTitle(record)}
                           sourceStatus={record.status}
                         />
-                        {record.status !== "published" && !schedule && (
+                        {(record.status !== "published" || record.hasUnpublishedChanges) && !schedule && (
                           <Button
                             appearance="subtle"
                             size="small"
@@ -321,6 +396,9 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
                             发布
                           </Button>
                         )}
+                        {record.publishedAt ? (
+                          <Button appearance="subtle" size="small" icon={<History24Regular />} onClick={() => void openHistory(record)}>历史</Button>
+                        ) : null}
                         {record.status !== "published" && (
                           <ScheduledPublicationActions
                             targetType={scheduleTargetType}
@@ -378,6 +456,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
       )}
 
       <ActionConfirmDialog
+        key={action ? `${action.type}-${action.target.id}` : "catalog-action"}
         open={Boolean(action)}
         title={copy.title}
         description={copy.description}
@@ -391,19 +470,67 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
             <div className="publish-target">
               <strong>{recordTitle(action.target) || "未命名内容"}</strong>
               <span>当前版本：{action.target.version}</span>
+              {action.type === "publish" ? (
+                publicationImpact === undefined
+                  ? <span>正在核对关联名片…</span>
+                  : <div className="publication-impact-summary">
+                      <strong>本次将更新 {publicationImpact.affectedCardCount} 张已发布名片</strong>
+                      {publicationImpact.breakdown.filter((item) => item.cardCount > 0).map((item) => (
+                        <span key={item.reason}>{item.label}：{item.cardCount} 张</span>
+                      ))}
+                      {publicationImpact.affectedCardCount === 0 && <span>当前没有已发布名片引用这条内容，发布只会更新内容库。</span>}
+                    </div>
+              ) : null}
             </div>
           ) : undefined
         }
         onCancel={() => {
           setAction(undefined);
           setActionError(undefined);
+          setPublicationImpact(undefined);
         }}
         onConfirm={() => void executeAction()}
         onReload={() => {
           setAction(undefined);
           setActionError(undefined);
+          setPublicationImpact(undefined);
           resource.reload();
         }}
+      />
+
+      <Dialog open={Boolean(historyTarget)} onOpenChange={(_, data) => { if (!data.open && !rollingBack) setHistoryTarget(undefined); }}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>发布历史</DialogTitle>
+            <DialogContent>
+              <p>{historyTarget ? recordTitle(historyTarget) : ""}</p>
+              {historyLoading ? <p>正在加载历史版本…</p> : null}
+              {!historyLoading && revisions.length === 0 ? <p>暂无可回退的发布版本。</p> : null}
+              <div className="publication-history-list">
+                {revisions.map((revision, index) => (
+                  <div className="publication-history-row" key={revision.id}>
+                    <div><strong>版本 {revision.revisionNumber}</strong><span>{formatTimestamp(revision.publishedAt)}</span></div>
+                    <Button appearance="secondary" size="small" disabled={index === 0} onClick={() => void requestRollback(revision)}>{index === 0 ? "当前版本" : "回退到此版本"}</Button>
+                  </div>
+                ))}
+              </div>
+            </DialogContent>
+            <DialogActions><Button appearance="secondary" onClick={() => setHistoryTarget(undefined)}>关闭</Button></DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      <ActionConfirmDialog
+        open={Boolean(rollbackRevision)}
+        title="确认回退发布版本"
+        description="回退会生成一个新的发布版本，不会删除后续历史。"
+        confirmLabel="确认回退并更新名片"
+        pendingLabel="正在回退"
+        pending={rollingBack}
+        error={rollbackError}
+        detail={rollbackRevision ? <div className="publish-target"><strong>版本 {rollbackRevision.revisionNumber}</strong><span>{rollbackImpact ? `将同步 ${rollbackImpact.affectedCardCount} 张已发布名片` : "正在核对关联名片…"}</span></div> : undefined}
+        onCancel={() => { setRollbackRevision(undefined); setRollbackError(undefined); }}
+        onConfirm={() => void executeRollback()}
       />
     </main>
   );

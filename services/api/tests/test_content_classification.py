@@ -124,6 +124,28 @@ def test_allows_reviewable_faq_rewording_when_evidence_is_exact() -> None:
     assert parsed.faqs[0].question == "现有设备需要全部更换吗？"
 
 
+def test_turns_a_topic_label_into_a_natural_faq_question() -> None:
+    payload = {
+        **_payload(),
+        "enterprise_profile": [],
+        "faqs": [
+            {
+                "question": "设备数据接入",
+                "answer": "设备数据接入与协同。",
+                "meta": {
+                    "source_id": "doc-1",
+                    "source_text": "核心业务：设备数据接入与协同。",
+                    "confidence": 0.74,
+                },
+            }
+        ],
+    }
+
+    parsed = validate_content_classification(payload, documents=[DOCUMENT])
+
+    assert parsed.faqs[0].question == "关于设备数据接入可以了解哪些信息？"
+
+
 def test_rejects_rewording_that_invents_a_numeric_fact() -> None:
     payload = {
         **_payload(),

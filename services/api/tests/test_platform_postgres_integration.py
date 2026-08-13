@@ -341,6 +341,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 )
             ],
             auto_publish=False,
+            display_name=None,
             trace_id="platform-document-onboarding-import",
         )
         attached = await service.attach_import_batch(

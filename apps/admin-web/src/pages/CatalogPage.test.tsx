@@ -65,17 +65,30 @@ describe("CatalogPage", () => {
   it("publishes a product with its optimistic version after confirmation", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listProducts").mockResolvedValue([product]);
+    vi.spyOn(adminApi, "previewProductPublication").mockResolvedValue({
+      resourceType: "product",
+      resourceId: "product-1",
+      affectedCardCount: 2,
+      affectedCardIds: ["card-1", "card-2"],
+      breakdown: [
+        { reason: "direct_reference", label: "名片已直接选用这条内容", cardCount: 1, cardIds: ["card-1"] },
+        { reason: "all_published", label: "名片设置为自动展示全部已发布内容", cardCount: 1, cardIds: ["card-2"] },
+      ],
+      impactDigest: "a".repeat(64),
+    });
     const publish = vi
-      .spyOn(adminApi, "publishProduct")
+      .spyOn(adminApi, "publishProductConfirmed")
       .mockResolvedValue({ ...product, status: "published", version: 4 });
     renderPage("product");
 
     await screen.findByText("企业 AI 助手");
     await user.click(screen.getByRole("button", { name: "发布" }));
     expect(screen.getByRole("dialog", { name: "确认发布产品" })).toBeInTheDocument();
+    expect(await screen.findByText(/本次将更新 2 张已发布名片/)).toBeInTheDocument();
+    expect(screen.getByText(/直接选用这条内容：1 张/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "确认发布" }));
 
-    await waitFor(() => expect(publish).toHaveBeenCalledWith("product-1", 3));
+    await waitFor(() => expect(publish).toHaveBeenCalledWith("product-1", 3, "a".repeat(64)));
     expect(await screen.findByText("产品已由服务端确认发布。")).toBeInTheDocument();
   });
 
@@ -165,7 +178,8 @@ describe("CatalogPage", () => {
       expect(archiveDialog).not.toBeInTheDocument(),
     );
 
-    await user.click(await screen.findByRole("button", { name: "删除" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "删除" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "删除" }));
     expect(remove).not.toHaveBeenCalled();
     const deleteDialog = await screen.findByRole("dialog", {
       name: "确认删除产品",

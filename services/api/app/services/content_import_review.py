@@ -311,6 +311,7 @@ class ContentImportReviewService:
         admin: AdminStore,
         catalog: CatalogStore,
         trace_id: str | None,
+        confirm_sensitive_fields: bool = False,
     ) -> ContentImportCandidateRecord:
         candidate = await self._candidate_snapshot(scope=scope, candidate_id=candidate_id)
         if candidate.status == "accepted":
@@ -329,9 +330,9 @@ class ContentImportReviewService:
         elif candidate.category == "enterprise_profile":
             current = await admin.get_company_profile(scope=scope)
             allowed = {"company_name", "summary", "industry", "region", "website"}
-            selected = set(apply_fields) if apply_fields else allowed
+            selected = set(apply_fields)
             if not selected or selected - allowed:
-                raise ApiError(422, "INVALID_APPLY_FIELDS", "企业资料更新字段不合法")
+                raise ApiError(422, "INVALID_APPLY_FIELDS", "请明确勾选要更新的企业资料字段")
             values = {
                 "name": current.name,
                 "summary": current.summary,
@@ -346,8 +347,21 @@ class ContentImportReviewService:
                 "region": "region",
                 "website": "website",
             }
+            sensitive_changes = sorted(
+                field
+                for field in selected & {"company_name", "website"}
+                if str(payload.get(field) or "").strip()
+                != str(values[mapping[field]] or "").strip()
+            )
+            if sensitive_changes and not confirm_sensitive_fields:
+                raise ApiError(
+                    409,
+                    "SENSITIVE_COMPANY_FIELDS_REQUIRE_CONFIRMATION",
+                    "企业名称或官网将发生变化，请二次确认",
+                    details={"fields": sensitive_changes},
+                )
             for field in selected:
-                values[mapping[field]] = payload[field] or None
+                values[mapping[field]] = str(payload.get(field) or "").strip() or None
             if not values["name"]:
                 raise ApiError(422, "COMPANY_NAME_REQUIRED", "企业名称不能为空")
             try:

@@ -20,6 +20,7 @@ import {
   Eye24Regular,
   Home24Regular,
   Lightbulb24Regular,
+  DocumentArrowUp24Regular,
   Navigation24Regular,
   PeopleTeam24Regular,
   PeopleSettings24Regular,
@@ -75,6 +76,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true },
       { path: APP_PATHS.knowledge, label: "知识 FAQ", icon: Book24Regular, permission: "knowledge.read" },
+      { path: APP_PATHS.imports, label: "资料导入", icon: DocumentArrowUp24Regular, permission: "knowledge.read" },
       { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read" },
     ],
   },

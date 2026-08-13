@@ -19,6 +19,7 @@ import {
   Add24Regular,
   Delete24Regular,
   Edit24Regular,
+  History24Regular,
   Send24Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -29,10 +30,10 @@ import {
   scheduledPublicationsApi,
   type ScheduledPublication,
 } from "../api/scheduledPublicationsApi";
-import type { KnowledgeDocument } from "../api/types";
+import type { KnowledgeDocument, KnowledgeVersion, PublicationImpact } from "../api/types";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { KnowledgeEditor } from "../components/KnowledgeEditor";
-import { KnowledgeImportPanel } from "../components/KnowledgeImportPanel";
+import { ImportWorkbenchButton } from "../components/ImportWorkbenchButton";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import {
@@ -57,6 +58,11 @@ export function KnowledgePage() {
   const [publishTarget, setPublishTarget] = useState<KnowledgeDocument>();
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<ApiError>();
+  const [publicationImpact, setPublicationImpact] = useState<PublicationImpact>();
+  const [publishVersionId, setPublishVersionId] = useState<string>();
+  const [versionsTarget, setVersionsTarget] = useState<KnowledgeDocument>();
+  const [versions, setVersions] = useState<KnowledgeVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDocument>();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<ApiError>();
@@ -81,13 +87,18 @@ export function KnowledgePage() {
   };
 
   const publish = async () => {
-    if (!publishTarget || publishing) return;
+    if (!publishTarget || publishing || !publicationImpact) return;
     setPublishing(true);
     setPublishError(undefined);
     try {
-      await adminApi.publishKnowledgeDocument(publishTarget.id);
+      await adminApi.publishKnowledgeDocument(
+        publishTarget.id,
+        publishVersionId,
+        publicationImpact.impactDigest,
+      );
       setNotice("发布请求已由服务端确认，索引状态请以后端结果为准。");
       setPublishTarget(undefined);
+      setPublishVersionId(undefined);
       resource.reload();
     } catch (caught) {
       setPublishError(
@@ -99,6 +110,31 @@ export function KnowledgePage() {
       );
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const requestPublish = async (document: KnowledgeDocument, versionId?: string) => {
+    setPublishError(undefined);
+    setPublishTarget(document);
+    setPublishVersionId(versionId);
+    setPublicationImpact(undefined);
+    try {
+      setPublicationImpact(await adminApi.previewKnowledgePublication(document.id));
+    } catch (caught) {
+      setPublishError(caught instanceof ApiError ? caught : new ApiError("无法核对关联名片。", { code: "UNKNOWN_ERROR" }));
+    }
+  };
+
+  const openVersions = async (document: KnowledgeDocument) => {
+    setVersionsTarget(document);
+    setVersions([]);
+    setVersionsLoading(true);
+    try {
+      setVersions(await adminApi.listKnowledgeVersions(document.id));
+    } catch (caught) {
+      setPublishError(caught instanceof ApiError ? caught : new ApiError("知识版本加载失败。", { code: "UNKNOWN_ERROR" }));
+    } finally {
+      setVersionsLoading(false);
     }
   };
   const activeSchedule = (targetId: string) =>
@@ -116,18 +152,6 @@ export function KnowledgePage() {
     setDeleteTarget(document);
     setDeleteError(undefined);
     setNotice(undefined);
-  };
-
-  const requestImportedDelete = async (documentId: string) => {
-    try {
-      requestDelete(await adminApi.getKnowledgeDocument(documentId));
-    } catch (caught) {
-      setDeleteError(
-        caught instanceof ApiError
-          ? caught
-          : new ApiError("读取待删除知识内容时发生未知错误。", { code: "UNKNOWN_ERROR" }),
-      );
-    }
   };
 
   const remove = async () => {
@@ -157,11 +181,10 @@ export function KnowledgePage() {
         title="知识 FAQ"
         description="维护 AI 问答使用的正式知识内容。草稿保存与发布均调用真实管理接口。"
         actions={
-          resource.status === "permission" ? undefined : (
-            <Button appearance="primary" icon={<Add24Regular />} onClick={openCreate}>
-              新建 FAQ
-            </Button>
-          )
+          resource.status === "permission" ? undefined : <>
+            <ImportWorkbenchButton />
+            <Button appearance="primary" icon={<Add24Regular />} onClick={openCreate}>新建 FAQ</Button>
+          </>
         }
       />
 
@@ -186,8 +209,6 @@ export function KnowledgePage() {
           <MessageBarBody>当前账号无权查看或管理定时发布任务。</MessageBarBody>
         </MessageBar>
       )}
-
-      <KnowledgeImportPanel onRequestDeleteDocument={(id) => void requestImportedDelete(id)} />
 
       {deleteError && !deleteTarget ? (
         <MessageBar intent="error">
@@ -269,13 +290,15 @@ export function KnowledgePage() {
                             size="small"
                             icon={<Send24Regular />}
                             onClick={() => {
-                              setPublishError(undefined);
-                              setPublishTarget(document);
+                              void requestPublish(document);
                             }}
                           >
                             发布
                           </Button>
                         )}
+                        {document.latestVersion?.publishedAt || document.status === "published" ? (
+                          <Button appearance="subtle" size="small" icon={<History24Regular />} onClick={() => void openVersions(document)}>历史</Button>
+                        ) : null}
                         {hasPublishableDraft(document) && targetVersion !== undefined && (
                           <ScheduledPublicationActions
                             targetType="knowledge_document"
@@ -321,15 +344,20 @@ export function KnowledgePage() {
       <Dialog
         open={Boolean(publishTarget)}
         onOpenChange={(_, data) => {
-          if (!data.open && !publishing) setPublishTarget(undefined);
+          if (!data.open && !publishing) {
+            setPublishTarget(undefined);
+            setPublishVersionId(undefined);
+          }
         }}
       >
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>确认发布知识 FAQ</DialogTitle>
+            <DialogTitle>{publishVersionId ? "确认回退知识 FAQ" : "确认发布知识 FAQ"}</DialogTitle>
             <DialogContent>
               <p>
-                发布后，服务端会进入审核与索引流程。只有服务端确认成功后，状态才会更新。
+                {publishVersionId
+                  ? "回退会把选中的历史版本重新发布为当前版本，完整历史不会被删除。"
+                  : "发布后，服务端会进入审核与索引流程。只有服务端确认成功后，状态才会更新。"}
               </p>
               {publishTarget && (
                 <div className="publish-target">
@@ -339,6 +367,20 @@ export function KnowledgePage() {
                       ? `准备发布版本 ${publishTarget.latestVersion.versionNumber}`
                       : "服务端将选择可发布的最新草稿版本"}
                   </span>
+                  {publicationImpact === undefined ? (
+                    <span>正在核对关联名片…</span>
+                  ) : (
+                    <div className="publication-impact-summary">
+                      <strong>本次将更新 {publicationImpact.affectedCardCount} 张已发布名片</strong>
+                      {publicationImpact.breakdown.filter((item) => item.cardCount > 0).map((item) => (
+                        <span key={item.reason}>{item.label}：{item.cardCount} 张</span>
+                      ))}
+                      {publicationImpact.affectedCardCount === 0 && (
+                        <span>当前没有已发布名片引用这条 FAQ，发布只会更新知识库。</span>
+                      )}
+                      <span>确认后将一键同步；需要时可从发布历史回退。</span>
+                    </div>
+                  )}
                 </div>
               )}
               {publishError && (
@@ -359,7 +401,7 @@ export function KnowledgePage() {
             <DialogActions>
               <Button
                 appearance="secondary"
-                onClick={() => setPublishTarget(undefined)}
+                onClick={() => { setPublishTarget(undefined); setPublishVersionId(undefined); }}
                 disabled={publishing}
               >
                 取消
@@ -370,9 +412,30 @@ export function KnowledgePage() {
                 onClick={() => void publish()}
                 disabled={publishing}
               >
-                {publishing ? "正在发布" : "确认发布"}
+                {publishing ? "正在处理" : publishVersionId ? "确认回退并更新名片" : "确认发布"}
               </Button>
             </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      <Dialog open={Boolean(versionsTarget)} onOpenChange={(_, data) => { if (!data.open && !publishing) setVersionsTarget(undefined); }}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>知识发布历史</DialogTitle>
+            <DialogContent>
+              <p>{versionsTarget?.title}</p>
+              {versionsLoading ? <p>正在加载历史版本…</p> : null}
+              <div className="publication-history-list">
+                {versions.map((version) => (
+                  <div className="publication-history-row" key={version.id}>
+                    <div><strong>版本 {version.versionNumber}</strong><span>{formatTimestamp(version.publishedAt || version.createdAt)}</span></div>
+                    <Button appearance="secondary" size="small" disabled={!version.publishedAt || version.id === versionsTarget?.latestVersion?.id} onClick={() => { if (versionsTarget) { setVersionsTarget(undefined); void requestPublish(versionsTarget, version.id); } }}>{version.id === versionsTarget?.latestVersion?.id ? "当前版本" : version.publishedAt ? "回退到此版本" : "未发布草稿"}</Button>
+                  </div>
+                ))}
+              </div>
+            </DialogContent>
+            <DialogActions><Button appearance="secondary" onClick={() => setVersionsTarget(undefined)}>关闭</Button></DialogActions>
           </DialogBody>
         </DialogSurface>
       </Dialog>

@@ -60,7 +60,18 @@ class UpdateContentCandidateRequest(ContentImportModel):
 
 class ReviewContentCandidateRequest(ContentImportModel):
     expected_version: int = Field(ge=1)
-    apply_fields: list[str] = Field(default_factory=list, max_length=8)
+    apply_fields: list[str] = Field(default_factory=list, max_length=32)
+    confirm_sensitive_fields: bool = False
+
+
+class BulkReviewContentCandidateItem(ContentImportModel):
+    id: uuid.UUID
+    expected_version: int = Field(ge=1)
+    apply_fields: list[str] = Field(default_factory=list, max_length=32)
+
+
+class BulkAcceptContentCandidatesRequest(ContentImportModel):
+    candidates: list[BulkReviewContentCandidateItem] = Field(min_length=1, max_length=100)
 
 
 class ContentImportCandidateRecord(ContentImportModel):
@@ -105,6 +116,11 @@ class ContentImportRunListEnvelope(ContentImportModel):
 
 class ContentImportCandidateEnvelope(ContentImportModel):
     data: ContentImportCandidateRecord
+
+
+class ContentImportCandidateListEnvelope(ContentImportModel):
+    data: list[ContentImportCandidateRecord]
+    total: int = Field(ge=0)
 
 
 __all__ = [name for name in globals() if not name.startswith("_")]

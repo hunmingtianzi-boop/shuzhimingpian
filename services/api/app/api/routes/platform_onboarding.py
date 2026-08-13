@@ -180,6 +180,7 @@ async def upload_onboarding_documents(
         scope=target.scope,
         items=pending,
         auto_publish=False,
+        display_name=None,
         trace_id=request_id_ctx.get(),
     )
     record = await service.attach_import_batch(

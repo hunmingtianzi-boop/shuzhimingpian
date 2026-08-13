@@ -1002,6 +1002,48 @@ class CaseStudy(
     )
 
 
+class ContentPublicationRevision(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    CompanyScopeMixin,
+    Base,
+):
+    __tablename__ = "content_publication_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "resource_type",
+            "resource_id",
+            "revision_number",
+            name="uq_content_publication_revision_number",
+        ),
+        CheckConstraint(
+            "resource_type IN ('product', 'case_study')",
+            name="resource_type_supported",
+        ),
+        CheckConstraint("revision_number >= 1", name="revision_number_positive"),
+        Index(
+            "ix_content_publication_revisions_resource",
+            "company_id",
+            "resource_type",
+            "resource_id",
+            "revision_number",
+        ),
+    )
+
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    published_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+
+
 class EnterpriseContentDistribution(
     UUIDPrimaryKeyMixin,
     TimestampMixin,
@@ -2052,7 +2094,13 @@ class KnowledgeVersion(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, B
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class KnowledgeImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
+class KnowledgeImportBatch(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OptimisticVersionMixin,
+    CompanyScopeMixin,
+    Base,
+):
     __tablename__ = "knowledge_import_batches"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -2064,6 +2112,14 @@ class KnowledgeImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixi
         UniqueConstraint(
             "tenant_id", "company_id", "id", name="uq_knowledge_import_batches_scope_id"
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "sequence_number",
+            name="uq_knowledge_import_batches_company_sequence",
+        ),
+        CheckConstraint("sequence_number > 0", name="sequence_number_positive"),
+        CheckConstraint("char_length(btrim(display_name)) > 0", name="display_name_non_empty"),
         CheckConstraint("total_items > 0", name="total_items_positive"),
         CheckConstraint(
             "pending_items >= 0 AND succeeded_items >= 0 AND failed_items >= 0",
@@ -2077,6 +2133,8 @@ class KnowledgeImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixi
     )
 
     requested_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     auto_publish: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

@@ -44,8 +44,10 @@ source_text 只截取支持该候选的最短连续原文，建议 40 到 600 �
 - faqs: question, answer, meta
 - unclassified: text, reason, meta
 
-FAQ 特别规则：只有原文明确出现提问与回答时才生成。若原文写成“客户问 X，团队回答 Y”，
-question 必须逐字复制原文中的 X，answer 必须逐字复制原文中的 Y；不得把它们改写成更像标题的问句。
+FAQ 特别规则：原文明确出现问答时直接提取；原文只有可独立回答的说明性内容时，也可以整理成自然问题。
+question 可以把原文主题改写成用户会实际提问的问句，但不得引入原文没有的产品、数字、承诺或范围；
+answer 应忠于 source_text，可轻量整理语序，但事实、数字、网址和边界必须有原文依据。
+不要把单独的产品名、公司名或章节标题直接当作问题；问题应包含疑问表达并以“？”结尾。
 
 没有可靠候选时返回空数组。不得自动发布、创建或修改任何企业数据。
 """.strip()
@@ -233,6 +235,8 @@ def validate_content_classification(
             _require_candidate_fields_are_grounded(
                 category, candidate, exact_source_text, index
             )
+            if category == "faqs":
+                candidate.question = _normalize_faq_question(candidate.question)
     return classification
 
 
@@ -501,6 +505,18 @@ def _merge_classifications(
     return ContentClassification.model_validate(merged)
 
 
+def _normalize_faq_question(value: str) -> str:
+    question = value.strip().rstrip("。.!！")
+    if not question:
+        return value
+    if question.endswith(("?", "？")):
+        return question[:-1].rstrip() + "？"
+    interrogatives = ("什么", "哪些", "如何", "怎么", "是否", "能否", "可以", "为什么", "多少")
+    if any(token in question for token in interrogatives):
+        return question + "？"
+    return f"关于{question}可以了解哪些信息？"
+
+
 def _summarize_failures(failures: Sequence[str]) -> str:
     unique = list(dict.fromkeys(failures))
     return ",".join(unique)[:500] or "classification_invalid"
@@ -609,6 +625,10 @@ def _salvage_grounded_candidates(
             )
             if not meaningful:
                 continue
+            if category == "faqs":
+                candidate_data["question"] = _normalize_faq_question(
+                    str(candidate_data.get("question") or "")
+                )
             recovered[category].append(
                 candidate.__class__.model_validate(candidate_data)
             )

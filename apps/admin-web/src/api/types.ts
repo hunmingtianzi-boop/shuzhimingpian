@@ -167,6 +167,7 @@ export type KnowledgeDocument = {
     indexedChunkCount: number;
     indexStatus?: string;
     indexErrorCode?: string;
+    publishedAt?: string;
   };
   updatedAt?: string;
 };
@@ -185,6 +186,17 @@ export type KnowledgeDocumentInput = {
   answer: string;
   visibility: KnowledgeVisibility;
   metadata: Record<string, unknown>;
+};
+
+export type KnowledgeVersion = {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  reviewStatus: string;
+  chunkCount: number;
+  indexedChunkCount: number;
+  publishedAt?: string;
+  createdAt: string;
 };
 
 export type SelectableFaqDocument = {
@@ -521,11 +533,12 @@ export type Product = VersionedResource & {
   visibility: ContentVisibility;
   sortOrder: number;
   settings: Record<string, unknown>;
+  hasUnpublishedChanges?: boolean;
 };
 
 export type ProductInput = Omit<
   Product,
-  "id" | "status" | "version" | "publishedAt" | "createdAt" | "updatedAt"
+  "id" | "status" | "version" | "publishedAt" | "createdAt" | "updatedAt" | "hasUnpublishedChanges"
 >;
 
 export type CaseStudy = VersionedResource & {
@@ -540,12 +553,35 @@ export type CaseStudy = VersionedResource & {
   visibility: ContentVisibility;
   sortOrder: number;
   settings: Record<string, unknown>;
+  hasUnpublishedChanges?: boolean;
 };
 
 export type CaseStudyInput = Omit<
   CaseStudy,
-  "id" | "status" | "version" | "publishedAt" | "createdAt" | "updatedAt"
+  "id" | "status" | "version" | "publishedAt" | "createdAt" | "updatedAt" | "hasUnpublishedChanges"
 >;
+
+export type PublicationImpact = {
+  resourceType: "product" | "case_study" | "knowledge_document";
+  resourceId: string;
+  affectedCardCount: number;
+  affectedCardIds: string[];
+  breakdown: Array<{
+    reason: "direct_reference" | "all_published";
+    label: string;
+    cardCount: number;
+    cardIds: string[];
+  }>;
+  impactDigest: string;
+};
+
+export type PublicationRevision = {
+  id: string;
+  resourceType: "product" | "case_study";
+  resourceId: string;
+  revisionNumber: number;
+  publishedAt: string;
+};
 
 export type ForbiddenAction = "refuse" | "handoff" | "safe_template";
 

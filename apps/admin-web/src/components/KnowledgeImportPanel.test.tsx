@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { knowledgeImportsApi, type KnowledgeImportBatch } from "../api/knowledgeImportsApi";
+import { adminApi } from "../api/adminApi";
 import { adminLightTheme } from "../theme";
 import { KnowledgeImportPanel, validateKnowledgeImportFiles } from "./KnowledgeImportPanel";
 
 const batch: KnowledgeImportBatch = {
-  id: "batch-1", status: "completed_with_errors", totalItems: 2, pendingItems: 0,
+  id: "batch-1", sequenceNumber: 1, displayName: "首批企业资料", version: 1,
+  status: "completed_with_errors", totalItems: 2, pendingItems: 0,
   succeededItems: 1, failedItems: 1, autoPublish: false, createdAt: "2026-07-12T00:00:00Z",
   completedAt: "2026-07-12T00:01:00Z",
   items: [
@@ -34,6 +36,10 @@ describe("validateKnowledgeImportFiles", () => {
 describe("KnowledgeImportPanel", () => {
   beforeEach(() => {
     vi.spyOn(knowledgeImportsApi, "list").mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue({
+      name: "拓浙 AI 集团", summary: "", industry: "AI", region: "杭州", website: "https://tuozhe.example.com",
+      logoUrl: "", profilePersonalizationPolicyVersion: "v1", version: 1,
+    });
   });
   afterEach(() => vi.restoreAllMocks());
 

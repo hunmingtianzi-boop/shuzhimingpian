@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -24,6 +25,9 @@ from app.api.catalog_schemas import (
     ForbiddenTopicRecord,
     ManagedCardRecord,
     ProductRecord,
+    PublicationImpactBreakdown,
+    PublicationImpactRecord,
+    PublicationRevisionRecord,
     PublicCaseStudyRecord,
     PublicProductRecord,
     UpdateCaseStudyRequest,
@@ -40,6 +44,7 @@ from app.db.models import (
     CardKind,
     CaseStudy,
     Company,
+    ContentPublicationRevision,
     ContentStatus,
     ForbiddenTopic,
     KnowledgeChunk,
@@ -237,6 +242,111 @@ class CatalogStore:
             await self._set_scope(session, scope)
             return _product_record(await self._product(session, scope, product_id))
 
+    async def publication_impact(
+        self,
+        *,
+        scope: CatalogScope,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> PublicationImpactRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            cards = list(
+                (
+                    await session.scalars(
+                        select(Card)
+                        .where(*managed_card_filters(scope), Card.status == ContentStatus.PUBLISHED)
+                        .order_by(Card.id)
+                    )
+                ).all()
+            )
+            direct_ids: list[uuid.UUID] = []
+            all_published_ids: list[uuid.UUID] = []
+            resource_key = str(resource_id)
+            for card in cards:
+                reason = _publication_impact_reason(
+                    card.settings, resource_type=resource_type, resource_key=resource_key
+                )
+                if reason == "direct_reference":
+                    direct_ids.append(card.id)
+                elif reason == "all_published":
+                    all_published_ids.append(card.id)
+            card_ids = sorted({*direct_ids, *all_published_ids}, key=str)
+            breakdown = [
+                PublicationImpactBreakdown(
+                    reason="direct_reference",
+                    label="名片已直接选用这条内容",
+                    card_count=len(direct_ids),
+                    card_ids=direct_ids,
+                ),
+                PublicationImpactBreakdown(
+                    reason="all_published",
+                    label="名片设置为自动展示全部已发布内容",
+                    card_count=len(all_published_ids),
+                    card_ids=all_published_ids,
+                ),
+            ]
+            digest = _impact_digest(resource_type, resource_id, breakdown)
+            return PublicationImpactRecord(
+                resource_type=resource_type,
+                resource_id=resource_id,
+                affected_card_count=len(card_ids),
+                affected_card_ids=card_ids,
+                breakdown=breakdown,
+                impact_digest=digest,
+            )
+
+    async def require_publication_impact(
+        self,
+        *,
+        scope: CatalogScope,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        expected_digest: str,
+    ) -> PublicationImpactRecord:
+        impact = await self.publication_impact(
+            scope=scope, resource_type=resource_type, resource_id=resource_id
+        )
+        if not secrets.compare_digest(impact.impact_digest, expected_digest):
+            raise ApiError(
+                409,
+                "PUBLICATION_IMPACT_CHANGED",
+                "关联名片范围已变化，请重新确认发布影响",
+                details={"current_impact": impact.model_dump(mode="json")},
+            )
+        return impact
+
+    async def list_publication_revisions(
+        self,
+        *,
+        scope: CatalogScope,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> list[PublicationRevisionRecord]:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            rows = (
+                await session.scalars(
+                    select(ContentPublicationRevision)
+                    .where(
+                        *company_scope_filters(ContentPublicationRevision, scope),
+                        ContentPublicationRevision.resource_type == resource_type,
+                        ContentPublicationRevision.resource_id == resource_id,
+                    )
+                    .order_by(ContentPublicationRevision.revision_number.desc())
+                )
+            ).all()
+            return [
+                PublicationRevisionRecord(
+                    id=row.id,
+                    resource_type=row.resource_type,
+                    resource_id=row.resource_id,
+                    revision_number=row.revision_number,
+                    published_at=row.created_at,
+                )
+                for row in rows
+            ]
+
     async def create_product(
         self,
         *,
@@ -292,7 +402,12 @@ class CatalogStore:
                     await self._ensure_product_slug_available(
                         session, scope, body.slug, exclude_id=product.id
                     )
+                current_settings = _dict_value(product.settings)
+                if product.status == ContentStatus.PUBLISHED and not _published_snapshot(product):
+                    current_settings["_published_snapshot"] = _product_snapshot(product)
                 for key, value in _product_values(body).items():
+                    if key == "settings":
+                        value = _merge_internal_settings(value, current_settings)
                     setattr(product, key, value)
                 product.version += 1
                 await self._audit(
@@ -325,7 +440,17 @@ class CatalogStore:
             product = await self._product(session, scope, product_id, for_update=True)
             require_version(product.version, expected_version)
             _ensure_product_publishable(product)
-            _publish_resource(product, label="产品")
+            _publish_catalog_snapshot(product, label="产品", snapshot=_product_snapshot(product))
+            await self._record_publication_revision(
+                session,
+                scope=scope,
+                resource_type="product",
+                resource_id=product.id,
+                snapshot=_product_snapshot(product),
+            )
+            product.settings = _with_published_snapshot(
+                product.settings, _product_snapshot(product)
+            )
             await self._audit(
                 session,
                 scope=scope,
@@ -334,6 +459,50 @@ class CatalogStore:
                 resource_id=product.id,
                 trace_id=trace_id,
                 event_data={"slug": product.slug, "version": product.version},
+            )
+            await session.flush()
+            await session.refresh(product)
+            return _product_record(product)
+
+    async def rollback_product(
+        self,
+        *,
+        scope: CatalogScope,
+        product_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        expected_version: int,
+        trace_id: str | None = None,
+    ) -> ProductRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            product = await self._product(session, scope, product_id, for_update=True)
+            require_version(product.version, expected_version)
+            revision = await self._publication_revision(
+                session,
+                scope=scope,
+                resource_type="product",
+                resource_id=product_id,
+                revision_id=revision_id,
+            )
+            _apply_snapshot(product, revision.snapshot)
+            snapshot = _product_snapshot(product)
+            _publish_catalog_snapshot(product, label="产品", snapshot=snapshot)
+            product.settings = _with_published_snapshot(product.settings, snapshot)
+            await self._record_publication_revision(
+                session,
+                scope=scope,
+                resource_type="product",
+                resource_id=product.id,
+                snapshot=snapshot,
+            )
+            await self._audit(
+                session,
+                scope=scope,
+                action="product.rollback",
+                resource_type="product",
+                resource_id=product.id,
+                trace_id=trace_id,
+                event_data={"revision_id": str(revision_id), "version": product.version},
             )
             await session.flush()
             await session.refresh(product)
@@ -481,7 +650,15 @@ class CatalogStore:
                     await self._ensure_case_slug_available(
                         session, scope, body.slug, exclude_id=case_study.id
                     )
+                current_settings = _dict_value(case_study.settings)
+                if (
+                    case_study.status == ContentStatus.PUBLISHED
+                    and not _published_snapshot(case_study)
+                ):
+                    current_settings["_published_snapshot"] = _case_study_snapshot(case_study)
                 for key, value in _case_study_values(body).items():
+                    if key == "settings":
+                        value = _merge_internal_settings(value, current_settings)
                     setattr(case_study, key, value)
                 case_study.version += 1
                 await self._audit(
@@ -514,7 +691,21 @@ class CatalogStore:
             case_study = await self._case_study(session, scope, case_study_id, for_update=True)
             require_version(case_study.version, expected_version)
             _ensure_case_study_publishable(case_study)
-            _publish_resource(case_study, label="案例")
+            _publish_catalog_snapshot(
+                case_study,
+                label="案例",
+                snapshot=_case_study_snapshot(case_study),
+            )
+            await self._record_publication_revision(
+                session,
+                scope=scope,
+                resource_type="case_study",
+                resource_id=case_study.id,
+                snapshot=_case_study_snapshot(case_study),
+            )
+            case_study.settings = _with_published_snapshot(
+                case_study.settings, _case_study_snapshot(case_study)
+            )
             await self._audit(
                 session,
                 scope=scope,
@@ -523,6 +714,50 @@ class CatalogStore:
                 resource_id=case_study.id,
                 trace_id=trace_id,
                 event_data={"slug": case_study.slug, "version": case_study.version},
+            )
+            await session.flush()
+            await session.refresh(case_study)
+            return _case_study_record(case_study)
+
+    async def rollback_case_study(
+        self,
+        *,
+        scope: CatalogScope,
+        case_study_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        expected_version: int,
+        trace_id: str | None = None,
+    ) -> CaseStudyRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            case_study = await self._case_study(session, scope, case_study_id, for_update=True)
+            require_version(case_study.version, expected_version)
+            revision = await self._publication_revision(
+                session,
+                scope=scope,
+                resource_type="case_study",
+                resource_id=case_study_id,
+                revision_id=revision_id,
+            )
+            _apply_snapshot(case_study, revision.snapshot)
+            snapshot = _case_study_snapshot(case_study)
+            _publish_catalog_snapshot(case_study, label="案例", snapshot=snapshot)
+            case_study.settings = _with_published_snapshot(case_study.settings, snapshot)
+            await self._record_publication_revision(
+                session,
+                scope=scope,
+                resource_type="case_study",
+                resource_id=case_study.id,
+                snapshot=snapshot,
+            )
+            await self._audit(
+                session,
+                scope=scope,
+                action="case_study.rollback",
+                resource_type="case_study",
+                resource_id=case_study.id,
+                trace_id=trace_id,
+                event_data={"revision_id": str(revision_id), "version": case_study.version},
             )
             await session.flush()
             await session.refresh(case_study)
@@ -1872,6 +2107,56 @@ class CatalogStore:
                 "该企业员工已经拥有员工名片，请直接编辑已有名片",
             )
 
+    async def _record_publication_revision(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        snapshot: dict[str, Any],
+    ) -> ContentPublicationRevision:
+        latest = await session.scalar(
+            select(func.max(ContentPublicationRevision.revision_number)).where(
+                *company_scope_filters(ContentPublicationRevision, scope),
+                ContentPublicationRevision.resource_type == resource_type,
+                ContentPublicationRevision.resource_id == resource_id,
+            )
+        )
+        revision = ContentPublicationRevision(
+            id=uuid.uuid4(),
+            tenant_id=scope.tenant_id,
+            company_id=scope.company_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            revision_number=int(latest or 0) + 1,
+            snapshot=snapshot,
+            published_by=scope.actor_user_id,
+        )
+        session.add(revision)
+        return revision
+
+    async def _publication_revision(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        revision_id: uuid.UUID,
+    ) -> ContentPublicationRevision:
+        revision = await session.scalar(
+            select(ContentPublicationRevision).where(
+                *company_scope_filters(ContentPublicationRevision, scope),
+                ContentPublicationRevision.id == revision_id,
+                ContentPublicationRevision.resource_type == resource_type,
+                ContentPublicationRevision.resource_id == resource_id,
+            )
+        )
+        if revision is None:
+            raise ApiError(404, "RESOURCE_NOT_FOUND", "发布修订不存在")
+        return revision
+
     async def _audit(
         self,
         session: AsyncSession,
@@ -1955,6 +2240,116 @@ def _product_values(body: CreateProductRequest | UpdateProductRequest) -> dict[s
         "sort_order": body.sort_order,
         "settings": dict(body.settings),
     }
+
+
+def _impact_digest(
+    resource_type: str,
+    resource_id: uuid.UUID,
+    breakdown: list[PublicationImpactBreakdown],
+) -> str:
+    payload = ":".join(
+        [
+            resource_type,
+            str(resource_id),
+            *(
+                f"{item.reason}={','.join(str(card_id) for card_id in item.card_ids)}"
+                for item in breakdown
+            ),
+        ]
+    )
+    return sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _publication_impact_reason(
+    settings: Any,
+    *,
+    resource_type: str,
+    resource_key: str,
+) -> str | None:
+    published = _dict_value(settings).get("enterprise_template_published")
+    blocks = published.get("blocks") if isinstance(published, dict) else None
+    if not isinstance(blocks, list):
+        return None
+    inherited_all = False
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if resource_type == "product" and block.get("type") == "business_collection":
+            if resource_key in {str(item) for item in block.get("product_ids", [])}:
+                return "direct_reference"
+        elif resource_type == "case_study" and block.get("type") == "case_collection":
+            if resource_key in {str(item) for item in block.get("case_ids", [])}:
+                return "direct_reference"
+        elif resource_type == "knowledge_document" and block.get("type") == "faq":
+            if block.get("faq_mode") == "all_published":
+                inherited_all = True
+            elif block.get("faq_mode") == "selected" and resource_key in {
+                str(item) for item in block.get("faq_document_ids", [])
+            }:
+                return "direct_reference"
+    return "all_published" if inherited_all else None
+
+
+def _public_settings(value: Any) -> dict[str, Any]:
+    return {key: item for key, item in _dict_value(value).items() if not key.startswith("_")}
+
+
+def _merge_internal_settings(public: Any, current: Any) -> dict[str, Any]:
+    merged = _public_settings(public)
+    merged.update({key: item for key, item in _dict_value(current).items() if key.startswith("_")})
+    return merged
+
+
+def _with_published_snapshot(settings: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
+    merged = _dict_value(settings)
+    merged["_published_snapshot"] = snapshot
+    return merged
+
+
+def _product_snapshot(product: Product) -> dict[str, Any]:
+    return {
+        "slug": product.slug,
+        "name": product.name,
+        "category": product.category,
+        "summary": product.summary,
+        "detail": product.detail,
+        "audience": product.audience,
+        "price_boundary": product.price_boundary,
+        "image_url": product.image_url,
+        "visibility": product.visibility.value,
+        "sort_order": product.sort_order,
+        "settings": _public_settings(product.settings),
+    }
+
+
+def _case_study_snapshot(case_study: CaseStudy) -> dict[str, Any]:
+    return {
+        "slug": case_study.slug,
+        "title": case_study.title,
+        "industry": case_study.industry,
+        "background": case_study.background,
+        "solution": case_study.solution,
+        "result": case_study.result,
+        "client_display_name": case_study.client_display_name,
+        "image_url": case_study.image_url,
+        "visibility": case_study.visibility.value,
+        "sort_order": case_study.sort_order,
+        "settings": _public_settings(case_study.settings),
+    }
+
+
+def _published_snapshot(resource: Product | CaseStudy) -> dict[str, Any] | None:
+    snapshot = _dict_value(resource.settings).get("_published_snapshot")
+    return snapshot if isinstance(snapshot, dict) else None
+
+
+def _apply_snapshot(resource: Product | CaseStudy, snapshot: dict[str, Any]) -> None:
+    for key, value in snapshot.items():
+        if key == "visibility":
+            value = Visibility(value)
+        if key == "settings":
+            value = _merge_internal_settings(value, resource.settings)
+        setattr(resource, key, value)
 
 
 def _case_study_values(
@@ -2285,12 +2680,16 @@ def _product_record(product: Product) -> ProductRecord:
         image_url=product.image_url,
         visibility=product.visibility.value,
         sort_order=product.sort_order,
-        settings=_dict_value(product.settings),
+        settings=_public_settings(product.settings),
         status=product.status.value,
         published_at=product.published_at,
         version=product.version,
         created_at=product.created_at,
         updated_at=product.updated_at,
+        has_unpublished_changes=(
+            _published_snapshot(product) is not None
+            and _published_snapshot(product) != _product_snapshot(product)
+        ),
     )
 
 
@@ -2307,12 +2706,16 @@ def _case_study_record(case_study: CaseStudy) -> CaseStudyRecord:
         image_url=case_study.image_url,
         visibility=case_study.visibility.value,
         sort_order=case_study.sort_order,
-        settings=_dict_value(case_study.settings),
+        settings=_public_settings(case_study.settings),
         status=case_study.status.value,
         published_at=case_study.published_at,
         version=case_study.version,
         created_at=case_study.created_at,
         updated_at=case_study.updated_at,
+        has_unpublished_changes=(
+            _published_snapshot(case_study) is not None
+            and _published_snapshot(case_study) != _case_study_snapshot(case_study)
+        ),
     )
 
 
@@ -2336,18 +2739,19 @@ def _public_product_record(
     if product.published_at is None:
         raise RuntimeError("public product is missing published_at")
     custom = display or {}
+    source = _published_snapshot(product) or _product_snapshot(product)
     return PublicProductRecord(
-        slug=product.slug,
-        name=str(custom.get("title") or product.name),
-        category=product.category,
-        summary=str(custom.get("summary") or product.summary),
-        detail=product.detail,
-        audience=product.audience,
-        price_boundary=product.price_boundary,
-        image_url=str(custom.get("image_url") or product.image_url)
-        if (custom.get("image_url") or product.image_url)
+        slug=str(source["slug"]),
+        name=str(custom.get("title") or source["name"]),
+        category=source.get("category"),
+        summary=str(custom.get("summary") or source["summary"]),
+        detail=str(source["detail"]),
+        audience=source.get("audience"),
+        price_boundary=source.get("price_boundary"),
+        image_url=str(custom.get("image_url") or source.get("image_url"))
+        if (custom.get("image_url") or source.get("image_url"))
         else None,
-        sort_order=int(custom.get("sort_order", product.sort_order)),
+        sort_order=int(custom.get("sort_order", source["sort_order"])),
         published_at=product.published_at,
     )
 
@@ -2358,18 +2762,19 @@ def _public_case_study_record(
     if case_study.published_at is None:
         raise RuntimeError("public case study is missing published_at")
     custom = display or {}
+    source = _published_snapshot(case_study) or _case_study_snapshot(case_study)
     return PublicCaseStudyRecord(
-        slug=case_study.slug,
-        title=str(custom.get("title") or case_study.title),
-        industry=case_study.industry,
-        background=case_study.background,
-        solution=case_study.solution,
-        result=case_study.result,
-        client_display_name=case_study.client_display_name,
-        image_url=str(custom.get("image_url") or case_study.image_url)
-        if (custom.get("image_url") or case_study.image_url)
+        slug=str(source["slug"]),
+        title=str(custom.get("title") or source["title"]),
+        industry=source.get("industry"),
+        background=str(source["background"]),
+        solution=str(source["solution"]),
+        result=str(source["result"]),
+        client_display_name=source.get("client_display_name"),
+        image_url=str(custom.get("image_url") or source.get("image_url"))
+        if (custom.get("image_url") or source.get("image_url"))
         else None,
-        sort_order=int(custom.get("sort_order", case_study.sort_order)),
+        sort_order=int(custom.get("sort_order", source["sort_order"])),
         published_at=case_study.published_at,
     )
 
@@ -2480,6 +2885,22 @@ def _publish_card_snapshot(card: Card) -> None:
         card.version += 1
         return
     _publish_resource(card, label="名片")
+
+
+def _publish_catalog_snapshot(
+    resource: Product | CaseStudy,
+    *,
+    label: str,
+    snapshot: dict[str, Any],
+) -> None:
+    """Publish a draft catalog item or replace its public snapshot after editing."""
+    if resource.status == ContentStatus.PUBLISHED:
+        if _published_snapshot(resource) == snapshot:
+            raise ApiError(409, "INVALID_STATE", f"{label}已经发布且没有新修改")
+        resource.published_at = datetime.now(UTC)
+        resource.version += 1
+        return
+    _publish_resource(resource, label=label)
 
 
 def _archive_resource(resource: Any, *, label: str) -> None:

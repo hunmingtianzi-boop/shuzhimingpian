@@ -43,6 +43,15 @@ class _Store:
         self.calls.append(("list", kwargs))
         return [self.record], 1
 
+    async def rename_batch(self, **kwargs: Any) -> KnowledgeImportBatchRecord:
+        self.calls.append(("rename", kwargs))
+        return self.record.model_copy(
+            update={
+                "display_name": kwargs["display_name"],
+                "version": kwargs["expected_version"] + 1,
+            }
+        )
+
 
 def _principal(role: str, permissions: tuple[str, ...] = ()) -> StaffPrincipal:
     return StaffPrincipal(
@@ -99,6 +108,25 @@ def test_upload_accepts_explicit_auto_publish_flag(client) -> None:
     )
     assert response.status_code == 202
     assert store.calls[0][1]["auto_publish"] is True
+
+
+def test_upload_accepts_display_name_and_batch_can_be_renamed(client) -> None:
+    test_client, store, _ = client
+    response = test_client.post(
+        "/api/v1/admin/knowledge/imports",
+        data={"display_name": "星澜企业产品资料"},
+        files={"files": ("note.txt", "最新产品资料", "text/plain")},
+    )
+    assert response.status_code == 202
+    assert store.calls[0][1]["display_name"] == "星澜企业产品资料"
+
+    response = test_client.patch(
+        f"/api/v1/admin/knowledge/imports/{store.record.id}",
+        json={"display_name": "星澜企业产品与案例资料", "expected_version": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["display_name"] == "星澜企业产品与案例资料"
+    assert store.calls[-1][0] == "rename"
 
 
 def test_upload_rejects_unsupported_file_and_missing_permission(client) -> None:

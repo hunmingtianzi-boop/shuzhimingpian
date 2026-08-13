@@ -139,3 +139,61 @@ def test_accept_requires_permission_for_candidate_category(monkeypatch: Any) -> 
         )
     assert accepted.status_code == 200
     assert accepted.json()["data"]["status"] == "accepted"
+
+
+def test_bulk_accept_uses_category_permissions_and_returns_summary(monkeypatch: Any) -> None:
+    client, service = _client(monkeypatch, _principal(permissions=("catalog.write",)))
+    with client:
+        accepted = client.post(
+            "/api/v1/admin/content-import-candidates:bulk-accept",
+            json={
+                "candidates": [
+                    {
+                        "id": str(service.candidate.id),
+                        "expected_version": 1,
+                        "apply_fields": [],
+                    }
+                ]
+            },
+        )
+    assert accepted.status_code == 200
+    assert accepted.json()["total"] == 1
+    assert accepted.json()["data"][0]["status"] == "accepted"
+
+
+def test_enterprise_profile_cannot_be_bulk_accepted(monkeypatch: Any) -> None:
+    client, service = _client(monkeypatch, _principal(permissions=("company.write",)))
+    service.candidate = service.candidate.model_copy(
+        update={
+            "category": "enterprise_profile",
+            "payload": {
+                "company_name": "另一家企业",
+                "summary": "候选摘要",
+                "industry": "AI",
+                "region": "杭州",
+                "website": "https://other.example.com",
+            },
+        }
+    )
+    with client:
+        response = client.post(
+            "/api/v1/admin/content-import-candidates:bulk-accept",
+            json={"candidates": [{"id": str(service.candidate.id), "expected_version": 1}]},
+        )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "SENSITIVE_CANDIDATE_REQUIRES_REVIEW"
+
+
+def test_single_accept_forwards_sensitive_confirmation(monkeypatch: Any) -> None:
+    client, service = _client(monkeypatch, _principal(permissions=("catalog.write",)))
+    with client:
+        response = client.post(
+            f"/api/v1/admin/content-import-candidates/{service.candidate.id}/accept",
+            json={
+                "expected_version": 1,
+                "apply_fields": [],
+                "confirm_sensitive_fields": True,
+            },
+        )
+    assert response.status_code == 200
+    assert service.calls[-1][1]["confirm_sensitive_fields"] is True

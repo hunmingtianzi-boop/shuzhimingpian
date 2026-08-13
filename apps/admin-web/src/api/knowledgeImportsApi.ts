@@ -65,6 +65,9 @@ export type KnowledgeImportItem = {
 
 export type KnowledgeImportBatch = {
   id: string;
+  sequenceNumber: number;
+  displayName: string;
+  version: number;
   status: KnowledgeImportBatchStatus;
   totalItems: number;
   pendingItems: number;
@@ -204,6 +207,9 @@ function normalizeBatch(value: unknown): KnowledgeImportBatch {
   }
   return {
     id: requiredString(value.id, "id"),
+    sequenceNumber: requiredCount(value.sequence_number, "sequence_number"),
+    displayName: requiredString(value.display_name, "display_name"),
+    version: requiredCount(value.version, "version"),
     status,
     totalItems: requiredCount(value.total_items, "total_items"),
     pendingItems: requiredCount(value.pending_items, "pending_items"),
@@ -280,7 +286,7 @@ export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
   return {
     async create(
       files: File[],
-      options: { autoPublish?: boolean } = {},
+      options: { autoPublish?: boolean; displayName?: string } = {},
     ): Promise<KnowledgeImportBatch> {
       const body = new FormData();
       files.forEach((file) => body.append("files", file, file.name));
@@ -288,6 +294,7 @@ export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
       // server-side setting is rolling out. The server must still enforce that
       // only an enterprise administrator may enable it.
       if (options.autoPublish) body.append("auto_publish", "true");
+      if (options.displayName?.trim()) body.append("display_name", options.displayName.trim());
       return normalizeBatch(unwrapData(await client.postForm("/admin/knowledge/imports", body)));
     },
 
@@ -310,6 +317,13 @@ export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
       return normalizeBatch(
         unwrapData(await client.get(`/admin/knowledge/imports/${encodeURIComponent(id)}`)),
       );
+    },
+
+    async rename(batch: KnowledgeImportBatch, displayName: string): Promise<KnowledgeImportBatch> {
+      return normalizeBatch(unwrapData(await client.patch(
+        `/admin/knowledge/imports/${encodeURIComponent(batch.id)}`,
+        { display_name: displayName.trim(), expected_version: batch.version },
+      )));
     },
   };
 }
@@ -340,10 +354,18 @@ export function createContentImportsApi(client: ApiClient = apiClient) {
         { expected_version: candidate.version, category: candidate.category, payload: candidate.payload },
       )));
     },
-    async accept(candidate: ContentImportCandidate, applyFields: string[] = []): Promise<ContentImportCandidate> {
+    async accept(
+      candidate: ContentImportCandidate,
+      applyFields: string[] = [],
+      options: { confirmSensitiveFields?: boolean } = {},
+    ): Promise<ContentImportCandidate> {
       return normalizeCandidate(unwrapData(await client.post(
         `/admin/content-import-candidates/${encodeURIComponent(candidate.id)}/accept`,
-        { expected_version: candidate.version, apply_fields: applyFields },
+        {
+          expected_version: candidate.version,
+          apply_fields: applyFields,
+          confirm_sensitive_fields: options.confirmSensitiveFields ?? false,
+        },
       )));
     },
     async ignore(candidate: ContentImportCandidate): Promise<ContentImportCandidate> {
@@ -351,6 +373,19 @@ export function createContentImportsApi(client: ApiClient = apiClient) {
         `/admin/content-import-candidates/${encodeURIComponent(candidate.id)}/ignore`,
         { expected_version: candidate.version, apply_fields: [] },
       )));
+    },
+    async bulkAccept(candidates: ContentImportCandidate[]): Promise<ContentImportCandidate[]> {
+      const payload = await client.post("/admin/content-import-candidates:bulk-accept", {
+        candidates: candidates.map((candidate) => ({
+          id: candidate.id,
+          expected_version: candidate.version,
+          apply_fields: [],
+        })),
+      });
+      if (!isRecord(payload) || !Array.isArray(payload.data)) {
+        throw new ApiError("批量确认候选响应无法识别。", { code: "INVALID_API_RESPONSE" });
+      }
+      return payload.data.map(normalizeCandidate);
     },
   };
 }

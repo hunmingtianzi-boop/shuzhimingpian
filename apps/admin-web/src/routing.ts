@@ -20,6 +20,7 @@ export const APP_PATHS = {
   cases: "/cases",
   forbiddenTopics: "/forbidden-topics",
   knowledge: "/knowledge",
+  imports: "/imports",
   platformOverview: "/platform",
   platformEnterprises: "/platform/enterprises",
   platformOnboarding: "/platform/onboarding",

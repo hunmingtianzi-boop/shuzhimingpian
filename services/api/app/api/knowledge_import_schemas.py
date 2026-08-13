@@ -29,6 +29,9 @@ class KnowledgeImportItemRecord(ImportModel):
 
 class KnowledgeImportBatchRecord(ImportModel):
     id: uuid.UUID
+    sequence_number: int = Field(default=1, ge=1)
+    display_name: str = Field(default="资料导入", min_length=1, max_length=120)
+    version: int = Field(default=1, ge=1)
     status: str
     auto_publish: bool = False
     total_items: int = Field(ge=1)
@@ -44,6 +47,11 @@ class KnowledgeImportBatchEnvelope(ImportModel):
     data: KnowledgeImportBatchRecord
 
 
+class RenameKnowledgeImportBatchRequest(ImportModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    expected_version: int = Field(ge=1)
+
+
 class KnowledgeImportBatchListEnvelope(ImportModel):
     data: list[KnowledgeImportBatchRecord]
     total: int = Field(ge=0)
@@ -56,4 +64,5 @@ __all__ = [
     "KnowledgeImportBatchListEnvelope",
     "KnowledgeImportBatchRecord",
     "KnowledgeImportItemRecord",
+    "RenameKnowledgeImportBatchRequest",
 ]

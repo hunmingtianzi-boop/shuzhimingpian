@@ -100,6 +100,7 @@ class ProductRecord(ProductWriteFields):
     version: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime
+    has_unpublished_changes: bool = False
 
 
 class ProductEnvelope(CatalogStrictModel):
@@ -173,6 +174,49 @@ class CaseStudyRecord(CaseStudyWriteFields):
     version: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime
+    has_unpublished_changes: bool = False
+
+
+class PublicationImpactBreakdown(CatalogStrictModel):
+    reason: Literal["direct_reference", "all_published"]
+    label: str
+    card_count: int = Field(ge=0)
+    card_ids: list[uuid.UUID]
+
+
+class PublicationImpactRecord(CatalogStrictModel):
+    resource_type: Literal["product", "case_study", "knowledge_document"]
+    resource_id: uuid.UUID
+    affected_card_count: int = Field(ge=0)
+    affected_card_ids: list[uuid.UUID]
+    breakdown: list[PublicationImpactBreakdown] = Field(default_factory=list)
+    impact_digest: str = Field(min_length=64, max_length=64)
+
+
+class PublicationImpactEnvelope(CatalogStrictModel):
+    data: PublicationImpactRecord
+
+
+class ConfirmPublicationRequest(CatalogStrictModel):
+    impact_digest: str = Field(min_length=64, max_length=64)
+
+
+class PublicationRevisionRecord(CatalogStrictModel):
+    id: uuid.UUID
+    resource_type: Literal["product", "case_study"]
+    resource_id: uuid.UUID
+    revision_number: int = Field(ge=1)
+    published_at: datetime
+
+
+class PublicationRevisionListEnvelope(CatalogStrictModel):
+    data: list[PublicationRevisionRecord]
+    total: int = Field(ge=0)
+
+
+class RollbackPublicationRequest(CatalogStrictModel):
+    revision_id: uuid.UUID
+    impact_digest: str = Field(min_length=64, max_length=64)
 
 
 class CaseStudyEnvelope(CatalogStrictModel):

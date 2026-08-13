@@ -25,6 +25,7 @@ from app.api.catalog_schemas import (
     CardComposerDefaultEnvelope,
     CaseStudyEnvelope,
     CaseStudyListEnvelope,
+    ConfirmPublicationRequest,
     CreateCardRequest,
     CreateCaseStudyRequest,
     CreateForbiddenTopicRequest,
@@ -36,6 +37,9 @@ from app.api.catalog_schemas import (
     ManagedCardListEnvelope,
     ProductEnvelope,
     ProductListEnvelope,
+    PublicationImpactEnvelope,
+    PublicationRevisionListEnvelope,
+    RollbackPublicationRequest,
     UpdateCardComposerDefaultRequest,
     UpdateCaseStudyRequest,
     UpdateEnterpriseTemplateRequest,
@@ -481,6 +485,13 @@ async def publish_knowledge_document(
     body: PublishKnowledgeDocumentRequest | None = None,
 ) -> KnowledgePublishEnvelope:
     _require_permission(principal, "knowledge.publish")
+    if body and body.impact_digest:
+        await _catalog_store(request).require_publication_impact(
+            scope=_catalog_scope(principal),
+            resource_type="knowledge_document",
+            resource_id=document_id,
+            expected_digest=body.impact_digest,
+        )
     result = await _store(request).publish_document(
         scope=_scope(principal),
         document_id=document_id,
@@ -488,6 +499,28 @@ async def publish_knowledge_document(
         trace_id=request_id_ctx.get(),
     )
     return KnowledgePublishEnvelope(data=result)
+
+
+@router.get(
+    "/knowledge/documents/{document_id}/publication-impact",
+    response_model=PublicationImpactEnvelope,
+    operation_id="previewKnowledgeDocumentPublicationImpact",
+)
+async def preview_knowledge_publication_impact(
+    document_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> PublicationImpactEnvelope:
+    _require_permission(principal, "knowledge.publish")
+    await _store(request).get_document_detail(scope=_scope(principal), document_id=document_id)
+    scope = _catalog_scope(principal)
+    return PublicationImpactEnvelope(
+        data=await _catalog_store(request).publication_impact(
+            scope=scope,
+            resource_type="knowledge_document",
+            resource_id=document_id,
+        )
+    )
 
 
 @router.post(
@@ -647,6 +680,121 @@ async def publish_product(
         product_id=product_id,
         expected_version=expected_version,
         trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return ProductEnvelope(data=record)
+
+
+@router.get(
+    "/products/{product_id}/publication-impact",
+    response_model=PublicationImpactEnvelope,
+    operation_id="previewAdminProductPublicationImpact",
+)
+async def preview_product_publication_impact(
+    product_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> PublicationImpactEnvelope:
+    _require_permission(principal, "catalog.publish")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.get_product(scope=scope, product_id=product_id)
+    return PublicationImpactEnvelope(
+        data=await catalog.publication_impact(
+            scope=scope, resource_type="product", resource_id=product_id
+        )
+    )
+
+
+@router.post(
+    "/products/{product_id}:publish-confirmed",
+    response_model=ProductEnvelope,
+    operation_id="publishConfirmedAdminProduct",
+)
+async def publish_product_confirmed(
+    product_id: uuid.UUID,
+    body: ConfirmPublicationRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> ProductEnvelope:
+    _require_permission(principal, "catalog.publish")
+    expected_version = parse_if_match(if_match)
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    draft = await catalog.get_product(scope=scope, product_id=product_id)
+    require_version(draft.version, expected_version)
+    await catalog.require_publication_impact(
+        scope=scope,
+        resource_type="product",
+        resource_id=product_id,
+        expected_digest=body.impact_digest,
+    )
+    await _catalog_knowledge(request).sync_product(
+        scope=_scope(principal), product=draft, trace_id=request_id_ctx.get()
+    )
+    record = await catalog.publish_product(
+        scope=scope,
+        product_id=product_id,
+        expected_version=expected_version,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return ProductEnvelope(data=record)
+
+
+@router.get(
+    "/products/{product_id}/publication-revisions",
+    response_model=PublicationRevisionListEnvelope,
+    operation_id="listAdminProductPublicationRevisions",
+)
+async def list_product_publication_revisions(
+    product_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> PublicationRevisionListEnvelope:
+    _require_permission(principal, "catalog.read")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.get_product(scope=scope, product_id=product_id)
+    records = await catalog.list_publication_revisions(
+        scope=scope, resource_type="product", resource_id=product_id
+    )
+    return PublicationRevisionListEnvelope(data=records, total=len(records))
+
+
+@router.post(
+    "/products/{product_id}:rollback",
+    response_model=ProductEnvelope,
+    operation_id="rollbackAdminProductPublication",
+)
+async def rollback_product_publication(
+    product_id: uuid.UUID,
+    body: RollbackPublicationRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> ProductEnvelope:
+    _require_permission(principal, "catalog.publish")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.require_publication_impact(
+        scope=scope,
+        resource_type="product",
+        resource_id=product_id,
+        expected_digest=body.impact_digest,
+    )
+    record = await catalog.rollback_product(
+        scope=scope,
+        product_id=product_id,
+        revision_id=body.revision_id,
+        expected_version=parse_if_match(if_match),
+        trace_id=request_id_ctx.get(),
+    )
+    await _catalog_knowledge(request).sync_product(
+        scope=_scope(principal), product=record, trace_id=request_id_ctx.get()
     )
     _set_etag(response, record.version)
     return ProductEnvelope(data=record)
@@ -887,6 +1035,121 @@ async def publish_case_study(
         case_study_id=case_study_id,
         expected_version=expected_version,
         trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return CaseStudyEnvelope(data=record)
+
+
+@router.get(
+    "/cases/{case_study_id}/publication-impact",
+    response_model=PublicationImpactEnvelope,
+    operation_id="previewAdminCasePublicationImpact",
+)
+async def preview_case_publication_impact(
+    case_study_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> PublicationImpactEnvelope:
+    _require_permission(principal, "catalog.publish")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.get_case_study(scope=scope, case_study_id=case_study_id)
+    return PublicationImpactEnvelope(
+        data=await catalog.publication_impact(
+            scope=scope, resource_type="case_study", resource_id=case_study_id
+        )
+    )
+
+
+@router.post(
+    "/cases/{case_study_id}:publish-confirmed",
+    response_model=CaseStudyEnvelope,
+    operation_id="publishConfirmedAdminCase",
+)
+async def publish_case_confirmed(
+    case_study_id: uuid.UUID,
+    body: ConfirmPublicationRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CaseStudyEnvelope:
+    _require_permission(principal, "catalog.publish")
+    expected_version = parse_if_match(if_match)
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    draft = await catalog.get_case_study(scope=scope, case_study_id=case_study_id)
+    require_version(draft.version, expected_version)
+    await catalog.require_publication_impact(
+        scope=scope,
+        resource_type="case_study",
+        resource_id=case_study_id,
+        expected_digest=body.impact_digest,
+    )
+    await _catalog_knowledge(request).sync_case_study(
+        scope=_scope(principal), case_study=draft, trace_id=request_id_ctx.get()
+    )
+    record = await catalog.publish_case_study(
+        scope=scope,
+        case_study_id=case_study_id,
+        expected_version=expected_version,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.version)
+    return CaseStudyEnvelope(data=record)
+
+
+@router.get(
+    "/cases/{case_study_id}/publication-revisions",
+    response_model=PublicationRevisionListEnvelope,
+    operation_id="listAdminCasePublicationRevisions",
+)
+async def list_case_publication_revisions(
+    case_study_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> PublicationRevisionListEnvelope:
+    _require_permission(principal, "catalog.read")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.get_case_study(scope=scope, case_study_id=case_study_id)
+    records = await catalog.list_publication_revisions(
+        scope=scope, resource_type="case_study", resource_id=case_study_id
+    )
+    return PublicationRevisionListEnvelope(data=records, total=len(records))
+
+
+@router.post(
+    "/cases/{case_study_id}:rollback",
+    response_model=CaseStudyEnvelope,
+    operation_id="rollbackAdminCasePublication",
+)
+async def rollback_case_publication(
+    case_study_id: uuid.UUID,
+    body: RollbackPublicationRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CaseStudyEnvelope:
+    _require_permission(principal, "catalog.publish")
+    scope = _catalog_scope(principal)
+    catalog = _catalog_store(request)
+    await catalog.require_publication_impact(
+        scope=scope,
+        resource_type="case_study",
+        resource_id=case_study_id,
+        expected_digest=body.impact_digest,
+    )
+    record = await catalog.rollback_case_study(
+        scope=scope,
+        case_study_id=case_study_id,
+        revision_id=body.revision_id,
+        expected_version=parse_if_match(if_match),
+        trace_id=request_id_ctx.get(),
+    )
+    await _catalog_knowledge(request).sync_case_study(
+        scope=_scope(principal), case_study=record, trace_id=request_id_ctx.get()
     )
     _set_etag(response, record.version)
     return CaseStudyEnvelope(data=record)

@@ -12,7 +12,10 @@ from app.api.admin_schemas import (
     PutKnowledgeDocumentRequest,
 )
 from app.api.content_import_schemas import (
+    BulkAcceptContentCandidatesRequest,
     ContentImportCandidateEnvelope,
+    ContentImportCandidateListEnvelope,
+    ContentImportCandidateRecord,
     ContentImportRunEnvelope,
     ContentImportRunListEnvelope,
     GenerateContentImportRequest,
@@ -24,6 +27,7 @@ from app.api.errors import ApiError
 from app.api.knowledge_import_schemas import (
     KnowledgeImportBatchEnvelope,
     KnowledgeImportBatchListEnvelope,
+    RenameKnowledgeImportBatchRequest,
 )
 from app.api.knowledge_ops_schemas import (
     EvaluationJobEnvelope,
@@ -181,6 +185,7 @@ async def create_knowledge_import(
     principal: StaffDependency,
     files: Annotated[list[UploadFile], File(...)],
     auto_publish: Annotated[bool, Form()] = False,
+    display_name: Annotated[str | None, Form(max_length=120)] = None,
 ) -> KnowledgeImportBatchEnvelope:
     _require_permission(principal, "knowledge.write")
     if not files or len(files) > MAX_FILES:
@@ -209,11 +214,33 @@ async def create_knowledge_import(
         scope=_import_scope(principal),
         items=pending,
         auto_publish=auto_publish,
+        display_name=display_name,
         trace_id=request_id_ctx.get(),
     )
     return KnowledgeImportBatchEnvelope(data=result)
 
 
+@router.patch(
+    "/admin/knowledge/imports/{batch_id}",
+    response_model=KnowledgeImportBatchEnvelope,
+    operation_id="renameKnowledgeImport",
+)
+async def rename_knowledge_import(
+    batch_id: uuid.UUID,
+    body: RenameKnowledgeImportBatchRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> KnowledgeImportBatchEnvelope:
+    _require_permission(principal, "knowledge.write")
+    return KnowledgeImportBatchEnvelope(
+        data=await _import_store(request).rename_batch(
+            scope=_import_scope(principal),
+            batch_id=batch_id,
+            display_name=body.display_name,
+            expected_version=body.expected_version,
+            trace_id=request_id_ctx.get(),
+        )
+    )
 @router.get(
     "/admin/knowledge/imports",
     response_model=KnowledgeImportBatchListEnvelope,
@@ -344,6 +371,7 @@ async def accept_content_import_candidate(
         candidate_id=candidate_id,
         expected_version=body.expected_version,
         apply_fields=body.apply_fields,
+        confirm_sensitive_fields=body.confirm_sensitive_fields,
         admin=_admin_store(request),
         catalog=_catalog_store(request),
         trace_id=request_id_ctx.get(),
@@ -369,6 +397,63 @@ async def ignore_content_import_candidate(
         expected_version=body.expected_version,
     )
     return ContentImportCandidateEnvelope(data=record)
+
+
+@router.post(
+    "/admin/content-import-candidates:bulk-accept",
+    response_model=ContentImportCandidateListEnvelope,
+    operation_id="bulkAcceptContentImportCandidates",
+)
+async def bulk_accept_content_import_candidates(
+    body: BulkAcceptContentCandidatesRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateListEnvelope:
+    service = _content_review_service(request)
+    records = []
+    for item in body.candidates:
+        candidate = await service.get_candidate(
+            scope=_admin_scope(principal), candidate_id=item.id
+        )
+        if candidate.category == "enterprise_profile":
+            raise ApiError(
+                422,
+                "SENSITIVE_CANDIDATE_REQUIRES_REVIEW",
+                "企业资料候选必须逐条对比并确认，不能批量写入",
+            )
+        if candidate.confidence < 0.85 or not _candidate_is_complete(candidate):
+            raise ApiError(
+                422,
+                "CANDIDATE_REQUIRES_REVIEW",
+                "只有字段完整且置信度不低于 85% 的候选可以批量确认",
+            )
+        _require_category_accept_permission(principal, candidate.category)
+        records.append(
+            await service.accept_candidate(
+                scope=_admin_scope(principal),
+                catalog_scope=_catalog_scope(principal),
+                candidate_id=item.id,
+                expected_version=item.expected_version,
+                apply_fields=item.apply_fields,
+                confirm_sensitive_fields=False,
+                admin=_admin_store(request),
+                catalog=_catalog_store(request),
+                trace_id=request_id_ctx.get(),
+            )
+        )
+    return ContentImportCandidateListEnvelope(data=records, total=len(records))
+
+
+def _candidate_is_complete(candidate: ContentImportCandidateRecord) -> bool:
+    required = {
+        "products": ("name", "summary", "detail"),
+        "case_studies": ("title", "background", "solution", "result"),
+        "faqs": ("question", "answer"),
+    }.get(candidate.category)
+    return bool(
+        required
+        and all(str(candidate.payload.get(field) or "").strip() for field in required)
+    )
 
 
 @router.get("/admin/faqs", response_model=FaqListEnvelope, operation_id="listAdminFaqs")

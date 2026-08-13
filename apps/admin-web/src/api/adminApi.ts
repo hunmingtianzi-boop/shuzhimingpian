@@ -21,10 +21,13 @@ import type {
   KnowledgeDocumentDetail,
   KnowledgeDocumentInput,
   KnowledgeVisibility,
+  KnowledgeVersion,
   ManagedCard,
   ManagedCardInput,
   Product,
   ProductInput,
+  PublicationImpact,
+  PublicationRevision,
   SelectableFaqDocument,
   WeComCardContactWay,
 } from "./types";
@@ -447,6 +450,7 @@ function normalizeLatestVersion(raw: unknown): KnowledgeDocument["latestVersion"
     indexedChunkCount: optionalNumber(raw.indexed_chunk_count) ?? 0,
     indexStatus: optionalString(raw.index_status) || undefined,
     indexErrorCode: optionalString(raw.index_error_code) || undefined,
+    publishedAt: optionalString(raw.published_at) || undefined,
   };
 }
 
@@ -564,6 +568,7 @@ function normalizeProduct(rawValue: unknown): Product {
     publishedAt: optionalString(rawValue.published_at) || undefined,
     createdAt: optionalString(rawValue.created_at) || undefined,
     updatedAt: optionalString(rawValue.updated_at) || undefined,
+    hasUnpublishedChanges: rawValue.has_unpublished_changes === true,
   };
 }
 
@@ -591,6 +596,44 @@ function normalizeCaseStudy(rawValue: unknown): CaseStudy {
     publishedAt: optionalString(rawValue.published_at) || undefined,
     createdAt: optionalString(rawValue.created_at) || undefined,
     updatedAt: optionalString(rawValue.updated_at) || undefined,
+    hasUnpublishedChanges: rawValue.has_unpublished_changes === true,
+  };
+}
+
+function normalizePublicationImpact(rawValue: unknown): PublicationImpact {
+  if (!isRecord(rawValue)) throw new ApiError("发布影响接口返回了无法识别的数据。", { code: "INVALID_API_RESPONSE" });
+  const resourceType = optionalString(rawValue.resource_type) as PublicationImpact["resourceType"];
+  const ids = Array.isArray(rawValue.affected_card_ids)
+    ? rawValue.affected_card_ids.filter((item): item is string => typeof item === "string")
+    : [];
+  const breakdown = Array.isArray(rawValue.breakdown)
+    ? rawValue.breakdown.filter(isRecord).map((item) => ({
+        reason: requireString(item.reason, "发布影响 reason") as PublicationImpact["breakdown"][number]["reason"],
+        label: requireString(item.label, "发布影响 label"),
+        cardCount: requireNumber(item.card_count, "发布影响 card_count"),
+        cardIds: Array.isArray(item.card_ids)
+          ? item.card_ids.filter((value): value is string => typeof value === "string")
+          : [],
+      }))
+    : [];
+  return {
+    resourceType,
+    resourceId: requireString(rawValue.resource_id, "发布影响 resource_id"),
+    affectedCardCount: requireNumber(rawValue.affected_card_count, "发布影响 affected_card_count"),
+    affectedCardIds: ids,
+    breakdown,
+    impactDigest: requireString(rawValue.impact_digest, "发布影响 impact_digest"),
+  };
+}
+
+function normalizePublicationRevision(rawValue: unknown): PublicationRevision {
+  if (!isRecord(rawValue)) throw new ApiError("发布历史接口返回了无法识别的数据。", { code: "INVALID_API_RESPONSE" });
+  return {
+    id: requireId(rawValue, "发布历史"),
+    resourceType: requireString(rawValue.resource_type, "发布历史 resource_type") as PublicationRevision["resourceType"],
+    resourceId: requireString(rawValue.resource_id, "发布历史 resource_id"),
+    revisionNumber: requireNumber(rawValue.revision_number, "发布历史 revision_number"),
+    publishedAt: requireString(rawValue.published_at, "发布历史 published_at"),
   };
 }
 
@@ -751,6 +794,20 @@ function normalizeKnowledgeDetail(payload: unknown): KnowledgeDocumentDetail {
     visibility: visibility as KnowledgeVisibility,
     metadata: isRecord(raw.metadata) ? raw.metadata : {},
     editableVersionId: optionalString(raw.editable_version_id) || undefined,
+  };
+}
+
+function normalizeKnowledgeVersion(rawValue: unknown): KnowledgeVersion {
+  if (!isRecord(rawValue)) throw new ApiError("知识版本接口返回了无法识别的数据。", { code: "INVALID_API_RESPONSE" });
+  return {
+    id: requireId(rawValue, "知识版本"),
+    documentId: requireString(rawValue.document_id, "知识版本 document_id"),
+    versionNumber: requireNumber(rawValue.version_number, "知识版本 version_number"),
+    reviewStatus: requireString(rawValue.review_status, "知识版本 review_status"),
+    chunkCount: requireNumber(rawValue.chunk_count, "知识版本 chunk_count"),
+    indexedChunkCount: requireNumber(rawValue.indexed_chunk_count, "知识版本 indexed_chunk_count"),
+    publishedAt: optionalString(rawValue.published_at) || undefined,
+    createdAt: requireString(rawValue.created_at, "知识版本 created_at"),
   };
 }
 
@@ -994,10 +1051,21 @@ export function createAdminApi(client: ApiClient) {
     );
   },
 
-  async publishKnowledgeDocument(id: string): Promise<void> {
+  async previewKnowledgePublication(id: string): Promise<PublicationImpact> {
+    return normalizePublicationImpact(unwrapData(await client.get(`/admin/knowledge/documents/${encodeURIComponent(id)}/publication-impact`)));
+  },
+
+  async listKnowledgeVersions(id: string): Promise<KnowledgeVersion[]> {
+    return normalizeList(await client.get(`/admin/knowledge/documents/${encodeURIComponent(id)}/versions`), "知识版本", normalizeKnowledgeVersion);
+  },
+
+  async publishKnowledgeDocument(id: string, versionId?: string, impactDigest?: string): Promise<void> {
     await client.post(
       `/admin/knowledge/documents/${encodeURIComponent(id)}/publish`,
-      {},
+      {
+        ...(versionId ? { version_id: versionId } : {}),
+        ...(impactDigest ? { impact_digest: impactDigest } : {}),
+      },
     );
   },
 
@@ -1048,6 +1116,22 @@ export function createAdminApi(client: ApiClient) {
         ),
       ),
     );
+  },
+
+  async previewProductPublication(id: string): Promise<PublicationImpact> {
+    return normalizePublicationImpact(unwrapData(await client.get(`/admin/products/${encodeURIComponent(id)}/publication-impact`)));
+  },
+
+  async publishProductConfirmed(id: string, version: number, impactDigest: string): Promise<Product> {
+    return normalizeProduct(unwrapData(await client.post(`/admin/products/${encodeURIComponent(id)}:publish-confirmed`, { impact_digest: impactDigest }, { version })));
+  },
+
+  async listProductPublicationRevisions(id: string): Promise<PublicationRevision[]> {
+    return normalizeList(await client.get(`/admin/products/${encodeURIComponent(id)}/publication-revisions`), "产品发布历史", normalizePublicationRevision);
+  },
+
+  async rollbackProduct(id: string, version: number, revisionId: string, impactDigest: string): Promise<Product> {
+    return normalizeProduct(unwrapData(await client.post(`/admin/products/${encodeURIComponent(id)}:rollback`, { revision_id: revisionId, impact_digest: impactDigest }, { version })));
   },
 
   async archiveProduct(id: string, version: number): Promise<Product> {
@@ -1106,6 +1190,22 @@ export function createAdminApi(client: ApiClient) {
         ),
       ),
     );
+  },
+
+  async previewCasePublication(id: string): Promise<PublicationImpact> {
+    return normalizePublicationImpact(unwrapData(await client.get(`/admin/cases/${encodeURIComponent(id)}/publication-impact`)));
+  },
+
+  async publishCaseStudyConfirmed(id: string, version: number, impactDigest: string): Promise<CaseStudy> {
+    return normalizeCaseStudy(unwrapData(await client.post(`/admin/cases/${encodeURIComponent(id)}:publish-confirmed`, { impact_digest: impactDigest }, { version })));
+  },
+
+  async listCasePublicationRevisions(id: string): Promise<PublicationRevision[]> {
+    return normalizeList(await client.get(`/admin/cases/${encodeURIComponent(id)}/publication-revisions`), "案例发布历史", normalizePublicationRevision);
+  },
+
+  async rollbackCaseStudy(id: string, version: number, revisionId: string, impactDigest: string): Promise<CaseStudy> {
+    return normalizeCaseStudy(unwrapData(await client.post(`/admin/cases/${encodeURIComponent(id)}:rollback`, { revision_id: revisionId, impact_digest: impactDigest }, { version })));
   },
 
   async archiveCaseStudy(id: string, version: number): Promise<CaseStudy> {

@@ -14,6 +14,7 @@ from app.api.catalog_schemas import (
     ForbiddenTopicRecord,
     ManagedCardRecord,
     ProductRecord,
+    PublicationImpactRecord,
     PublicProductRecord,
 )
 from app.api.dependencies import get_staff_principal
@@ -74,6 +75,27 @@ class CatalogRouteStore:
             update={"status": "published", "version": kwargs["expected_version"] + 1}
         )
         return self.product
+
+    async def publication_impact(self, **kwargs: Any) -> PublicationImpactRecord:
+        self.calls.append(("publication_impact", kwargs))
+        return PublicationImpactRecord(
+            resource_type=kwargs["resource_type"],
+            resource_id=kwargs["resource_id"],
+            affected_card_count=1,
+            affected_card_ids=[self.card.id],
+            impact_digest="a" * 64,
+        )
+
+    async def require_publication_impact(self, **kwargs: Any) -> PublicationImpactRecord:
+        self.calls.append(("require_publication_impact", kwargs))
+        if kwargs["expected_digest"] != "a" * 64:
+            raise ApiError(409, "PUBLICATION_IMPACT_CHANGED", "关联名片范围已变化")
+        return await self.publication_impact(
+            **{
+                key: kwargs[key]
+                for key in ("scope", "resource_type", "resource_id")
+            }
+        )
 
     async def list_cards(self, **kwargs: Any) -> tuple[list[ManagedCardRecord], int]:
         self.calls.append(("list_cards", kwargs))
@@ -295,6 +317,32 @@ def test_product_publish_rejects_a_stale_version_before_indexing(
     assert response.json()["error"]["code"] == "VERSION_CONFLICT"
     assert knowledge.calls == []
     assert [name for name, _ in store.calls] == ["get_product"]
+
+
+def test_confirmed_product_publish_requires_current_card_impact(
+    catalog_client: tuple[TestClient, CatalogRouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, _ = catalog_client
+
+    preview = client.get(f"/api/v1/admin/products/{store.product.id}/publication-impact")
+    assert preview.status_code == 200
+    assert preview.json()["data"]["affected_card_count"] == 1
+
+    changed = client.post(
+        f"/api/v1/admin/products/{store.product.id}:publish-confirmed",
+        headers={"If-Match": '"7"'},
+        json={"impact_digest": "b" * 64},
+    )
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "PUBLICATION_IMPACT_CHANGED"
+
+    confirmed = client.post(
+        f"/api/v1/admin/products/{store.product.id}:publish-confirmed",
+        headers={"If-Match": '"7"'},
+        json={"impact_digest": "a" * 64},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["data"]["status"] == "published"
 
 
 def test_card_owner_needs_explicit_catalog_permission(

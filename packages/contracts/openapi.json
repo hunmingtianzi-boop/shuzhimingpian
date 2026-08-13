@@ -927,6 +927,65 @@
         }
       }
     },
+    "/admin/knowledge/documents/{document_id}/publication-impact": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Preview Knowledge Publication Impact",
+        "operationId": "previewKnowledgeDocumentPublicationImpact",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationImpactEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/knowledge/documents/{document_id}:schedule-publish": {
       "post": {
         "tags": [
@@ -1548,6 +1607,280 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/products/{product_id}/publication-impact": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Preview Product Publication Impact",
+        "operationId": "previewAdminProductPublicationImpact",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationImpactEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/products/{product_id}:publish-confirmed": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Publish Product Confirmed",
+        "operationId": "publishConfirmedAdminProduct",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPublicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/products/{product_id}/publication-revisions": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "List Product Publication Revisions",
+        "operationId": "listAdminProductPublicationRevisions",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationRevisionListEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/products/{product_id}:rollback": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Rollback Product Publication",
+        "operationId": "rollbackAdminProductPublication",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackPublicationRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2652,6 +2985,280 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseStudyEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/cases/{case_study_id}/publication-impact": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Preview Case Publication Impact",
+        "operationId": "previewAdminCasePublicationImpact",
+        "parameters": [
+          {
+            "name": "case_study_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Study Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationImpactEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/cases/{case_study_id}:publish-confirmed": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Publish Case Confirmed",
+        "operationId": "publishConfirmedAdminCase",
+        "parameters": [
+          {
+            "name": "case_study_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Study Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPublicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseStudyEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/cases/{case_study_id}/publication-revisions": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "List Case Publication Revisions",
+        "operationId": "listAdminCasePublicationRevisions",
+        "parameters": [
+          {
+            "name": "case_study_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Study Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationRevisionListEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/cases/{case_study_id}:rollback": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Rollback Case Publication",
+        "operationId": "rollbackAdminCasePublication",
+        "parameters": [
+          {
+            "name": "case_study_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Study Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackPublicationRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6242,6 +6849,73 @@
       }
     },
     "/admin/knowledge/imports/{batch_id}": {
+      "patch": {
+        "tags": [
+          "Knowledge Operations"
+        ],
+        "summary": "Rename Knowledge Import",
+        "operationId": "renameKnowledgeImport",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameKnowledgeImportBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeImportBatchEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "Knowledge Operations"
@@ -6655,6 +7329,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ContentImportCandidateEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/content-import-candidates:bulk-accept": {
+      "post": {
+        "tags": [
+          "Knowledge Operations"
+        ],
+        "summary": "Bulk Accept Content Import Candidates",
+        "operationId": "bulkAcceptContentImportCandidates",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkAcceptContentCandidatesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentImportCandidateListEnvelope"
                 }
               }
             }
@@ -13447,6 +14180,18 @@
             "type": "boolean",
             "title": "Auto Publish",
             "default": false
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           }
         },
         "type": "object",
@@ -13499,6 +14244,25 @@
           "files"
         ],
         "title": "Body_uploadPlatformOnboardingDocuments"
+      },
+      "BulkAcceptContentCandidatesRequest": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/BulkReviewContentCandidateItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidates"
+        ],
+        "title": "BulkAcceptContentCandidatesRequest"
       },
       "BulkMemberCsvRequest": {
         "properties": {
@@ -13696,6 +14460,35 @@
           "failed"
         ],
         "title": "BulkMemberSummary"
+      },
+      "BulkReviewContentCandidateItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "apply_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Apply Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "expected_version"
+        ],
+        "title": "BulkReviewContentCandidateItem"
       },
       "CancelPlatformOnboardingRequest": {
         "properties": {
@@ -14254,6 +15047,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "title": "Has Unpublished Changes",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -14542,6 +15340,22 @@
         ],
         "title": "ConfirmPlatformOnboardingRequest"
       },
+      "ConfirmPublicationRequest": {
+        "properties": {
+          "impact_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Impact Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "impact_digest"
+        ],
+        "title": "ConfirmPublicationRequest"
+      },
       "ConsentEnvelope": {
         "properties": {
           "data": {
@@ -14650,6 +15464,29 @@
           "data"
         ],
         "title": "ContentImportCandidateEnvelope"
+      },
+      "ContentImportCandidateListEnvelope": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ContentImportCandidateRecord"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "ContentImportCandidateListEnvelope"
       },
       "ContentImportCandidateRecord": {
         "properties": {
@@ -19314,6 +20151,25 @@
             "format": "uuid",
             "title": "Id"
           },
+          "sequence_number": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Sequence Number",
+            "default": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "default": "资料导入"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "default": 1
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -23213,6 +24069,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "title": "Has Unpublished Changes",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -23870,6 +24731,176 @@
         ],
         "title": "PublicWeComContact"
       },
+      "PublicationImpactBreakdown": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "direct_reference",
+              "all_published"
+            ],
+            "title": "Reason"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Card Count"
+          },
+          "card_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Card Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "label",
+          "card_count",
+          "card_ids"
+        ],
+        "title": "PublicationImpactBreakdown"
+      },
+      "PublicationImpactEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublicationImpactRecord"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PublicationImpactEnvelope"
+      },
+      "PublicationImpactRecord": {
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "product",
+              "case_study",
+              "knowledge_document"
+            ],
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resource Id"
+          },
+          "affected_card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Affected Card Count"
+          },
+          "affected_card_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Affected Card Ids"
+          },
+          "breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationImpactBreakdown"
+            },
+            "type": "array",
+            "title": "Breakdown"
+          },
+          "impact_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Impact Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_type",
+          "resource_id",
+          "affected_card_count",
+          "affected_card_ids",
+          "impact_digest"
+        ],
+        "title": "PublicationImpactRecord"
+      },
+      "PublicationRevisionListEnvelope": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationRevisionRecord"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data",
+          "total"
+        ],
+        "title": "PublicationRevisionListEnvelope"
+      },
+      "PublicationRevisionRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "product",
+              "case_study"
+            ],
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resource Id"
+          },
+          "revision_number": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision Number"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "resource_type",
+          "resource_id",
+          "revision_number",
+          "published_at"
+        ],
+        "title": "PublicationRevisionRecord"
+      },
       "PublishKnowledgeDocumentRequest": {
         "properties": {
           "version_id": {
@@ -23883,6 +24914,19 @@
               }
             ],
             "title": "Version Id"
+          },
+          "impact_digest": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact Digest"
           }
         },
         "additionalProperties": false,
@@ -23984,6 +25028,28 @@
         ],
         "title": "RecommendationEvidence"
       },
+      "RenameKnowledgeImportBatchRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "display_name",
+          "expected_version"
+        ],
+        "title": "RenameKnowledgeImportBatchRequest"
+      },
       "ResetMemberPasswordRequest": {
         "properties": {
           "password": {
@@ -24018,8 +25084,13 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 8,
+            "maxItems": 32,
             "title": "Apply Fields"
+          },
+          "confirm_sensitive_fields": {
+            "type": "boolean",
+            "title": "Confirm Sensitive Fields",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -24043,6 +25114,28 @@
           "revision_version"
         ],
         "title": "RollbackOverrideRequest"
+      },
+      "RollbackPublicationRequest": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "impact_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Impact Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision_id",
+          "impact_digest"
+        ],
+        "title": "RollbackPublicationRequest"
       },
       "SchedulePublishRequest": {
         "properties": {

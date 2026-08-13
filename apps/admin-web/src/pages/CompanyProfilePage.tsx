@@ -12,6 +12,7 @@ import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
 import type { CompanyProfileInput } from "../api/types";
 import { FormFeedback } from "../components/FormFeedback";
+import { ImportWorkbenchButton } from "../components/ImportWorkbenchButton";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import { useResource } from "../hooks/useResource";
@@ -79,6 +80,7 @@ export function CompanyProfilePage() {
       <PageHeader
         title="企业资料"
         description="维护企业公开资料。保存时使用服务端版本号进行并发冲突保护。"
+        actions={<ImportWorkbenchButton />}
       />
 
       {resource.status !== "ready" && (

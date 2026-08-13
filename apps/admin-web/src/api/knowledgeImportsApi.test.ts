@@ -9,7 +9,8 @@ const item = {
   created_at: "2026-07-12T00:00:00Z", completed_at: "2026-07-12T00:01:00Z",
 };
 const batch = {
-  id: "batch-1", status: "completed", total_items: 1, pending_items: 0,
+  id: "batch-1", sequence_number: 1, display_name: "首批企业资料", version: 1,
+  status: "completed", total_items: 1, pending_items: 0,
   succeeded_items: 1, failed_items: 0, created_at: "2026-07-12T00:00:00Z",
   completed_at: "2026-07-12T00:01:00Z", items: [item],
 };

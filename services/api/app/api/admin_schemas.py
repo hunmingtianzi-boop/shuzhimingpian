@@ -161,6 +161,7 @@ class PutKnowledgeDocumentRequest(AdminStrictModel):
 
 class PublishKnowledgeDocumentRequest(AdminStrictModel):
     version_id: uuid.UUID | None = None
+    impact_digest: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class KnowledgeVersionSummary(AdminStrictModel):

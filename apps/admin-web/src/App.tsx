@@ -114,6 +114,11 @@ const KnowledgePage = lazy(() =>
     default: module.KnowledgePage,
   })),
 );
+const ImportWorkbenchPage = lazy(() =>
+  import("./pages/ImportWorkbenchPage").then((module) => ({
+    default: module.ImportWorkbenchPage,
+  })),
+);
 const CardsPage = lazy(() =>
   import("./pages/CardsPage").then((module) => ({
     default: module.CardsPage,
@@ -815,6 +820,7 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.cases) return <CaseStudiesPage />;
   if (pathname === APP_PATHS.forbiddenTopics) return <ForbiddenTopicsPage />;
   if (pathname === APP_PATHS.knowledge) return <KnowledgePage />;
+  if (pathname === APP_PATHS.imports) return <ImportWorkbenchPage />;
   if (pathname === APP_PATHS.platformEnterprises) return <PlatformEnterprisesPage />;
   if (pathname === APP_PATHS.overview) {
     return <OverviewPage />;
