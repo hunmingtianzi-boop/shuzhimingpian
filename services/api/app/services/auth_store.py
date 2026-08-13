@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.errors import ApiError
 from app.core.config import Settings
 from app.core.request_security import account_subject_hash
-from app.core.staff_auth import normalize_staff_account, verify_staff_password_or_dummy
+from app.core.staff_auth import (
+    hash_staff_password,
+    normalize_staff_account,
+    verify_staff_password_or_dummy,
+)
 from app.core.tokens import (
     IssuedStaffTokens,
     StaffPrincipal,
@@ -33,6 +37,21 @@ from app.db.models import (
 )
 from app.db.session import set_rls_context
 
+_PASSWORD_CHANGE_PERMISSION = "auth.password.change"  # noqa: S105 - permission identifier
+_COMPANY_ADMIN_PERMISSIONS = (
+    "company.manage",
+    "card.manage",
+    "knowledge.manage",
+    "knowledge.publish",
+    "catalog.manage",
+    "conversations.read",
+    "summaries.write",
+    "leads.read",
+    "leads.write",
+    "privacy.manage",
+    "analytics.read",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class StaffIdentity:
@@ -43,6 +62,7 @@ class StaffIdentity:
     display_name: str
     role: str
     permissions: tuple[str, ...]
+    must_change_password: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +137,13 @@ class AuthStore:
                     if not locked:
                         self._record_failed_attempt(staff_credential, now)
                     failure_reason = "invalid_credential"
+                elif (
+                    staff_credential.must_change_password
+                    and staff_credential.temporary_password_expires_at
+                    and staff_credential.temporary_password_expires_at <= now
+                ):
+                    failure_reason = "temporary_password_expired"
+                    failure_outcome = "blocked"
                 else:
                     await set_rls_context(
                         session,
@@ -439,6 +466,60 @@ class AuthStore:
                 raise _invalid_access()
             return identity
 
+    async def change_password(
+        self,
+        principal: StaffPrincipal,
+        *,
+        current_password: str,
+        new_password: str,
+    ) -> StaffIdentity:
+        now = datetime.now(UTC)
+        async with self._sessions() as session, session.begin():
+            await set_rls_context(
+                session,
+                tenant_id=principal.tenant_id,
+                company_id=principal.company_id,
+            )
+            credential = await session.scalar(
+                select(StaffCredential)
+                .where(
+                    StaffCredential.user_id == principal.user_id,
+                    StaffCredential.membership_id == principal.membership_id,
+                    StaffCredential.tenant_id == principal.tenant_id,
+                    StaffCredential.company_id == principal.company_id,
+                    StaffCredential.is_enabled.is_(True),
+                )
+                .with_for_update()
+            )
+            if credential is None or not verify_staff_password_or_dummy(
+                current_password, credential.password_hash if credential else None
+            ):
+                raise ApiError(400, "CURRENT_PASSWORD_INVALID", "当前密码不正确")
+            if verify_staff_password_or_dummy(new_password, credential.password_hash):
+                raise ApiError(400, "PASSWORD_REUSED", "新密码不能与当前密码相同")
+            credential.password_hash = hash_staff_password(new_password)
+            credential.password_changed_at = now
+            credential.must_change_password = False
+            credential.temporary_password_expires_at = None
+            membership = await session.scalar(
+                select(Membership)
+                .where(Membership.id == principal.membership_id)
+                .with_for_update()
+            )
+            if membership is None:
+                raise _invalid_access()
+            membership.permissions = list(_COMPANY_ADMIN_PERMISSIONS)
+            identity = await self._load_active_identity(
+                session,
+                user_id=principal.user_id,
+                membership_id=principal.membership_id,
+                tenant_id=principal.tenant_id,
+                company_id=principal.company_id,
+            )
+            if identity is None:
+                raise _invalid_access()
+            return identity
+
     async def _load_session_for_update(
         self,
         session: AsyncSession,
@@ -521,6 +602,7 @@ class AuthStore:
             display_name=user.display_name,
             role=membership.role.value,
             permissions=tuple(dict.fromkeys(membership.permissions)),
+            must_change_password=_PASSWORD_CHANGE_PERMISSION in membership.permissions,
         )
 
     def _record_failed_attempt(

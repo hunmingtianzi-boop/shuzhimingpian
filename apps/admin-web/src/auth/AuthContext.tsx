@@ -35,6 +35,7 @@ export type AuthContextValue = {
   wecomLogin?: () => Promise<void>;
   wecomBind?: () => Promise<void>;
   logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -184,6 +185,22 @@ export function AuthProvider({
     }
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    setLoginPending(true);
+    setError(undefined);
+    try {
+      await adminApi.changePassword(currentPassword, newPassword);
+      await apiClient.refreshSession();
+      setUser(await adminApi.me());
+    } catch (caught) {
+      const apiError = asApiError(caught);
+      setError(apiError);
+      throw apiError;
+    } finally {
+      setLoginPending(false);
+    }
+  }, []);
+
   const wecomLogin = useCallback(
     () => beginWeComLogin(appHref(APP_PATHS.setup)),
     [beginWeComLogin],
@@ -215,8 +232,9 @@ export function AuthProvider({
       wecomLogin,
       wecomBind,
       logout,
+      changePassword,
     }),
-    [error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
+    [changePassword, error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

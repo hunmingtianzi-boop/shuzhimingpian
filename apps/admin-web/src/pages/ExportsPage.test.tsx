@@ -32,6 +32,7 @@ function renderPage(role = "company_admin", permissions: string[] = []) {
         loginPending: false,
         apiConfigured: true,
         login: vi.fn(),
+        changePassword: vi.fn(),
         logout: vi.fn(),
       }}>
         <ExportsPage />

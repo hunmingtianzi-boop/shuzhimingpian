@@ -6,6 +6,7 @@ export type AdminUser = {
   companyId: string;
   role?: string;
   permissions: string[];
+  mustChangePassword?: boolean;
 };
 
 export type MemberRole = "company_admin" | "card_owner";
@@ -364,7 +365,13 @@ export type StartPlatformOnboardingInput = {
   tenantName?: string;
   adminAccount: string;
   adminDisplayName: string;
-  adminPassword: string;
+};
+
+export type TemporaryCredentialDelivery = {
+  account: string;
+  temporaryPassword: string;
+  expiresAt: string;
+  shownOnce: true;
 };
 
 /**
@@ -390,6 +397,37 @@ export type PlatformOnboardingSuggestion = {
   sources: PlatformOnboardingSuggestionSource[];
 };
 
+export type PlatformOnboardingCandidateCategory =
+  | "enterprise_profile"
+  | "products"
+  | "case_studies"
+  | "faqs"
+  | "unclassified";
+
+export type PlatformOnboardingCandidate = {
+  id: string;
+  runId: string;
+  category: PlatformOnboardingCandidateCategory;
+  payload: Record<string, string>;
+  sourceId: string;
+  sourceText: string;
+  confidence: number;
+  status: "pending_review" | "accepted" | "ignored" | "conflict";
+  version: number;
+};
+
+export type PlatformOnboardingContentReview = {
+  id: string;
+  batchId: string;
+  status: "processing" | "review" | "manual_required";
+  provider: string;
+  model: string;
+  attempts: number;
+  failureCode?: string;
+  counts: Record<string, number>;
+  candidates: PlatformOnboardingCandidate[];
+};
+
 export type PlatformOnboardingSession = {
   id: string;
   status: PlatformOnboardingStatus;
@@ -403,8 +441,10 @@ export type PlatformOnboardingSession = {
   importBatchIds: string[];
   suggestions: PlatformOnboardingSuggestion[];
   businessProfile?: PlatformOnboardingSuggestion[];
+  contentReview?: PlatformOnboardingContentReview;
   expiresAt?: string;
   confirmedEnterprise?: CreatedPlatformEnterprise;
+  credentialDelivery?: TemporaryCredentialDelivery;
   createdAt: string;
   updatedAt: string;
 };

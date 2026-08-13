@@ -118,6 +118,39 @@ class RouteService:
         self.calls.append(("cancel", kwargs))
         return self.record.model_copy(update={"status": "cancelled", "version": 2})
 
+    async def update_content_candidate(self, **kwargs: Any) -> Any:
+        self.calls.append(("candidate.update", kwargs))
+        body = kwargs["body"]
+        return {
+            "id": kwargs["candidate_id"],
+            "run_id": uuid.uuid4(),
+            "category": body.category,
+            "payload": body.payload,
+            "source_id": str(uuid.uuid4()),
+            "source_text": "企业原文证据",
+            "confidence": 0.8,
+            "status": "pending_review",
+            "version": body.expected_version + 1,
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+
+    async def ignore_content_candidate(self, **kwargs: Any) -> Any:
+        self.calls.append(("candidate.ignore", kwargs))
+        return {
+            "id": kwargs["candidate_id"],
+            "run_id": uuid.uuid4(),
+            "category": "unclassified",
+            "payload": {"text": "企业原文证据", "reason": "人工忽略"},
+            "source_id": str(uuid.uuid4()),
+            "source_text": "企业原文证据",
+            "confidence": 0.8,
+            "status": "ignored",
+            "version": kwargs["expected_version"] + 1,
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+
 
 class ImportStore:
     def __init__(self) -> None:
@@ -165,6 +198,8 @@ def test_route_surface_is_session_bound(
     for suffix in ("suggestions", "confirm", "cancel"):
         assert set(paths[f"{root}/{{onboarding_id}}/{suffix}"]) == {"post"}
     assert set(paths[f"{root}/{{onboarding_id}}/imports"]) == {"get", "post"}
+    assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}"]) == {"put"}
+    assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}/ignore"]) == {"post"}
     upload = paths[f"{root}/{{onboarding_id}}/imports"]["post"]
     serialized = str(upload)
     assert "tenant_id" not in serialized
@@ -365,12 +400,17 @@ def test_business_analysis_contract_covers_directions_conflicts_and_evidence_gap
 async def test_settled_import_reconciles_processing_session_for_recovery() -> None:
     class ScalarSession:
         flushed = False
+        refreshed = False
 
         async def scalar(self, _statement: object, _params: object = None) -> bool:
             return True
 
         async def flush(self) -> None:
             self.flushed = True
+
+        async def refresh(self, refreshed_row: object) -> None:
+            assert refreshed_row is row
+            self.refreshed = True
 
     session = ScalarSession()
     row = type(
@@ -390,6 +430,7 @@ async def test_settled_import_reconciles_processing_session_for_recovery() -> No
     assert row.status == "manual_required"
     assert row.version == 3
     assert session.flushed is True
+    assert session.refreshed is True
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.api.content_import_schemas import ContentImportRunRecord
 from app.api.knowledge_import_schemas import KnowledgeImportBatchRecord
 
 PLATFORM_FORBIDDEN_RESPONSE_FIELDS = frozenset(
@@ -396,7 +397,6 @@ class StartPlatformOnboardingRequest(PlatformModel):
     tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
     admin_account: str = Field(min_length=3, max_length=200)
     admin_display_name: str = Field(min_length=1, max_length=120)
-    admin_password: SecretStr
 
     @field_validator("admin_account")
     @classmethod
@@ -404,14 +404,6 @@ class StartPlatformOnboardingRequest(PlatformModel):
         if any(character.isspace() for character in value):
             raise ValueError("admin_account must not contain whitespace")
         return value.casefold()
-
-    @field_validator("admin_password")
-    @classmethod
-    def validate_onboarding_password(cls, value: SecretStr) -> SecretStr:
-        if not 12 <= len(value.get_secret_value()) <= 200:
-            raise ValueError("admin_password must contain 12-200 characters")
-        return value
-
 
 class PlatformOnboardingSuggestionSource(PlatformModel):
     import_item_id: uuid.UUID
@@ -426,6 +418,13 @@ class PlatformOnboardingSuggestion(PlatformModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
     generation_version: int = Field(ge=1)
     sources: list[PlatformOnboardingSuggestionSource] = Field(default_factory=list)
+
+
+class TemporaryCredentialDelivery(PlatformModel):
+    account: str = Field(min_length=3, max_length=200)
+    temporary_password: str = Field(min_length=12, max_length=200)
+    expires_at: datetime
+    shown_once: Literal[True] = True
 
 
 class PlatformOnboardingSessionRecord(PlatformModel):
@@ -451,8 +450,10 @@ class PlatformOnboardingSessionRecord(PlatformModel):
     import_batch_ids: list[uuid.UUID] = Field(default_factory=list)
     suggestions: list[PlatformOnboardingSuggestion] = Field(default_factory=list)
     business_profile: list[PlatformOnboardingSuggestion] = Field(default_factory=list)
+    content_review: ContentImportRunRecord | None = None
     expires_at: datetime | None = None
     confirmed_enterprise: EnterpriseRecord | None = None
+    credential_delivery: TemporaryCredentialDelivery | None = None
     created_at: datetime
     updated_at: datetime
 

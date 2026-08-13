@@ -33,6 +33,7 @@ function authValue(role: string, id = "user-1"): AuthContextValue {
     loginPending: false,
     apiConfigured: true,
     login: vi.fn(),
+    changePassword: vi.fn(),
     logout: vi.fn(),
   };
 }

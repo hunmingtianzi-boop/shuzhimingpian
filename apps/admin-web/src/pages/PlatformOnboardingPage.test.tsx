@@ -51,6 +51,25 @@ const reviewSession: PlatformOnboardingSession = {
   updatedAt: "2026-07-15T12:05:00Z",
 };
 
+const reviewCandidate = {
+  id: "candidate-1",
+  runId: "run-1",
+  category: "products" as const,
+  payload: {
+    name: "材料检测平台",
+    category: "检测服务",
+    summary: "复合材料检测",
+    detail: "提供研发验证服务",
+    audience: "先进制造企业",
+    price_boundary: "按项目报价",
+  },
+  sourceId: "source-1",
+  sourceText: "平台为制造企业提供材料检测服务。",
+  confidence: 0.91,
+  status: "pending_review" as const,
+  version: 1,
+};
+
 function props(overrides: Partial<PlatformOnboardingPageProps> = {}): PlatformOnboardingPageProps {
   return {
     session: reviewSession,
@@ -87,6 +106,61 @@ afterEach(() => {
 });
 
 describe("PlatformOnboardingPage", () => {
+  it("resets fields when reclassifying and supports explicitly ignoring a candidate", async () => {
+    const user = userEvent.setup();
+    const onIgnoreCandidate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PlatformOnboardingPage
+        {...props({
+          session: {
+            ...reviewSession,
+            contentReview: {
+              id: "run-1",
+              batchId: "batch-1",
+              status: "review",
+              provider: "deepseek",
+              model: "flash",
+              attempts: 1,
+              counts: { products: 1 },
+              candidates: [reviewCandidate],
+            },
+          },
+          onUpdateCandidate: vi.fn().mockResolvedValue(undefined),
+          onIgnoreCandidate,
+        })}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText("候选分类"), "faqs");
+    expect(screen.getByLabelText("问题")).toHaveValue("");
+    expect(screen.getByLabelText("答案")).toHaveValue("");
+    expect(screen.queryByLabelText("适用对象")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "忽略此候选" }));
+    await waitFor(() => expect(onIgnoreCandidate).toHaveBeenCalledWith(reviewSession.id, expect.objectContaining({ id: "candidate-1" })));
+  });
+
+  it("renders localized review status labels", () => {
+    render(<PlatformOnboardingPage {...props({
+      session: {
+        ...reviewSession,
+        contentReview: {
+          id: "run-1",
+          batchId: "batch-1",
+          status: "review",
+          provider: "deepseek",
+          model: "flash",
+          attempts: 1,
+          counts: { products: 1 },
+          candidates: [
+            { ...reviewCandidate, status: "ignored" },
+          ],
+        },
+      },
+    })} />);
+
+    expect(screen.getByText("已忽略")).toBeInTheDocument();
+  });
+
   it("keeps parsed drafts usable when LLM is unavailable and uploads only to the server session", async () => {
     const user = userEvent.setup();
     const onUpload = vi.fn().mockResolvedValue(undefined);
@@ -407,6 +481,26 @@ describe("PlatformOnboardingPage", () => {
       expect(onCancel).toHaveBeenCalledWith(reviewSession.id, "wrong-customer-document", 7),
     );
     await waitFor(() => expect(cancelOpener).toHaveFocus());
+  });
+
+  it("does not mislabel business conflicts as a version conflict", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn().mockRejectedValue({
+      status: 409,
+      code: "ACCOUNT_CONFLICT",
+      message: "管理员账号已绑定其他企业。",
+    });
+    render(<PlatformOnboardingPage {...props({ session: undefined, onStart })} />);
+
+    await user.type(screen.getByLabelText(/租户标识/), "conflict-company");
+    await user.type(screen.getByLabelText(/租户名称/), "冲突企业");
+    await user.type(screen.getByLabelText(/管理员账号/), "admin@example.com");
+    await user.type(screen.getByLabelText(/管理员姓名/), "管理员");
+    await user.click(screen.getByRole("button", { name: "进入资料导入" }));
+
+    expect(await screen.findByText("操作未完成")).toBeInTheDocument();
+    expect(screen.queryByText("会话版本冲突")).not.toBeInTheDocument();
+    expect(screen.getByText("管理员账号已绑定其他企业。")).toBeInTheDocument();
   });
 
   it("retains named landmarks and reachable primary actions at a 390px viewport", async () => {

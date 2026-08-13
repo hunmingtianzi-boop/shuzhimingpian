@@ -114,6 +114,7 @@ const companyAdminAuth: AuthContextValue = {
   loginPending: false,
   apiConfigured: true,
   login: async () => undefined,
+  changePassword: async () => undefined,
   logout: async () => undefined,
 };
 

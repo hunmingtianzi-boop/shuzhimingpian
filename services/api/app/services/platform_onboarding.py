@@ -18,6 +18,11 @@ from app.ai import (
     ProviderCredentials,
     StructuredOutputMode,
 )
+from app.api.content_import_schemas import (
+    ContentImportCandidateRecord,
+    ContentImportRunRecord,
+    UpdateContentCandidateRequest,
+)
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ConfirmPlatformOnboardingRequest,
@@ -47,11 +52,13 @@ from app.db.models import (
     User,
 )
 from app.db.session import set_rls_context
+from app.services.admin_store import AdminScope
 from app.services.ai_configuration import (
     ENVIRONMENT_LLM_SECRET_REF,
     provision_chat_configuration,
 )
 from app.services.audit import append_audit
+from app.services.content_import_review import ContentImportReviewService
 from app.services.knowledge_import_store import KnowledgeImportScope, KnowledgeImportStore
 from app.services.platform_llm_profiles import (
     LLMRuntimeUnavailable,
@@ -294,8 +301,9 @@ class PlatformOnboardingService:
                 tenant_id=tenant_id,
                 company_id=company_id,
                 account_normalized=account,
-                password_hash=hash_staff_password(body.admin_password.get_secret_value()),
+                password_hash=hash_staff_password(secrets.token_urlsafe(32)),
                 is_enabled=False,
+                must_change_password=True,
             )
             onboarding = PlatformOnboardingSession(
                 id=onboarding_id,
@@ -456,7 +464,18 @@ class PlatformOnboardingService:
             )
             await self._expire_if_needed(row)
             await self._reconcile_import_state(session, row)
-            return await self._record_with_review(session, row)
+            record = await self._record_with_review(session, row)
+            review_scope = AdminScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+            )
+            batch_ids = list(row.import_batch_ids)
+        content_review = await self._latest_content_review(
+            scope=review_scope,
+            batch_ids=batch_ids,
+        )
+        return record.model_copy(update={"content_review": content_review})
 
     async def import_scope(
         self,
@@ -573,7 +592,7 @@ class PlatformOnboardingService:
         expected_version: int,
         trace_id: str | None,
     ) -> PlatformOnboardingSessionRecord:
-        """Generate bounded review suggestions from this session's parsed drafts only."""
+        """Generate the same five-category candidates used by the enterprise workbench."""
 
         self._require_platform(actor)
         async with self._sessions() as session, session.begin():
@@ -588,34 +607,48 @@ class PlatformOnboardingService:
             self._require_open(row)
             self._require_version(row, expected_version)
             await self._require_imports_settled(session, row)
-            draft_rows = (
-                (
-                    await session.execute(
-                        text("SELECT * FROM app.platform_onboarding_drafts(:session_id)"),
-                        {"session_id": row.id},
-                    )
-                )
-                .mappings()
-                .all()
+            if not row.import_batch_ids:
+                raise ApiError(409, "PARSED_DRAFT_MISSING", "请先上传并完成至少一批资料解析")
+            review_scope = AdminScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
             )
+            batch_id = row.import_batch_ids[-1]
+            generation_version = row.version + 1
 
-            suggestions: list[PlatformOnboardingSuggestion] = []
-            business_profile: list[PlatformOnboardingSuggestion] = []
-            failure_code: str | None = None
-            if draft_rows:
-                try:
-                    suggestions, business_profile = await self._generate_from_drafts(
-                        list(draft_rows),
-                        trace_id=trace_id,
-                    )
-                except (AIProviderError, LLMRuntimeUnavailable, ValueError, TypeError):
-                    failure_code = "llm_unavailable"
-            else:
-                failure_code = "parsed_draft_missing"
+        try:
+            content_review = await ContentImportReviewService(
+                self._sessions,
+                self._settings,
+            ).generate(
+                scope=review_scope,
+                batch_id=batch_id,
+                trace_id=trace_id,
+            )
+        except (AIProviderError, LLMRuntimeUnavailable, ValueError, TypeError):
+            content_review = None
 
+        suggestions, business_profile = _legacy_suggestions_from_content_review(
+            content_review,
+            generation_version=generation_version,
+        )
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(
+                session,
+                onboarding_id,
+                actor_user_id=actor.user_id,
+                lock=True,
+            )
+            self._require_version(row, expected_version)
             row.suggestions = [value.model_dump(mode="json") for value in suggestions]
             row.business_profile = [value.model_dump(mode="json") for value in business_profile]
-            row.status = "review" if suggestions or business_profile else "manual_required"
+            row.status = (
+                "review"
+                if content_review and content_review.status == "review"
+                else "manual_required"
+            )
             row.version += 1
             await append_audit(
                 session,
@@ -630,12 +663,85 @@ class PlatformOnboardingService:
                     "suggestion_count": len(suggestions),
                     "business_profile_count": len(business_profile),
                     "manual_required": not suggestions and not business_profile,
-                    "failure_code": failure_code,
+                    "failure_code": (
+                        content_review.failure_code if content_review else "llm_unavailable"
+                    ),
+                    "content_candidate_count": (
+                        len(content_review.candidates) if content_review else 0
+                    ),
                 },
             )
             await session.flush()
             await session.refresh(row)
-            return await self._record_with_review(session, row)
+            record = await self._record_with_review(session, row)
+        return record.model_copy(update={"content_review": content_review})
+
+    async def update_content_candidate(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        candidate_id: uuid.UUID,
+        body: UpdateContentCandidateRequest,
+    ) -> ContentImportCandidateRecord:
+        scope = await self._content_review_scope(
+            actor=actor,
+            onboarding_id=onboarding_id,
+        )
+        return await ContentImportReviewService(self._sessions, self._settings).update_candidate(
+            scope=scope,
+            candidate_id=candidate_id,
+            body=body,
+        )
+
+    async def ignore_content_candidate(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        candidate_id: uuid.UUID,
+        expected_version: int,
+    ) -> ContentImportCandidateRecord:
+        scope = await self._content_review_scope(
+            actor=actor,
+            onboarding_id=onboarding_id,
+        )
+        return await ContentImportReviewService(self._sessions, self._settings).ignore_candidate(
+            scope=scope,
+            candidate_id=candidate_id,
+            expected_version=expected_version,
+        )
+
+    async def _content_review_scope(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+    ) -> AdminScope:
+        self._require_platform(actor)
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(session, onboarding_id, actor_user_id=actor.user_id)
+            self._require_open(row)
+            return AdminScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+            )
+
+    async def _latest_content_review(
+        self,
+        *,
+        scope: AdminScope,
+        batch_ids: list[uuid.UUID],
+    ) -> ContentImportRunRecord | None:
+        if not batch_ids:
+            return None
+        runs = await ContentImportReviewService(self._sessions, self._settings).list_runs(
+            scope=scope
+        )
+        by_batch = {run.batch_id: run for run in runs}
+        return next((by_batch[batch] for batch in reversed(batch_ids) if batch in by_batch), None)
 
     async def _generate_from_drafts(
         self,
@@ -737,11 +843,28 @@ class PlatformOnboardingService:
                 raise ApiError(409, "ONBOARDING_RESOURCE_MISSING", "临时企业资源不完整")
 
             assert tenant and company and user and membership and credential and card
+            normalized_company_name = " ".join(body.company_name.casefold().split())
+            duplicate_company_id = await session.scalar(
+                select(Company.id)
+                .where(
+                    Company.normalized_name == normalized_company_name,
+                    Company.id != row.company_id,
+                    Company.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+            if duplicate_company_id is not None:
+                raise ApiError(
+                    409,
+                    "COMPANY_NAME_ALREADY_EXISTS",
+                    "已存在同名企业，请先核对企业中心中的现有主体",
+                    details={"company_id": str(duplicate_company_id)},
+                )
             tenant.name = body.tenant_name
             tenant.status = LifecycleStatus.ACTIVE
             tenant.settings = {**tenant.settings, "onboarding_status": "confirmed"}
             company.name = body.company_name
-            company.normalized_name = " ".join(body.company_name.casefold().split())
+            company.normalized_name = normalized_company_name
             company.industry = body.industry
             company.status = LifecycleStatus.ACTIVE
             company.settings = {
@@ -751,10 +874,17 @@ class PlatformOnboardingService:
                 "business_profile_draft": list(row.business_profile),
                 "onboarding_status": "content_pending",
             }
-            user.display_name = body.initial_card_display_name
+            # The administrator account remains a company account and is not
+            # silently turned into the enterprise-card identity.
             user.status = LifecycleStatus.ACTIVE
             membership.status = LifecycleStatus.ACTIVE
+            membership.permissions = ["auth.password.change"]
+            now = datetime.now(UTC)
+            temporary_password = _generate_temporary_password()
             credential.is_enabled = True
+            credential.password_hash = hash_staff_password(temporary_password)
+            credential.must_change_password = True
+            credential.temporary_password_expires_at = now + timedelta(days=7)
             card.display_name = body.initial_card_display_name
             card.card_kind = CardKind.ENTERPRISE
             card.owner_user_id = None
@@ -774,7 +904,6 @@ class PlatformOnboardingService:
             # remain inside the same transaction and therefore commit or roll
             # back atomically.
             await session.flush()
-            now = datetime.now(UTC)
             # Public answer persistence requires a company-scoped prompt and
             # model audit record. Seeded demo tenants already have these, but
             # enterprises created through onboarding do not pass through the
@@ -860,7 +989,16 @@ class PlatformOnboardingService:
             )
             await session.flush()
             await session.refresh(row)
-            return self._record(row)
+            return self._record(row).model_copy(
+                update={
+                    "credential_delivery": {
+                        "account": row.admin_account,
+                        "temporary_password": temporary_password,
+                        "expires_at": credential.temporary_password_expires_at,
+                        "shown_once": True,
+                    }
+                }
+            )
 
     @staticmethod
     async def _require_imports_settled(
@@ -906,6 +1044,12 @@ class PlatformOnboardingService:
         row.status = "manual_required"
         row.version += 1
         await session.flush()
+        # ``updated_at`` is populated by a server-side on-update expression.
+        # SQLAlchemy expires that attribute after the flush; serializing the
+        # same ORM row later would otherwise attempt an implicit async refresh
+        # and fail with MissingGreenlet.  Refresh explicitly while we are still
+        # inside the awaited session operation.
+        await session.refresh(row)
         return True
 
     @staticmethod
@@ -1138,8 +1282,98 @@ def _parse_suggestions(
     return result
 
 
+def _generate_temporary_password() -> str:
+    """Generate a readable one-time password without persisting plaintext."""
+
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "Tmp-" + "".join(secrets.choice(alphabet) for _ in range(16)) + "!"
+
+
+def _legacy_suggestions_from_content_review(
+    review: ContentImportRunRecord | None,
+    *,
+    generation_version: int,
+) -> tuple[list[PlatformOnboardingSuggestion], list[PlatformOnboardingSuggestion]]:
+    """Project classified candidates into the existing confirmation summary.
+
+    The canonical editable records remain ``content_review.candidates``.  This
+    projection keeps the established confirmation fields populated without
+    inventing a second classification store.
+    """
+
+    if review is None:
+        return [], []
+    suggestions: list[PlatformOnboardingSuggestion] = []
+    business_profile: list[PlatformOnboardingSuggestion] = []
+    seen_fields: set[str] = set()
+    profile_mapping = {
+        "company_name": "company_name",
+        "industry": "industry",
+        "summary": "summary",
+        "website": "website",
+    }
+    category_mapping = {
+        "products": "products_services",
+        "case_studies": "core_capabilities",
+        "faqs": "customer_pain_points",
+        "unclassified": "missing_information",
+    }
+    for candidate in review.candidates:
+        source = {
+            "import_item_id": uuid.UUID(candidate.source_id),
+            "file_name": "已解析企业资料",
+            "excerpt": candidate.source_text[:500],
+        }
+        if candidate.category == "enterprise_profile":
+            for source_field, target_field in profile_mapping.items():
+                value = str(candidate.payload.get(source_field) or "").strip()
+                if not value or target_field in seen_fields:
+                    continue
+                suggestions.append(
+                    PlatformOnboardingSuggestion(
+                        field=target_field,
+                        value=value,
+                        confidence=candidate.confidence,
+                        generation_version=generation_version,
+                        sources=[source],
+                    )
+                )
+                seen_fields.add(target_field)
+            continue
+        target_field = category_mapping.get(candidate.category)
+        if target_field is None:
+            continue
+        title = str(
+            candidate.payload.get("name")
+            or candidate.payload.get("title")
+            or candidate.payload.get("question")
+            or candidate.payload.get("text")
+            or ""
+        ).strip()
+        detail = str(
+            candidate.payload.get("summary")
+            or candidate.payload.get("result")
+            or candidate.payload.get("answer")
+            or candidate.payload.get("reason")
+            or ""
+        ).strip()
+        value = "｜".join(part for part in (title, detail) if part)
+        if value:
+            business_profile.append(
+                PlatformOnboardingSuggestion(
+                    field=target_field,
+                    value=value,
+                    confidence=candidate.confidence,
+                    generation_version=generation_version,
+                    sources=[source],
+                )
+            )
+    return suggestions, business_profile
+
+
 __all__ = [
     "PlatformOnboardingImportScope",
     "PlatformOnboardingService",
     "_parse_suggestions",
+    "_legacy_suggestions_from_content_review",
 ]

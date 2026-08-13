@@ -396,6 +396,22 @@ describe("platformApi", () => {
     expect(JSON.stringify(created)).not.toContain("Initial-Password-2026!");
   });
 
+  it("starts assisted onboarding without accepting a platform-selected password", async () => {
+    const client = {
+      post: vi.fn().mockResolvedValue({ data: onboardingResponse() }),
+    } as unknown as ApiClient;
+    await createPlatformApi(client).startOnboarding({
+      tenantSlug: "acme",
+      tenantName: "Acme Tenant",
+      adminAccount: "admin@acme.test",
+      adminDisplayName: "Acme Admin",
+    });
+    expect(client.post).toHaveBeenCalledWith(
+      "/platform/onboarding",
+      expect.not.objectContaining({ admin_password: expect.anything() }),
+    );
+  });
+
   it("strictly normalizes LLM profiles and drops every server-injected secret field", async () => {
     const secret = "sk-server-must-never-enter-state";
     const client = {

@@ -127,7 +127,6 @@ def test_onboarding_requests_cannot_select_a_target_scope(field: str) -> None:
                 "tenant_slug": "acme",
                 "admin_account": "admin@acme.test",
                 "admin_display_name": "Acme Admin",
-                "admin_password": "Initial-Password-2026!",
                 field: str(uuid4()),
             }
         )

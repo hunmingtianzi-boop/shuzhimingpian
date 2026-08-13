@@ -44,6 +44,20 @@ class StaffMembershipView(StrictAuthModel):
 class CurrentStaffData(StrictAuthModel):
     user: StaffUserView
     membership: StaffMembershipView
+    must_change_password: bool = False
+
+
+class ChangePasswordRequest(StrictAuthModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
+
+
+class ChangePasswordData(StrictAuthModel):
+    changed: bool = True
+
+
+class ChangePasswordEnvelope(StrictAuthModel):
+    data: ChangePasswordData
 
 
 class CurrentStaffEnvelope(StrictAuthModel):

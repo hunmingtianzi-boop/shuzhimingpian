@@ -5,9 +5,11 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, "../..", "VITE_");
   const apiProxyTarget =
-    env.VITE_DEV_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8000";
+    process.env.VITE_DEV_API_PROXY_TARGET?.trim() ||
+    env.VITE_DEV_API_PROXY_TARGET?.trim() ||
+    "http://127.0.0.1:8000";
   const apiBaseUrl =
-    env.VITE_API_BASE_URL?.trim() || process.env.VITE_API_BASE_URL?.trim() || "";
+    process.env.VITE_API_BASE_URL?.trim() || env.VITE_API_BASE_URL?.trim() || "";
 
   return {
     envDir: "../..",
@@ -44,6 +46,12 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: "127.0.0.1",
       port: 4174,
+      proxy: {
+        "/api": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
+      },
     },
     build: {
       rolldownOptions: {

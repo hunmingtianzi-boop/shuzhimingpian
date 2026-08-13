@@ -63,6 +63,16 @@ async def get_staff_principal(
         )
     except StaffTokenError as exc:
         raise ApiError(401, "AUTH_REQUIRED", "员工登录状态无效，请重新登录") from exc
+    password_change_paths = {
+        f"{settings.api_prefix}/auth/me",
+        f"{settings.api_prefix}/auth/password",
+        f"{settings.api_prefix}/auth/logout",
+    }
+    if (
+        "auth.password.change" in principal.permissions
+        and request.url.path not in password_change_paths
+    ):
+        raise ApiError(403, "PASSWORD_CHANGE_REQUIRED", "首次登录需要先修改临时密码")
     if getattr(request.app.state, "require_staff_session_validation", False):
         identity = await AuthStore(
             request.app.state.session_factory,

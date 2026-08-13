@@ -5,6 +5,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 
+from app.api.content_import_schemas import (
+    ContentImportCandidateEnvelope,
+    ReviewContentCandidateRequest,
+    UpdateContentCandidateRequest,
+)
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
@@ -77,6 +82,50 @@ async def start_onboarding(
         trace_id=request_id_ctx.get(),
     )
     return PlatformOnboardingSessionEnvelope(data=record)
+
+
+@router.put(
+    "/{onboarding_id}/candidates/{candidate_id}",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="updatePlatformOnboardingCandidate",
+)
+async def update_onboarding_candidate(
+    onboarding_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    body: UpdateContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    return ContentImportCandidateEnvelope(
+        data=await _service(request).update_content_candidate(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            candidate_id=candidate_id,
+            body=body,
+        )
+    )
+
+
+@router.post(
+    "/{onboarding_id}/candidates/{candidate_id}/ignore",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="ignorePlatformOnboardingCandidate",
+)
+async def ignore_onboarding_candidate(
+    onboarding_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    body: ReviewContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    return ContentImportCandidateEnvelope(
+        data=await _service(request).ignore_content_candidate(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            candidate_id=candidate_id,
+            expected_version=body.expected_version,
+        )
+    )
 
 
 @router.get(

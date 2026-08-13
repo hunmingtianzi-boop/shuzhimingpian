@@ -27,6 +27,8 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConfirmPlatformOnboardingInput,
   PlatformOnboardingSession,
+  PlatformOnboardingCandidate,
+  PlatformOnboardingCandidateCategory,
   PlatformOnboardingSuggestion,
   StartPlatformOnboardingInput,
 } from "../api/types";
@@ -74,6 +76,14 @@ export type PlatformOnboardingPageProps = {
   onStart: (input: StartPlatformOnboardingInput) => Promise<void>;
   onUpload: (onboardingSessionId: string, files: File[]) => Promise<void>;
   onGenerate: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
+  onUpdateCandidate?: (
+    onboardingSessionId: string,
+    candidate: PlatformOnboardingCandidate,
+  ) => Promise<void>;
+  onIgnoreCandidate?: (
+    onboardingSessionId: string,
+    candidate: PlatformOnboardingCandidate,
+  ) => Promise<void>;
   onConfirm: (
     onboardingSessionId: string,
     input: ConfirmPlatformOnboardingInput,
@@ -95,7 +105,6 @@ const emptyStart: StartPlatformOnboardingInput = {
   tenantName: "",
   adminAccount: "",
   adminDisplayName: "",
-  adminPassword: "",
 };
 
 const emptyReview: ReviewValues = {
@@ -167,6 +176,55 @@ const businessProfileLabels: Record<string, string> = {
   missing_information: "待补资料",
 };
 
+const candidateCategoryLabels: Record<PlatformOnboardingCandidateCategory, string> = {
+  enterprise_profile: "企业资料",
+  products: "核心业务",
+  case_studies: "案例",
+  faqs: "知识 FAQ",
+  unclassified: "待判断",
+};
+
+const candidateFieldLabels: Record<string, string> = {
+  company_name: "企业名称",
+  summary: "摘要",
+  industry: "行业",
+  region: "地区",
+  website: "官网",
+  name: "名称",
+  category: "分类",
+  detail: "详细内容",
+  audience: "适用对象",
+  price_boundary: "价格边界",
+  title: "标题",
+  client_display_name: "客户名称",
+  background: "项目背景",
+  solution: "解决方案",
+  result: "项目成果",
+  question: "问题",
+  answer: "答案",
+  text: "原始内容",
+  reason: "待判断原因",
+};
+
+const candidatePayloadDefaults: Record<
+  PlatformOnboardingCandidateCategory,
+  Record<string, string>
+> = {
+  enterprise_profile: { company_name: "", summary: "", industry: "", region: "", website: "" },
+  products: { name: "", category: "", summary: "", detail: "", audience: "", price_boundary: "" },
+  case_studies: { title: "", industry: "", client_display_name: "", background: "", solution: "", result: "" },
+  faqs: { question: "", answer: "" },
+  unclassified: { text: "", reason: "" },
+};
+
+function candidateTitle(candidate: PlatformOnboardingCandidate): string {
+  return candidate.payload.title
+    || candidate.payload.name
+    || candidate.payload.question
+    || candidate.payload.company_name
+    || "未命名候选";
+}
+
 const stepLabels = ["基础信息", "上传解析", "智能分析", "人工确认", "完成"];
 
 function sessionStep(session?: PlatformOnboardingSession | null): number {
@@ -179,7 +237,7 @@ function sessionStep(session?: PlatformOnboardingSession | null): number {
 
 function asOperationError(value: unknown): PlatformOnboardingOperationError {
   const error = value as Partial<PlatformOnboardingOperationError>;
-  if (error?.status === 409 || error?.code === "VERSION_CONFLICT") {
+  if (error?.code === "VERSION_CONFLICT") {
     return {
       status: 409,
       code: error.code ?? "VERSION_CONFLICT",
@@ -227,9 +285,9 @@ function OperationError({
   onRecover?: () => void;
 }) {
   return (
-    <MessageBar intent={error.status === 409 ? "warning" : "error"}>
+    <MessageBar intent={error.code === "VERSION_CONFLICT" ? "warning" : "error"}>
       <MessageBarBody>
-        <strong>{error.status === 409 ? "会话版本冲突" : "操作未完成"}</strong>
+        <strong>{error.code === "VERSION_CONFLICT" ? "会话版本冲突" : "操作未完成"}</strong>
         <div>{error.message}</div>
         {(error.code || error.requestId) && (
           <div className={styles.errorReference}>
@@ -263,8 +321,7 @@ function StartPanel({
   const valid =
     slugPattern.test(input.tenantSlug) &&
     Boolean(input.adminAccount.trim()) &&
-    Boolean(input.adminDisplayName.trim()) &&
-    input.adminPassword.length >= 12;
+    Boolean(input.adminDisplayName.trim());
 
   const update = <K extends keyof StartPlatformOnboardingInput>(
     key: K,
@@ -321,21 +378,10 @@ function StartPanel({
             onChange={(_, data) => update("adminDisplayName", data.value)}
           />
         </Field>
-        <Field
-          label="管理员初始密码"
-          required
-          validationState={attempted && input.adminPassword.length < 12 ? "error" : "none"}
-          validationMessage={
-            attempted && input.adminPassword.length < 12 ? "初始密码至少 12 个字符。" : undefined
-          }
-        >
-          <Input
-            type="password"
-            autoComplete="new-password"
-            value={input.adminPassword}
-            onChange={(_, data) => update("adminPassword", data.value)}
-          />
-        </Field>
+        <div className={styles.credentialNotice}>
+          <strong>初始密码由系统在确认建企时生成</strong>
+          <span>只展示一次、7 天有效；企业管理员首次登录必须修改。</span>
+        </div>
         <div className={styles.startActions}>
           <Button appearance="primary" type="submit" disabled={busy || (attempted && !valid)}>
             {busy ? "正在准备" : "进入资料导入"}
@@ -482,6 +528,8 @@ export function PlatformOnboardingPage({
   onStart,
   onUpload,
   onGenerate,
+  onUpdateCandidate,
+  onIgnoreCandidate,
   onConfirm,
   onCancel,
   onRefresh,
@@ -499,6 +547,8 @@ export function PlatformOnboardingPage({
   const [confirmedSession, setConfirmedSession] = useState<PlatformOnboardingSession>();
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copyError, setCopyError] = useState<string>();
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>();
+  const [candidateDrafts, setCandidateDrafts] = useState<Record<string, PlatformOnboardingCandidate>>({});
   const cancelOpenerRef = useRef<HTMLButtonElement>(null);
   const previousSessionId = useRef<string | undefined>(undefined);
 
@@ -528,6 +578,16 @@ export function PlatformOnboardingPage({
       setConfirmedSession(session);
     }
   }, [session]);
+
+  useEffect(() => {
+    const candidates = session?.contentReview?.candidates ?? [];
+    setCandidateDrafts(Object.fromEntries(candidates.map((candidate) => [candidate.id, candidate])));
+    setSelectedCandidateId((current) =>
+      current && candidates.some((candidate) => candidate.id === current)
+        ? current
+        : candidates[0]?.id,
+    );
+  }, [session?.contentReview]);
 
   const activeError = operationError ?? resourceError;
   const completedSession =
@@ -709,6 +769,41 @@ export function PlatformOnboardingPage({
                 <div><dt>企业管理员账号</dt><dd>{adminSummary.account}</dd></div>
               )}
             </dl>
+            {session.credentialDelivery && (
+              <section className={styles.credentialDelivery} aria-label="一次性企业管理员凭证">
+                <div>
+                  <strong>一次性登录凭证</strong>
+                  <span>仅此页面展示，7 天内有效；首次登录后必须修改密码。</span>
+                </div>
+                <Field label="管理员账号">
+                  <div className={styles.deliveryUrlField}>
+                    <Input value={session.credentialDelivery.account} readOnly />
+                    <Button
+                      icon={<Copy24Regular />}
+                      aria-label="复制管理员账号"
+                      onClick={() => void copyUrl(session.credentialDelivery!.account, "管理员账号")}
+                    />
+                  </div>
+                </Field>
+                <Field label="临时密码">
+                  <div className={styles.deliveryUrlField}>
+                    <Input
+                      type="password"
+                      value={session.credentialDelivery.temporaryPassword}
+                      readOnly
+                      aria-label="一次性临时密码"
+                    />
+                    <Button
+                      icon={<Copy24Regular />}
+                      aria-label="复制临时密码"
+                      onClick={() =>
+                        void copyUrl(session.credentialDelivery!.temporaryPassword, "临时密码")
+                      }
+                    />
+                  </div>
+                </Field>
+              </section>
+            )}
             <section className={styles.deliveryPanel} aria-labelledby="onboarding-delivery-title">
               <div>
                 <h3 id="onboarding-delivery-title">网址与交付入口</h3>
@@ -890,6 +985,118 @@ export function PlatformOnboardingPage({
               </details>
 
               <div className={styles.suggestions} aria-live="polite">
+                {(session.contentReview?.candidates.length ?? 0) > 0 && (
+                  <section className={styles.candidateWorkspace} aria-labelledby="onboarding-candidate-title">
+                    <div className={styles.candidateSummary}>
+                      <div>
+                        <span>智能候选</span>
+                        <h3 id="onboarding-candidate-title">逐条确认资料归类</h3>
+                        <p>左侧选择候选，右侧编辑；保存只更新草稿，不会发布内容。</p>
+                      </div>
+                      <strong>{session.contentReview?.candidates.length} 条</strong>
+                    </div>
+                    <div className={styles.candidateColumns}>
+                      <nav className={styles.candidateList} aria-label="资料候选列表">
+                        {session.contentReview?.candidates.map((original) => {
+                          const candidate = candidateDrafts[original.id] ?? original;
+                          return (
+                            <button
+                              type="button"
+                              key={candidate.id}
+                              className={candidate.id === selectedCandidateId ? styles.candidateActive : undefined}
+                              onClick={() => setSelectedCandidateId(candidate.id)}
+                            >
+                              <span>{candidateCategoryLabels[candidate.category]}</span>
+                              <strong>{candidateTitle(candidate)}</strong>
+                              <small>置信度 {Math.round(candidate.confidence * 100)}%</small>
+                            </button>
+                          );
+                        })}
+                      </nav>
+                      {selectedCandidateId && candidateDrafts[selectedCandidateId] && (() => {
+                        const candidate = candidateDrafts[selectedCandidateId];
+                        const updateCandidate = (next: PlatformOnboardingCandidate) =>
+                          setCandidateDrafts((current) => ({ ...current, [next.id]: next }));
+                        return (
+                          <article className={styles.candidateEditor}>
+                            <div className={styles.candidateEditorHeading}>
+                              <label>
+                                <span>候选分类</span>
+                                <select
+                                  aria-label="候选分类"
+                                  value={candidate.category}
+                                  onChange={(event) => {
+                                    const category = event.target.value as PlatformOnboardingCandidateCategory;
+                                    updateCandidate({
+                                      ...candidate,
+                                      category,
+                                      payload: { ...candidatePayloadDefaults[category] },
+                                    });
+                                  }}
+                                >
+                                  {Object.entries(candidateCategoryLabels).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <span>
+                                {candidate.status === "pending_review"
+                                  ? "待确认"
+                                  : candidate.status === "ignored"
+                                    ? "已忽略"
+                                    : candidate.status === "accepted"
+                                      ? "已确认"
+                                      : candidate.status}
+                              </span>
+                            </div>
+                            <div className={styles.candidateFields}>
+                              {Object.entries(candidate.payload).map(([field, value]) => {
+                                const multiline = ["summary", "detail", "background", "solution", "result", "answer", "text", "reason"].includes(field);
+                                const update = (nextValue: string) => updateCandidate({
+                                  ...candidate,
+                                  payload: { ...candidate.payload, [field]: nextValue },
+                                });
+                                return (
+                                  <Field key={field} label={candidateFieldLabels[field] ?? field}>
+                                    {multiline ? (
+                                      <Textarea value={value} resize="vertical" onChange={(_, data) => update(data.value)} />
+                                    ) : (
+                                      <Input value={value} onChange={(_, data) => update(data.value)} />
+                                    )}
+                                  </Field>
+                                );
+                              })}
+                            </div>
+                            <details className={styles.candidateEvidence}>
+                              <summary>查看原文证据</summary>
+                              <blockquote>{candidate.sourceText}</blockquote>
+                            </details>
+                            <div className={styles.candidateActions}>
+                              <Button
+                                appearance="subtle"
+                                disabled={!onIgnoreCandidate || Boolean(busy) || candidate.status !== "pending_review"}
+                                onClick={() => onIgnoreCandidate
+                                  ? void run("generate", () => onIgnoreCandidate(session.id, candidate))
+                                  : undefined}
+                              >
+                                忽略此候选
+                              </Button>
+                              <Button
+                                appearance="primary"
+                                disabled={!onUpdateCandidate || Boolean(busy)}
+                                onClick={() => onUpdateCandidate
+                                  ? void run("generate", () => onUpdateCandidate(session.id, candidate))
+                                  : undefined}
+                              >
+                                保存候选修改
+                              </Button>
+                            </div>
+                          </article>
+                        );
+                      })()}
+                    </div>
+                  </section>
+                )}
                 {(session.businessProfile?.length ?? 0) > 0 && (
                   <section className={styles.businessProfile} aria-labelledby="business-profile-title">
                     <div>

@@ -287,7 +287,6 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 tenant_name=None,
                 admin_account=f"{enterprise_slug}@example.test",
                 admin_display_name="Document Onboarding Admin",
-                admin_password=SecretStr("Document-Onboarding-2026!"),
             ),
             trace_id="platform-document-onboarding-integration",
         )
@@ -384,7 +383,6 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 tenant_name="Confirmed Enterprise",
                 admin_account=f"{confirm_slug}@example.test",
                 admin_display_name="Confirmed Enterprise Admin",
-                admin_password=SecretStr("Confirmed-Enterprise-2026!"),
             ),
             trace_id="platform-document-onboarding-confirm-start",
         )

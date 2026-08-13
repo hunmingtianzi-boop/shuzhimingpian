@@ -766,6 +766,15 @@ class StaffCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         server_default=func.now(),
     )
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    temporary_password_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Card(

@@ -9,6 +9,9 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 
 from app.api.auth_schemas import (
     AuthEnvelope,
+    ChangePasswordData,
+    ChangePasswordEnvelope,
+    ChangePasswordRequest,
     CurrentStaffData,
     CurrentStaffEnvelope,
     LoginRequest,
@@ -152,6 +155,24 @@ async def me(
     return _current_staff_envelope(identity)
 
 
+@router.post(
+    "/password",
+    response_model=ChangePasswordEnvelope,
+    operation_id="changeStaffPassword",
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    principal: Annotated[StaffPrincipal, Depends(get_staff_principal)],
+) -> ChangePasswordEnvelope:
+    await _store(request).change_password(
+        principal,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+    return ChangePasswordEnvelope(data=ChangePasswordData())
+
+
 def _token_envelope_with_cookies(
     response: Response,
     tokens: IssuedStaffTokens,
@@ -263,6 +284,7 @@ def _current_staff_envelope(identity: StaffIdentity) -> CurrentStaffEnvelope:
                 role=identity.role,
                 permissions=identity.permissions,
             ),
+            must_change_password=identity.must_change_password,
         )
     )
 

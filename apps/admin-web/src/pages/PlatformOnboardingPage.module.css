@@ -830,3 +830,136 @@
     animation: none;
   }
 }
+
+.credentialNotice,
+.credentialDelivery {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #b8e1df;
+  border-radius: 14px;
+  background: #f1fbfa;
+  color: #173d47;
+}
+
+.credentialNotice span,
+.credentialDelivery span {
+  color: #57727a;
+}
+
+.candidateWorkspace {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #c9e3e6;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #f9ffff 0%, #f3f8fb 100%);
+}
+
+.candidateSummary,
+.candidateEditorHeading,
+.candidateActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.candidateSummary h3,
+.candidateSummary p {
+  margin: 4px 0 0;
+}
+
+.candidateSummary > strong {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dff3f4;
+  color: #176473;
+}
+
+.candidateColumns {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.72fr) minmax(0, 1.55fr);
+  gap: 14px;
+  min-height: 420px;
+}
+
+.candidateList {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+  max-height: 620px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.candidateList button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d7e5e8;
+  border-radius: 12px;
+  background: #fff;
+  color: #183140;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidateList button span,
+.candidateList button small {
+  color: #63808a;
+}
+
+.candidateList .candidateActive {
+  border-color: #2da8b5;
+  background: #edfbfb;
+  box-shadow: inset 3px 0 0 #2da8b5;
+}
+
+.candidateEditor {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgb(32 78 95 / 8%);
+}
+
+.candidateEditorHeading label,
+.candidateFields {
+  display: grid;
+  gap: 10px;
+}
+
+.candidateEditorHeading select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #bfd2d7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.candidateEvidence blockquote {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-left: 3px solid #52b5bd;
+  background: #f5fafb;
+  color: #465f68;
+}
+
+@media (max-width: 900px) {
+  .candidateColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .candidateList {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(170px, 70%);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+  }
+}

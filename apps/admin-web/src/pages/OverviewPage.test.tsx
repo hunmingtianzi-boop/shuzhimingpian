@@ -104,6 +104,7 @@ const auth: AuthContextValue = {
   loginPending: false,
   apiConfigured: true,
   login: vi.fn(),
+  changePassword: vi.fn(),
   logout: vi.fn(),
 };
 

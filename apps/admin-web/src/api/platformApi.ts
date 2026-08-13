@@ -16,6 +16,8 @@ import type {
   PlatformOnboardingSession,
   PlatformOnboardingStatus,
   PlatformOnboardingSuggestion,
+  PlatformOnboardingCandidate,
+  PlatformOnboardingCandidateCategory,
   PlatformOverview,
   PlatformServiceHealth,
   PlatformTaskProjection,
@@ -191,12 +193,76 @@ function onboardingSuggestion(value: unknown): PlatformOnboardingSuggestion {
   };
 }
 
+const onboardingCandidateCategories = new Set<PlatformOnboardingCandidateCategory>([
+  "enterprise_profile",
+  "products",
+  "case_studies",
+  "faqs",
+  "unclassified",
+]);
+
+function onboardingCandidate(value: unknown): PlatformOnboardingCandidate {
+  if (!isRecord(value) || !isRecord(value.payload)) invalid("资料候选");
+  const category = requiredString(
+    value.category,
+    "candidate.category",
+  ) as PlatformOnboardingCandidateCategory;
+  if (!onboardingCandidateCategories.has(category)) invalid("资料候选分类");
+  return {
+    id: requiredString(value.id, "candidate.id"),
+    runId: requiredString(value.run_id, "candidate.run_id"),
+    category,
+    payload: Object.fromEntries(
+      Object.entries(value.payload).map(([key, field]) => [
+        key,
+        typeof field === "string" ? field : "",
+      ]),
+    ),
+    sourceId: requiredString(value.source_id, "candidate.source_id"),
+    sourceText: requiredString(value.source_text, "candidate.source_text"),
+    confidence: typeof value.confidence === "number" ? value.confidence : 0,
+    status: requiredString(
+      value.status,
+      "candidate.status",
+    ) as PlatformOnboardingCandidate["status"],
+    version: nonNegativeInteger(value.version, "candidate.version"),
+  };
+}
+
+function onboardingContentReview(value: JsonRecord) {
+  if (!Array.isArray(value.candidates) || !isRecord(value.counts)) {
+    invalid("资料候选任务");
+  }
+  return {
+    id: requiredString(value.id, "review.id"),
+    batchId: requiredString(value.batch_id, "review.batch_id"),
+    status: requiredString(
+      value.status,
+      "review.status",
+    ) as "processing" | "review" | "manual_required",
+    provider: requiredString(value.provider, "review.provider"),
+    model: requiredString(value.model, "review.model"),
+    attempts: nonNegativeInteger(value.attempts, "review.attempts"),
+    failureCode: optionalString(value.failure_code, "review.failure_code"),
+    counts: Object.fromEntries(
+      Object.entries(value.counts).map(([key, count]) => [
+        key,
+        typeof count === "number" ? count : 0,
+      ]),
+    ),
+    candidates: value.candidates.map(onboardingCandidate),
+  };
+}
+
 function onboardingSession(value: unknown): PlatformOnboardingSession {
   if (!isRecord(value) || !Array.isArray(value.import_batch_ids)) {
     invalid("资料辅助建企会话");
   }
   if (!Array.isArray(value.suggestions)) invalid("资料辅助建企建议");
   if (value.business_profile !== undefined && !Array.isArray(value.business_profile)) invalid("资料辅助建企业务画像");
+  const contentReview = isRecord(value.content_review)
+    ? onboardingContentReview(value.content_review)
+    : undefined;
   return {
     id: requiredString(value.id, "id"),
     status: oneOf(value.status, onboardingStatuses, "status"),
@@ -219,13 +285,28 @@ function onboardingSession(value: unknown): PlatformOnboardingSession {
     importBatchIds: value.import_batch_ids.map((item) =>
       requiredString(item, "import_batch_id"),
     ),
-      suggestions: value.suggestions.map(onboardingSuggestion),
-      businessProfile: Array.isArray(value.business_profile) ? value.business_profile.map(onboardingSuggestion) : [],
+    suggestions: value.suggestions.map(onboardingSuggestion),
+    businessProfile: Array.isArray(value.business_profile)
+      ? value.business_profile.map(onboardingSuggestion)
+      : [],
+    contentReview,
     expiresAt: optionalString(value.expires_at, "expires_at"),
     confirmedEnterprise:
       value.confirmed_enterprise === null || value.confirmed_enterprise === undefined
         ? undefined
         : createdEnterprise(value.confirmed_enterprise),
+    credentialDelivery:
+      isRecord(value.credential_delivery)
+        ? {
+            account: requiredString(value.credential_delivery.account, "credential account"),
+            temporaryPassword: requiredString(
+              value.credential_delivery.temporary_password,
+              "temporary password",
+            ),
+            expiresAt: requiredString(value.credential_delivery.expires_at, "credential expiry"),
+            shownOnce: true,
+          }
+        : undefined,
     createdAt: requiredString(value.created_at, "created_at"),
     updatedAt: requiredString(value.updated_at, "updated_at"),
   };
@@ -243,6 +324,7 @@ function onboardingImportStatus(value: unknown): PlatformOnboardingImportStatus 
   if (!isRecord(value) || !Array.isArray(value.batches)) {
     invalid("资料辅助建企导入进度");
   }
+
   const sessionId = requiredString(
     value.session_id,
     "onboarding_imports.session_id",
@@ -699,7 +781,6 @@ export function createPlatformApi(client: ApiClient) {
         tenant_name: input.tenantName?.trim() || null,
         admin_account: input.adminAccount.trim(),
         admin_display_name: input.adminDisplayName.trim(),
-        admin_password: input.adminPassword,
       });
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
     },
@@ -744,6 +825,32 @@ export function createPlatformApi(client: ApiClient) {
         { expected_version: expectedVersion },
       );
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
+    },
+
+    async updateOnboardingCandidate(
+      sessionId: string,
+      candidate: PlatformOnboardingCandidate,
+    ): Promise<PlatformOnboardingCandidate> {
+      const payload = await client.put(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidate.id)}`,
+        {
+          expected_version: candidate.version,
+          category: candidate.category,
+          payload: candidate.payload,
+        },
+      );
+      return onboardingCandidate(unwrapData(payload, "资料辅助建企候选"));
+    },
+
+    async ignoreOnboardingCandidate(
+      sessionId: string,
+      candidate: PlatformOnboardingCandidate,
+    ): Promise<PlatformOnboardingCandidate> {
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidate.id)}/ignore`,
+        { expected_version: candidate.version, apply_fields: [] },
+      );
+      return onboardingCandidate(unwrapData(payload, "资料辅助建企候选"));
     },
 
     async confirmOnboarding(

@@ -27,6 +27,7 @@ import { AppShell } from "./components/AppShell";
 import { BootScreen } from "./components/BootScreen";
 import { ResourceState } from "./components/ResourceState";
 import { LoginPage } from "./pages/LoginPage";
+import { FirstPasswordChangePage } from "./pages/FirstPasswordChangePage";
 import type {
   PlatformLlmConnectionResult,
   PlatformLlmCurrentConfig,
@@ -626,6 +627,13 @@ export function PlatformOnboardingRoute() {
       .listLlmProfiles()
       .then((profiles) => {
         if (cancelled || ownerIdRef.current !== expectedActorId) return;
+        // An empty profile table intentionally falls back to the server's
+        // environment configuration. The API remains authoritative and will
+        // return manual_required when that fallback is unavailable.
+        if (profiles.length === 0) {
+          setLlmAvailability("ready");
+          return;
+        }
         const active = profiles.find((profile) => profile.isActive);
         setLlmAvailability(
           active?.enabled &&
@@ -701,6 +709,16 @@ export function PlatformOnboardingRoute() {
           sessionId,
           expectedVersion,
         );
+        replaceSession(updated, sessionId);
+      }}
+      onUpdateCandidate={async (sessionId, candidate) => {
+        await platformApi.updateOnboardingCandidate(sessionId, candidate);
+        const updated = await platformApi.getOnboarding(sessionId);
+        replaceSession(updated, sessionId);
+      }}
+      onIgnoreCandidate={async (sessionId, candidate) => {
+        await platformApi.ignoreOnboardingCandidate(sessionId, candidate);
+        const updated = await platformApi.getOnboarding(sessionId);
         replaceSession(updated, sessionId);
       }}
       onConfirm={async (
@@ -883,6 +901,7 @@ export function SessionGate() {
 
   if (auth.status === "bootstrapping") return <BootScreen />;
   if (auth.status === "unauthenticated") return <LoginPage />;
+  if (auth.user?.mustChangePassword) return <FirstPasswordChangePage />;
   if (isAuthenticationEntry && workspace) return <BootScreen />;
   return <AuthenticatedApplication />;
 }

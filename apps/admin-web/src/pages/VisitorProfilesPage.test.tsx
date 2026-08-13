@@ -81,6 +81,7 @@ function renderPage(user: AdminUser = admin) {
         loginPending: false,
         apiConfigured: true,
         login: vi.fn(),
+        changePassword: vi.fn(),
         logout: vi.fn(),
       }}>
         <VisitorProfilesPage />

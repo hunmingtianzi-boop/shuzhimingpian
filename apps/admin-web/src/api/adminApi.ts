@@ -981,7 +981,15 @@ export function createAdminApi(client: ApiClient) {
       companyId: requireString(membership.company_id, "company_id"),
       role: optionalString(membership.role) || undefined,
       permissions,
+      mustChangePassword: data.must_change_password === true,
     };
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await client.post("/auth/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
   },
 
   async getCompanyProfile(): Promise<CompanyProfile> {
