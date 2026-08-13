@@ -2176,6 +2176,116 @@ class KnowledgeImportItem(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ContentImportRun(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
+    __tablename__ = "content_import_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "batch_id"],
+            [
+                "knowledge_import_batches.tenant_id",
+                "knowledge_import_batches.company_id",
+                "knowledge_import_batches.id",
+            ],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(["requested_by"], ["users.id"], ondelete="RESTRICT"),
+        UniqueConstraint(
+            "tenant_id", "company_id", "id", name="uq_content_import_runs_scope_id"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "batch_id",
+            name="uq_content_import_runs_scope_batch",
+        ),
+        CheckConstraint(
+            "status IN ('processing','review','manual_required')",
+            name="content_import_run_status_allowed",
+        ),
+        CheckConstraint("attempts >= 0 AND attempts <= 2", name="attempts_allowed"),
+        Index("ix_content_import_runs_company_created", "company_id", "created_at"),
+        Index("ix_content_import_runs_batch_created", "batch_id", "created_at"),
+    )
+
+    batch_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    requested_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="processing", server_default=text("'processing'")
+    )
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    failure_code: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    counts: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ContentImportCandidate(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OptimisticVersionMixin,
+    CompanyScopeMixin,
+    Base,
+):
+    __tablename__ = "content_import_candidates"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id", "run_id"],
+            [
+                "content_import_runs.tenant_id",
+                "content_import_runs.company_id",
+                "content_import_runs.id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(["reviewed_by"], ["users.id"], ondelete="RESTRICT"),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            "id",
+            name="uq_content_import_candidates_scope_id",
+        ),
+        UniqueConstraint("run_id", "fingerprint", name="uq_content_import_candidates_run_hash"),
+        CheckConstraint(
+            "category IN ('enterprise_profile','products','case_studies','faqs','unclassified')",
+            name="content_import_candidate_category_allowed",
+        ),
+        CheckConstraint(
+            "status IN ('pending_review','accepted','ignored','conflict')",
+            name="content_import_candidate_status_allowed",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_range"),
+        CheckConstraint("char_length(fingerprint) = 64", name="fingerprint_sha256"),
+        Index("ix_content_import_candidates_run_status", "run_id", "status", "created_at"),
+        Index(
+            "ix_content_import_candidates_company_category",
+            "company_id",
+            "category",
+            "status",
+        ),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="pending_review",
+        server_default=text("'pending_review'"),
+    )
+    target_resource_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_resource_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class KnowledgeChunk(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, Base):
     __tablename__ = "knowledge_chunks"
     __table_args__ = (

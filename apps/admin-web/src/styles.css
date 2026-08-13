@@ -850,6 +850,127 @@ a:hover {
   border: 1px solid var(--border);
 }
 
+.content-import-review {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--brand) 3%, white);
+}
+
+.content-import-manual-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.content-import-manual-state .resource-error {
+  flex: 1;
+}
+
+.content-import-review-heading,
+.content-import-candidate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.content-import-review-heading h3,
+.content-import-review-heading p {
+  margin: 0;
+}
+
+.content-import-review-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.content-import-candidate-list {
+  display: grid;
+  gap: 14px;
+}
+
+.content-import-candidate {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+}
+
+.content-import-candidate-head select {
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+}
+
+.content-import-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.content-import-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.content-import-fields label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.content-import-evidence summary {
+  cursor: pointer;
+  color: var(--brand);
+  font-size: 13px;
+}
+
+.content-import-evidence blockquote {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-left: 3px solid color-mix(in srgb, var(--brand) 40%, var(--border));
+  background: var(--surface-subtle);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.content-import-apply-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.content-import-apply-fields legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .content-import-review-heading,
+  .content-import-candidate-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .content-import-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .knowledge-import-progress-copy span {
   color: var(--muted);
   font-size: 13px;

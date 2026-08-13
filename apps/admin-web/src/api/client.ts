@@ -539,7 +539,9 @@ function safeRelativePath(value: string): string {
 }
 
 export function apiBaseUrlFromEnvironment(): string {
-  return import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configured) return configured;
+  return import.meta.env.DEV ? "/api/v1" : "";
 }
 
 export const apiClient = new ApiClient({

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "./client";
-import { createKnowledgeImportsApi } from "./knowledgeImportsApi";
+import { createContentImportsApi, createKnowledgeImportsApi } from "./knowledgeImportsApi";
 
 const item = {
   id: "item-1", file_name: "knowledge.pdf", source_type: "pdf", status: "completed",
@@ -66,6 +66,40 @@ describe("knowledgeImportsApi", () => {
     await expect(api.list()).resolves.toMatchObject({ total: 1, items: [{ id: "batch-1" }] });
     await expect(api.get("batch-1")).resolves.toMatchObject({
       items: [{ fileName: "knowledge.pdf", documentId: "document-1" }],
+    });
+  });
+});
+
+describe("contentImportsApi", () => {
+  it("normalizes review candidates and sends edited payload with optimistic version", async () => {
+    const candidate = {
+      id: "candidate-1", run_id: "run-1", category: "faqs",
+      payload: { question: "如何联系？", answer: "请拨打企业电话。" },
+      source_id: "item-1", source_text: "如何联系？请拨打企业电话。",
+      confidence: 0.92, status: "pending_review", version: 1,
+      created_at: "2026-08-12T00:00:00Z", updated_at: "2026-08-12T00:00:00Z",
+    };
+    const run = {
+      id: "run-1", batch_id: "batch-1", status: "review", provider: "deepseek",
+      model: "deepseek-chat", attempts: 1, counts: { faqs: 1 }, candidates: [candidate],
+      created_at: "2026-08-12T00:00:00Z", updated_at: "2026-08-12T00:00:00Z",
+    };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ data: { access_token: "access", csrf_token: "csrf" } }))
+      .mockResolvedValueOnce(response({ data: run }, 201))
+      .mockResolvedValueOnce(response({ data: candidate }));
+    const client = new ApiClient({ baseUrl: "https://api.example.test", fetcher });
+    await client.login("admin", "password");
+    const api = createContentImportsApi(client);
+
+    const generated = await api.generate("batch-1");
+    expect(generated.candidates[0]).toMatchObject({ category: "faqs", payload: { question: "如何联系？" } });
+    await api.update(generated.candidates[0]);
+
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({
+      expected_version: 1,
+      category: "faqs",
+      payload: { question: "如何联系？", answer: "请拨打企业电话。" },
     });
   });
 });

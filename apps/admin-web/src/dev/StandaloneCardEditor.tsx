@@ -288,6 +288,13 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
         sizeBytes: file.size,
       };
     },
+    async uploadCardVideoAsset(file) {
+      return {
+        url: await readFileAsDataUrl(file),
+        contentType: file.type === "video/webm" ? "video/webm" as const : "video/mp4" as const,
+        sizeBytes: file.size,
+      };
+    },
     async updateManagedCard(_cardId, _expectedVersion, input) {
       version += 1;
       return {

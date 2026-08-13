@@ -83,6 +83,41 @@ export type KnowledgeImportList = {
   offset: number;
 };
 
+export type ContentImportCategory =
+  | "enterprise_profile"
+  | "products"
+  | "case_studies"
+  | "faqs"
+  | "unclassified";
+export type ContentImportCandidateStatus = "pending_review" | "accepted" | "ignored" | "conflict";
+
+export type ContentImportCandidate = {
+  id: string;
+  runId: string;
+  category: ContentImportCategory;
+  payload: Record<string, string>;
+  sourceId: string;
+  sourceText: string;
+  confidence: number;
+  status: ContentImportCandidateStatus;
+  targetResourceType?: string;
+  targetResourceId?: string;
+  version: number;
+};
+
+export type ContentImportRun = {
+  id: string;
+  batchId: string;
+  status: "processing" | "review" | "manual_required";
+  provider: string;
+  model: string;
+  attempts: number;
+  failureCode?: string;
+  counts: Record<string, number>;
+  candidates: ContentImportCandidate[];
+  createdAt: string;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -181,6 +216,66 @@ function normalizeBatch(value: unknown): KnowledgeImportBatch {
   };
 }
 
+const contentCategories = new Set<ContentImportCategory>([
+  "enterprise_profile", "products", "case_studies", "faqs", "unclassified",
+]);
+const candidateStatuses = new Set<ContentImportCandidateStatus>([
+  "pending_review", "accepted", "ignored", "conflict",
+]);
+
+function normalizeCandidate(value: unknown): ContentImportCandidate {
+  if (!isRecord(value) || !isRecord(value.payload)) {
+    throw new ApiError("智能整理候选响应无法识别。", { code: "INVALID_API_RESPONSE" });
+  }
+  const category = requiredString(value.category, "candidate.category") as ContentImportCategory;
+  const status = requiredString(value.status, "candidate.status") as ContentImportCandidateStatus;
+  if (!contentCategories.has(category) || !candidateStatuses.has(status)) {
+    throw new ApiError("智能整理候选分类或状态无法识别。", { code: "INVALID_API_RESPONSE" });
+  }
+  const payload = Object.fromEntries(
+    Object.entries(value.payload).map(([key, field]) => [key, typeof field === "string" ? field : ""]),
+  );
+  const confidence = typeof value.confidence === "number" ? value.confidence : Number.NaN;
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new ApiError("智能整理候选置信度无法识别。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    id: requiredString(value.id, "candidate.id"),
+    runId: requiredString(value.run_id, "candidate.run_id"),
+    category,
+    payload,
+    sourceId: requiredString(value.source_id, "candidate.source_id"),
+    sourceText: requiredString(value.source_text, "candidate.source_text"),
+    confidence,
+    status,
+    targetResourceType: optionalString(value.target_resource_type),
+    targetResourceId: optionalString(value.target_resource_id),
+    version: requiredCount(value.version, "candidate.version"),
+  };
+}
+
+function normalizeContentRun(value: unknown): ContentImportRun {
+  if (!isRecord(value) || !Array.isArray(value.candidates) || !isRecord(value.counts)) {
+    throw new ApiError("智能整理任务响应无法识别。", { code: "INVALID_API_RESPONSE" });
+  }
+  const runStatus = requiredString(value.status, "run.status");
+  if (!["processing", "review", "manual_required"].includes(runStatus)) {
+    throw new ApiError("智能整理任务状态无法识别。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    id: requiredString(value.id, "run.id"),
+    batchId: requiredString(value.batch_id, "run.batch_id"),
+    status: runStatus as ContentImportRun["status"],
+    provider: requiredString(value.provider, "run.provider"),
+    model: requiredString(value.model, "run.model"),
+    attempts: requiredCount(value.attempts, "run.attempts"),
+    failureCode: optionalString(value.failure_code),
+    counts: Object.fromEntries(Object.entries(value.counts).map(([key, count]) => [key, requiredCount(count, `counts.${key}`)])),
+    candidates: value.candidates.map(normalizeCandidate),
+    createdAt: requiredString(value.created_at, "run.created_at"),
+  };
+}
+
 export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
   return {
     async create(
@@ -220,3 +315,44 @@ export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
 }
 
 export const knowledgeImportsApi = createKnowledgeImportsApi();
+
+export function createContentImportsApi(client: ApiClient = apiClient) {
+  return {
+    async generate(batchId: string, options: { retry?: boolean } = {}): Promise<ContentImportRun> {
+      return normalizeContentRun(unwrapData(await client.post("/admin/content-import-runs", {
+        batch_id: batchId,
+        retry: options.retry === true,
+      })));
+    },
+    async list(): Promise<ContentImportRun[]> {
+      const payload = await client.get("/admin/content-import-runs");
+      if (!isRecord(payload) || !Array.isArray(payload.data)) {
+        throw new ApiError("智能整理任务列表无法识别。", { code: "INVALID_API_RESPONSE" });
+      }
+      return payload.data.map(normalizeContentRun);
+    },
+    async get(runId: string): Promise<ContentImportRun> {
+      return normalizeContentRun(unwrapData(await client.get(`/admin/content-import-runs/${encodeURIComponent(runId)}`)));
+    },
+    async update(candidate: ContentImportCandidate): Promise<ContentImportCandidate> {
+      return normalizeCandidate(unwrapData(await client.patch(
+        `/admin/content-import-candidates/${encodeURIComponent(candidate.id)}`,
+        { expected_version: candidate.version, category: candidate.category, payload: candidate.payload },
+      )));
+    },
+    async accept(candidate: ContentImportCandidate, applyFields: string[] = []): Promise<ContentImportCandidate> {
+      return normalizeCandidate(unwrapData(await client.post(
+        `/admin/content-import-candidates/${encodeURIComponent(candidate.id)}/accept`,
+        { expected_version: candidate.version, apply_fields: applyFields },
+      )));
+    },
+    async ignore(candidate: ContentImportCandidate): Promise<ContentImportCandidate> {
+      return normalizeCandidate(unwrapData(await client.post(
+        `/admin/content-import-candidates/${encodeURIComponent(candidate.id)}/ignore`,
+        { expected_version: candidate.version, apply_fields: [] },
+      )));
+    },
+  };
+}
+
+export const contentImportsApi = createContentImportsApi();

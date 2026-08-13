@@ -6,10 +6,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, "../..", "VITE_");
   const apiProxyTarget =
     env.VITE_DEV_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8000";
+  const apiBaseUrl =
+    env.VITE_API_BASE_URL?.trim() || process.env.VITE_API_BASE_URL?.trim() || "";
 
   return {
     envDir: "../..",
     plugins: [react()],
+    define: {
+      "import.meta.env.VITE_API_BASE_URL": JSON.stringify(apiBaseUrl),
+    },
     resolve: {
       // A worktree can reuse an external pnpm store. Force libraries such as
       // dnd-kit and the shared renderer onto the app's React instance so

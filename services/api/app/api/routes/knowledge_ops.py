@@ -11,6 +11,14 @@ from app.api.admin_schemas import (
     KnowledgePublishEnvelope,
     PutKnowledgeDocumentRequest,
 )
+from app.api.content_import_schemas import (
+    ContentImportCandidateEnvelope,
+    ContentImportRunEnvelope,
+    ContentImportRunListEnvelope,
+    GenerateContentImportRequest,
+    ReviewContentCandidateRequest,
+    UpdateContentCandidateRequest,
+)
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.knowledge_import_schemas import (
@@ -30,6 +38,8 @@ from app.api.knowledge_ops_schemas import (
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
 from app.services.admin_store import AdminScope, AdminStore
+from app.services.catalog_store import CatalogScope, CatalogStore
+from app.services.content_import_review import ContentImportReviewService
 from app.services.knowledge_import import (
     MAX_BATCH_BYTES,
     MAX_FILES,
@@ -87,6 +97,67 @@ def _import_scope(principal: StaffPrincipal) -> KnowledgeImportScope:
         company_id=principal.company_id,
         actor_user_id=principal.user_id,
     )
+
+
+def _catalog_scope(principal: StaffPrincipal) -> CatalogScope:
+    if principal.company_id is None:
+        raise ApiError(403, "COMPANY_SCOPE_REQUIRED", "请选择企业作用域后再执行此操作")
+    return CatalogScope(
+        tenant_id=principal.tenant_id,
+        company_id=principal.company_id,
+        actor_user_id=principal.user_id,
+        role=str(getattr(principal.role, "value", principal.role)),
+    )
+
+
+def _catalog_store(request: Request) -> CatalogStore:
+    override = getattr(request.app.state, "catalog_store", None)
+    if override is not None:
+        return override
+    base_url = getattr(request.app.state, "public_card_base_url", None)
+    if base_url is None:
+        origins = getattr(request.app.state.settings, "cors_allowed_origins", ())
+        base_url = next(
+            (
+                origin
+                for origin in origins
+                if isinstance(origin, str)
+                and origin.startswith(("https://", "http://localhost", "http://127.0.0.1"))
+            ),
+            "http://127.0.0.1:4173",
+        )
+    return CatalogStore(
+        request.app.state.session_factory,
+        public_card_base_url=base_url,
+        allow_insecure_http=bool(
+            getattr(request.app.state.settings, "allow_insecure_public_card_http", False)
+        ),
+    )
+
+
+def _content_review_service(request: Request) -> ContentImportReviewService:
+    override = getattr(request.app.state, "content_import_review_service", None)
+    if override is not None:
+        return override
+    return ContentImportReviewService(
+        request.app.state.session_factory,
+        request.app.state.settings,
+    )
+
+
+def _require_category_accept_permission(
+    principal: StaffPrincipal,
+    category: str,
+) -> None:
+    permission = {
+        "enterprise_profile": "company.write",
+        "products": "catalog.write",
+        "case_studies": "catalog.write",
+        "faqs": "knowledge.write",
+    }.get(category)
+    if permission is None:
+        raise ApiError(422, "UNCLASSIFIED_CANDIDATE", "未分类内容需先修改分类")
+    _require_permission(principal, permission)
 
 
 def _require_permission(principal: StaffPrincipal, *permissions: str) -> None:
@@ -177,6 +248,127 @@ async def get_knowledge_import(
             scope=_import_scope(principal), batch_id=batch_id
         )
     )
+
+
+@router.post(
+    "/admin/content-import-runs",
+    response_model=ContentImportRunEnvelope,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="generateContentImportRun",
+)
+async def generate_content_import_run(
+    body: GenerateContentImportRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportRunEnvelope:
+    _require_permission(principal, "knowledge.write")
+    record = await _content_review_service(request).generate(
+        scope=_admin_scope(principal),
+        batch_id=body.batch_id,
+        retry=body.retry,
+        trace_id=request_id_ctx.get(),
+    )
+    return ContentImportRunEnvelope(data=record)
+
+
+@router.get(
+    "/admin/content-import-runs",
+    response_model=ContentImportRunListEnvelope,
+    operation_id="listContentImportRuns",
+)
+async def list_content_import_runs(
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportRunListEnvelope:
+    _require_permission(principal, "knowledge.read")
+    records = await _content_review_service(request).list_runs(
+        scope=_admin_scope(principal)
+    )
+    return ContentImportRunListEnvelope(data=records, total=len(records))
+
+
+@router.get(
+    "/admin/content-import-runs/{run_id}",
+    response_model=ContentImportRunEnvelope,
+    operation_id="getContentImportRun",
+)
+async def get_content_import_run(
+    run_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportRunEnvelope:
+    _require_permission(principal, "knowledge.read")
+    record = await _content_review_service(request).get_run(
+        scope=_admin_scope(principal), run_id=run_id
+    )
+    return ContentImportRunEnvelope(data=record)
+
+
+@router.patch(
+    "/admin/content-import-candidates/{candidate_id}",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="updateContentImportCandidate",
+)
+async def update_content_import_candidate(
+    candidate_id: uuid.UUID,
+    body: UpdateContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    _require_permission(principal, "knowledge.write")
+    record = await _content_review_service(request).update_candidate(
+        scope=_admin_scope(principal), candidate_id=candidate_id, body=body
+    )
+    return ContentImportCandidateEnvelope(data=record)
+
+
+@router.post(
+    "/admin/content-import-candidates/{candidate_id}/accept",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="acceptContentImportCandidate",
+)
+async def accept_content_import_candidate(
+    candidate_id: uuid.UUID,
+    body: ReviewContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    service = _content_review_service(request)
+    candidate = await service.get_candidate(
+        scope=_admin_scope(principal), candidate_id=candidate_id
+    )
+    _require_category_accept_permission(principal, candidate.category)
+    record = await service.accept_candidate(
+        scope=_admin_scope(principal),
+        catalog_scope=_catalog_scope(principal),
+        candidate_id=candidate_id,
+        expected_version=body.expected_version,
+        apply_fields=body.apply_fields,
+        admin=_admin_store(request),
+        catalog=_catalog_store(request),
+        trace_id=request_id_ctx.get(),
+    )
+    return ContentImportCandidateEnvelope(data=record)
+
+
+@router.post(
+    "/admin/content-import-candidates/{candidate_id}/ignore",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="ignoreContentImportCandidate",
+)
+async def ignore_content_import_candidate(
+    candidate_id: uuid.UUID,
+    body: ReviewContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    _require_permission(principal, "knowledge.write")
+    record = await _content_review_service(request).ignore_candidate(
+        scope=_admin_scope(principal),
+        candidate_id=candidate_id,
+        expected_version=body.expected_version,
+    )
+    return ContentImportCandidateEnvelope(data=record)
 
 
 @router.get("/admin/faqs", response_model=FaqListEnvelope, operation_id="listAdminFaqs")
