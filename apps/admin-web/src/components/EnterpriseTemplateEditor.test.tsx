@@ -392,7 +392,7 @@ describe("EnterpriseTemplateEditor", () => {
         window.location.origin,
       ).href,
     );
-    expect(screen.getByRole("link", { name: /预览原图/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /预览原图/, hidden: true })).toHaveAttribute(
       "href",
       expect.stringContaining("/api/v1/public/card-assets/company-1/gallery.webp"),
     );
@@ -434,7 +434,7 @@ describe("EnterpriseTemplateEditor", () => {
     await user.upload(screen.getByLabelText("选择项目视频文件"), file);
     await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
     expect(await screen.findByText("视频文件已上传并写入当前模块。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /测试播放/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /测试播放/, hidden: true })).toHaveAttribute(
       "href",
       expect.stringContaining("/api/v1/public/card-video-assets/company-1/demo.mp4"),
     );

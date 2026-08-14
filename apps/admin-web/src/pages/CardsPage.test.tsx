@@ -171,7 +171,10 @@ describe("CardsPage", () => {
     const pageEditor = await screen.findByRole("dialog", { name: "名片页面编辑器" });
     await user.click(within(pageEditor).getByRole("button", { name: "编辑基础资料" }));
 
-    const basicSettings = await screen.findByRole("dialog");
+    const basicSettingsTitle = await screen.findByText("编辑员工名片");
+    const basicSettings = basicSettingsTitle.closest<HTMLElement>('[role="dialog"]');
+    expect(basicSettings).not.toBeNull();
+    if (!basicSettings) throw new Error("编辑员工名片弹窗未正确渲染");
     expect(within(basicSettings).getByText("编辑员工名片")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "名片页面编辑器" })).not.toBeInTheDocument();
     await user.click(within(basicSettings).getByRole("button", { name: "取消", hidden: true }));

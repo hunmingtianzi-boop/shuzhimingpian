@@ -1822,6 +1822,14 @@ class PlatformOnboardingSession(
                 "status NOT IN ('confirmed','cancelled','expired','failed')"
             ),
         ),
+        Index(
+            "ix_platform_onboarding_retention_cleanup",
+            "retention_cleanup_after",
+            postgresql_where=sql_text(
+                "status IN ('cancelled','expired','failed') "
+                "AND confirmed_at IS NULL AND purged_at IS NULL"
+            ),
+        ),
     )
 
     tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)

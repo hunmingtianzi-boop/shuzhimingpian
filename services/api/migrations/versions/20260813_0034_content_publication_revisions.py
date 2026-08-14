@@ -22,7 +22,12 @@ def upgrade() -> None:
         sa.Column("revision_number", sa.Integer(), nullable=False),
         sa.Column("snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("published_by", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),

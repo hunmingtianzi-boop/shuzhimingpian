@@ -58,7 +58,12 @@ def upgrade() -> None:
 
     op.create_table(
         "content_import_runs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("company_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("batch_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -125,7 +130,12 @@ def upgrade() -> None:
 
     op.create_table(
         "content_import_candidates",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("company_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("run_id", postgresql.UUID(as_uuid=True), nullable=False),
