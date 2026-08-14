@@ -13,7 +13,11 @@ from app.api.errors import ApiError, api_error_handler
 from app.api.knowledge_import_schemas import KnowledgeImportBatchRecord
 from app.api.routes import knowledge_ops
 from app.core.tokens import StaffPrincipal
-from app.services.knowledge_import_store import KnowledgeImportScope, KnowledgeImportStore
+from app.services.knowledge_import_store import (
+    KnowledgeImportScope,
+    KnowledgeImportStore,
+    _batch_display_name,
+)
 
 
 class _Store:
@@ -166,3 +170,24 @@ async def test_import_store_sets_actor_in_rls_context(monkeypatch: pytest.Monkey
         "company_id": scope.company_id,
         "actor_user_id": scope.actor_user_id,
     }
+
+
+def test_default_import_name_uses_company_date_and_sequence() -> None:
+    assert (
+        _batch_display_name(
+            requested=None,
+            company_name="星澜科技",
+            created_at=datetime(2026, 8, 14, tzinfo=UTC),
+            sequence_number=3,
+        )
+        == "星澜科技·资料导入·2026-08-14·第 3 次"
+    )
+    assert (
+        _batch_display_name(
+            requested="  自定义导入任务  ",
+            company_name="星澜科技",
+            created_at=datetime(2026, 8, 14, tzinfo=UTC),
+            sequence_number=3,
+        )
+        == "自定义导入任务"
+    )

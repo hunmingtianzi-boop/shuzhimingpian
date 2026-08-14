@@ -144,6 +144,29 @@ def purge_expired_visitor_profiles() -> int:
 
 
 @shared_task(
+    name="cf_worker.purge_expired_platform_onboarding_sessions",
+    ignore_result=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def purge_expired_platform_onboarding_sessions() -> int:
+    async def run() -> int:
+        settings = get_worker_settings()
+        repository = PostgresOutboxRepository(settings)
+        try:
+            return await repository.purge_expired_platform_onboarding_sessions()
+        finally:
+            await repository.close()
+
+    processed = _run_database_poll("purge_expired_platform_onboarding_sessions", run)
+    logger.info(
+        "platform onboarding retention purge completed",
+        extra={"processed": processed},
+    )
+    return processed
+
+
+@shared_task(
     name="cf_worker.poll_scheduled_publishes",
     ignore_result=True,
     acks_late=True,
@@ -219,6 +242,7 @@ __all__ = [
     "poll_outbox",
     "process_outbox_event",
     "purge_expired_visitor_profiles",
+    "purge_expired_platform_onboarding_sessions",
     "poll_scheduled_publishes",
     "poll_knowledge_imports",
 ]

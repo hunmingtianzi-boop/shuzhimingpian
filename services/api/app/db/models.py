@@ -1831,6 +1831,7 @@ class PlatformOnboardingSession(
     credential_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     initial_card_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     tenant_slug: Mapped[str] = mapped_column(String(64), nullable=False)
     tenant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     admin_account: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -1854,6 +1855,11 @@ class PlatformOnboardingSession(
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retention_cleanup_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purge_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
 
 class ModelConfig(

@@ -54,6 +54,7 @@ function onboardingSession(
 ): PlatformOnboardingSession {
   return {
     id,
+    displayName: `${id} 建企任务`,
     status: "processing",
     tenantSlug: `${id}-tenant`,
     version: 2,
@@ -61,6 +62,7 @@ function onboardingSession(
     suggestions: [],
     createdAt: "2026-07-16T09:00:00Z",
     updatedAt: "2026-07-16T09:00:00Z",
+    temporaryCredentialResetAvailable: false,
     ...overrides,
   };
 }
@@ -209,6 +211,7 @@ describe("CurrentPage workspace routing", () => {
     expect(await screen.findByText("企业介绍.pdf")).toBeInTheDocument();
     expect(platformApi.getOnboardingImports).toHaveBeenCalledWith("session-1");
     expect(screen.getByText("1/1 个文件已处理")).toBeInTheDocument();
+    await waitFor(() => expect(platformApi.getOnboarding).toHaveBeenCalledTimes(2));
   });
 
   it("restores only the current user's safe onboarding projection after load and refresh", async () => {
@@ -241,6 +244,9 @@ describe("CurrentPage workspace routing", () => {
 
     renderCurrentPage("platform_admin");
 
+    await user.click(
+      await screen.findByRole("button", { name: /人工复核与确认/ }),
+    );
     expect(await screen.findByText("admin@safe.example")).toBeInTheDocument();
     expect(screen.getByText("安全管理员")).toBeInTheDocument();
     await waitFor(() =>
@@ -255,6 +261,9 @@ describe("CurrentPage workspace routing", () => {
     await user.click(screen.getByRole("button", { name: "刷新进度" }));
 
     await waitFor(() => expect(getOnboarding).toHaveBeenCalledTimes(2));
+    await user.click(
+      await screen.findByRole("button", { name: /人工复核与确认/ }),
+    );
     await waitFor(() =>
       expect(screen.getByLabelText("企业名称")).toHaveValue(
         "安全恢复租户",

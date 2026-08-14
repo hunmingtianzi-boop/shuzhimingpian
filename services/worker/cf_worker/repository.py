@@ -92,6 +92,14 @@ class PostgresOutboxRepository:
             deleted = await connection.scalar(text("SELECT app.purge_expired_visitor_profiles()"))
             return max(int(deleted or 0), 0)
 
+    async def purge_expired_platform_onboarding_sessions(self) -> int:
+        """Purge expired platform onboarding sessions through the restricted function."""
+        async with self._engine.begin() as connection:
+            processed = await connection.scalar(
+                text("SELECT app.purge_expired_platform_onboarding_sessions()")
+            )
+            return max(int(processed or 0), 0)
+
     async def claim_knowledge_imports(self) -> tuple[ClaimedKnowledgeImport, ...]:
         async with self._engine.begin() as connection:
             rows = (

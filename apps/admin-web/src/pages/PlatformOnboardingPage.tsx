@@ -63,10 +63,14 @@ export type PlatformOnboardingAdminSummary = {
   displayName: string;
 };
 
-type ReviewValues = Omit<ConfirmPlatformOnboardingInput, "expectedVersion">;
+type ReviewValues = Omit<
+  ConfirmPlatformOnboardingInput,
+  "expectedVersion" | "candidateSelections"
+>;
 
 export type PlatformOnboardingPageProps = {
   session?: PlatformOnboardingSession | null;
+  sessions?: PlatformOnboardingSession[];
   importItems?: PlatformOnboardingImportItem[];
   adminSummary?: PlatformOnboardingAdminSummary;
   initialReview?: Partial<ReviewValues>;
@@ -74,6 +78,12 @@ export type PlatformOnboardingPageProps = {
   resourceStatus?: "ready" | "loading" | "permission" | "error";
   resourceError?: PlatformOnboardingOperationError;
   onStart: (input: StartPlatformOnboardingInput) => Promise<void>;
+  onOpenSession?: (onboardingSessionId: string) => void;
+  onRename?: (
+    onboardingSessionId: string,
+    expectedVersion: number,
+    displayName: string,
+  ) => Promise<void>;
   onUpload: (onboardingSessionId: string, files: File[]) => Promise<void>;
   onGenerate: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
   onUpdateCandidate?: (
@@ -93,14 +103,26 @@ export type PlatformOnboardingPageProps = {
     reason: string,
     expectedVersion: number,
   ) => Promise<void>;
+  onRegenerateTemporaryCredential?: (
+    onboardingSessionId: string,
+    expectedVersion: number,
+  ) => Promise<PlatformOnboardingSession | void>;
   onRefresh?: () => void;
   onStartAnother?: () => void;
   onOpenEnterprises?: () => void;
 };
 
-type BusyOperation = "start" | "upload" | "generate" | "confirm" | "cancel";
+type BusyOperation =
+  | "start"
+  | "rename"
+  | "upload"
+  | "generate"
+  | "confirm"
+  | "cancel"
+  | "regenerate";
 
 const emptyStart: StartPlatformOnboardingInput = {
+  displayName: "",
   tenantSlug: "",
   tenantName: "",
   adminAccount: "",
@@ -225,6 +247,60 @@ function candidateTitle(candidate: PlatformOnboardingCandidate): string {
     || "未命名候选";
 }
 
+const candidateRequiredFields: Partial<
+  Record<PlatformOnboardingCandidateCategory, string[]>
+> = {
+  enterprise_profile: ["company_name"],
+  products: ["name", "summary", "detail"],
+  case_studies: ["title", "background", "solution", "result"],
+  faqs: ["question", "answer"],
+};
+
+function candidateComplete(candidate: PlatformOnboardingCandidate): boolean {
+  return (candidateRequiredFields[candidate.category] ?? []).every((field) =>
+    Boolean(candidate.payload[field]?.trim()),
+  );
+}
+
+function candidateSelectedByDefault(candidate: PlatformOnboardingCandidate): boolean {
+  return candidate.status === "pending_review"
+    && candidate.category !== "unclassified"
+    && candidateComplete(candidate);
+}
+
+function candidateApplyFields(candidate: PlatformOnboardingCandidate): string[] {
+  return candidate.category === "enterprise_profile"
+    ? Object.entries(candidate.payload)
+        .filter(([, value]) => Boolean(value.trim()))
+        .map(([field]) => field)
+    : [];
+}
+
+const onboardingStatusLabels: Record<PlatformOnboardingSession["status"], string> = {
+  draft: "待上传",
+  processing: "处理中",
+  review: "待复核",
+  manual_required: "需人工处理",
+  ready_to_confirm: "待确认",
+  confirmed: "已确认",
+  cancelled: "已取消",
+  expired: "已过期",
+  failed: "失败",
+};
+
+function formatDateTime(value?: string): string {
+  if (!value) return "未设置";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+}
+
 const stepLabels = ["基础信息", "上传解析", "智能分析", "人工确认", "完成"];
 
 function sessionStep(session?: PlatformOnboardingSession | null): number {
@@ -346,6 +422,12 @@ function StartPanel({
           if (valid && !busy) void onStart(input);
         }}
       >
+        <Field label="任务名称（可选）" hint="留空时系统会按企业名称、日期和序号生成。">
+          <Input
+            value={input.displayName ?? ""}
+            onChange={(_, data) => update("displayName", data.value)}
+          />
+        </Field>
         <Field
           label="租户标识"
           required
@@ -519,6 +601,7 @@ function SuggestionCard({
 
 export function PlatformOnboardingPage({
   session,
+  sessions = [],
   importItems = [],
   adminSummary,
   initialReview,
@@ -526,12 +609,15 @@ export function PlatformOnboardingPage({
   resourceStatus = "ready",
   resourceError,
   onStart,
+  onOpenSession,
+  onRename,
   onUpload,
   onGenerate,
   onUpdateCandidate,
   onIgnoreCandidate,
   onConfirm,
   onCancel,
+  onRegenerateTemporaryCredential,
   onRefresh,
   onStartAnother,
   onOpenEnterprises,
@@ -549,8 +635,14 @@ export function PlatformOnboardingPage({
   const [copyError, setCopyError] = useState<string>();
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>();
   const [candidateDrafts, setCandidateDrafts] = useState<Record<string, PlatformOnboardingCandidate>>({});
+  const [candidateSelections, setCandidateSelections] = useState<Record<string, boolean>>({});
+  const [renameValue, setRenameValue] = useState("");
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [confirmedDraftCount, setConfirmedDraftCount] = useState(0);
+  const [activeWorkspaceStep, setActiveWorkspaceStep] = useState<"analysis" | "review">("analysis");
   const cancelOpenerRef = useRef<HTMLButtonElement>(null);
   const previousSessionId = useRef<string | undefined>(undefined);
+  const candidateSelectionSessionId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!session || previousSessionId.current === session.id) return;
@@ -571,6 +663,12 @@ export function PlatformOnboardingPage({
     );
     setCopyNotice(undefined);
     setCopyError(undefined);
+    setRenameValue(session.displayName);
+    setRegenerateOpen(false);
+    setActiveWorkspaceStep("analysis");
+    setConfirmedDraftCount(
+      session.contentReview?.candidates.filter((candidate) => candidate.status === "accepted").length ?? 0,
+    );
   }, [initialReview, session]);
 
   useEffect(() => {
@@ -582,6 +680,18 @@ export function PlatformOnboardingPage({
   useEffect(() => {
     const candidates = session?.contentReview?.candidates ?? [];
     setCandidateDrafts(Object.fromEntries(candidates.map((candidate) => [candidate.id, candidate])));
+    setCandidateSelections((current) => {
+      const sameSession = candidateSelectionSessionId.current === session?.id;
+      candidateSelectionSessionId.current = session?.id;
+      return Object.fromEntries(
+        candidates.map((candidate) => [
+          candidate.id,
+          sameSession && current[candidate.id] !== undefined
+            ? current[candidate.id]
+            : candidateSelectedByDefault(candidate),
+        ]),
+      );
+    });
     setSelectedCandidateId((current) =>
       current && candidates.some((candidate) => candidate.id === current)
         ? current
@@ -620,7 +730,7 @@ export function PlatformOnboardingPage({
       ),
     [review],
   );
-  const terminal = session && ["cancelled", "expired"].includes(session.status);
+  const terminal = session && ["cancelled", "expired", "failed"].includes(session.status);
   const hasImports = importItems.length > 0 || Boolean(session?.importBatchIds.length);
   const importsProcessing =
     busy === "upload" ||
@@ -635,8 +745,28 @@ export function PlatformOnboardingPage({
     !importsProcessing;
   const insightCount = (session?.businessProfile?.length ?? 0) + (session?.suggestions.length ?? 0);
   const hasInsights = insightCount > 0;
+  // Review is a separate, user-controlled step. Parsed files do not require
+  // AI output: the operator can always continue with manual fields once no
+  // upload or analysis request is actively running.
+  const canEnterReview = !importsProcessing && busy !== "generate";
   const confirmationNeedsRecovery =
     operationError?.code === ONBOARDING_CONFIRM_UNCERTAIN_CODE;
+  const candidates = session?.contentReview?.candidates.map(
+    (candidate) => candidateDrafts[candidate.id] ?? candidate,
+  ) ?? [];
+  const selectedCandidates = candidates.filter(
+    (candidate) =>
+      candidateSelections[candidate.id] === true
+      && candidate.status === "pending_review"
+      && candidate.category !== "unclassified"
+      && candidateComplete(candidate),
+  );
+  const ignoredCandidateCount = candidates.filter(
+    (candidate) => candidate.status === "ignored",
+  ).length;
+  const unselectedCandidateCount = candidates.length
+    - selectedCandidates.length
+    - ignoredCandidateCount;
 
   const run = async (operation: BusyOperation, action: () => Promise<void>) => {
     if (busy) return;
@@ -730,7 +860,85 @@ export function PlatformOnboardingPage({
         }
       />
 
-      <Steps current={currentStep} />
+      {sessions.length > 0 && (
+        <section className={styles.historyPanel} aria-labelledby="onboarding-history-title">
+          <div className={styles.historyHeading}>
+            <div>
+              <span>最近任务</span>
+              <h2 id="onboarding-history-title">可继续或回看已结束任务</h2>
+            </div>
+            <small>保留期内可重新打开已确认、已取消和已过期任务。</small>
+          </div>
+          <div className={styles.historyList}>
+            {sessions.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                aria-current={item.id === session?.id ? "true" : undefined}
+                onClick={() => onOpenSession?.(item.id)}
+              >
+                <strong>{item.displayName}</strong>
+                <span>{onboardingStatusLabels[item.status]}</span>
+                <small>
+                  {item.status === "confirmed"
+                    ? `完成于 ${formatDateTime(item.updatedAt)}`
+                    : `到期 ${formatDateTime(item.expiresAt)}`}
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {session && (
+        <section className={styles.currentTask} aria-labelledby="onboarding-current-task-title">
+          <div>
+            <span>当前任务</span>
+            <h2 id="onboarding-current-task-title">{session.displayName}</h2>
+            <p>
+              {onboardingStatusLabels[session.status]}
+              {session.status !== "confirmed" && ` · 到期 ${formatDateTime(session.expiresAt)}`}
+              {` · 版本 ${session.version}`}
+            </p>
+          </div>
+          {onRename && (
+            <div className={styles.renameControl}>
+              <Field label="任务名称">
+                <Input
+                  value={renameValue}
+                  maxLength={120}
+                  disabled={busy === "rename"}
+                  onChange={(_, data) => setRenameValue(data.value)}
+                />
+              </Field>
+              <Button
+                appearance="secondary"
+                disabled={
+                  busy === "rename"
+                  || !renameValue.trim()
+                  || renameValue.trim() === session.displayName
+                }
+                onClick={() =>
+                  void run("rename", async () => {
+                    try {
+                      await onRename(session.id, session.version, renameValue.trim());
+                    } catch (caught) {
+                      if ((caught as PlatformOnboardingOperationError)?.code === "VERSION_CONFLICT") {
+                        onRefresh?.();
+                      }
+                      throw caught;
+                    }
+                  })
+                }
+              >
+                {busy === "rename" ? "正在保存" : "保存名称"}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {(!session || confirmationComplete || terminal) && <Steps current={currentStep} />}
       {activeError && (
         <OperationError
           error={activeError}
@@ -761,6 +969,9 @@ export function PlatformOnboardingPage({
             <p>
               {completedEnterprise.companyName}（{completedEnterprise.tenantSlug}）已生成唯一企业、管理员身份和一张未发布初始名片。
             </p>
+            <p className={styles.draftResultSummary}>
+              本次已接收 {confirmedDraftCount} 条资料草稿；可在企业后台的企业资料、核心业务、案例与知识 FAQ 中继续审核，系统没有自动发布。
+            </p>
             <dl>
               <div><dt>企业 ID</dt><dd>{completedEnterprise.companyId}</dd></div>
               <div><dt>初始名片 ID</dt><dd>{completedEnterprise.initialCardId}</dd></div>
@@ -769,19 +980,21 @@ export function PlatformOnboardingPage({
                 <div><dt>企业管理员账号</dt><dd>{adminSummary.account}</dd></div>
               )}
             </dl>
-            {session.credentialDelivery && (
+            {completedSession.credentialDelivery && (
               <section className={styles.credentialDelivery} aria-label="一次性企业管理员凭证">
                 <div>
                   <strong>一次性登录凭证</strong>
-                  <span>仅此页面展示，7 天内有效；首次登录后必须修改密码。</span>
+                  <span>
+                    仅此页面展示，有效至 {formatDateTime(completedSession.credentialDelivery.expiresAt)}；首次登录后必须修改密码。
+                  </span>
                 </div>
                 <Field label="管理员账号">
                   <div className={styles.deliveryUrlField}>
-                    <Input value={session.credentialDelivery.account} readOnly />
+                    <Input value={completedSession.credentialDelivery.account} readOnly />
                     <Button
                       icon={<Copy24Regular />}
                       aria-label="复制管理员账号"
-                      onClick={() => void copyUrl(session.credentialDelivery!.account, "管理员账号")}
+                      onClick={() => void copyUrl(completedSession.credentialDelivery!.account, "管理员账号")}
                     />
                   </div>
                 </Field>
@@ -789,7 +1002,7 @@ export function PlatformOnboardingPage({
                   <div className={styles.deliveryUrlField}>
                     <Input
                       type="password"
-                      value={session.credentialDelivery.temporaryPassword}
+                      value={completedSession.credentialDelivery.temporaryPassword}
                       readOnly
                       aria-label="一次性临时密码"
                     />
@@ -797,13 +1010,26 @@ export function PlatformOnboardingPage({
                       icon={<Copy24Regular />}
                       aria-label="复制临时密码"
                       onClick={() =>
-                        void copyUrl(session.credentialDelivery!.temporaryPassword, "临时密码")
+                        void copyUrl(completedSession.credentialDelivery!.temporaryPassword, "临时密码")
                       }
                     />
                   </div>
                 </Field>
               </section>
             )}
+            {completedSession.temporaryCredentialResetAvailable
+              && onRegenerateTemporaryCredential && (
+                <div className={styles.credentialActions}>
+                  <Button
+                    appearance="secondary"
+                    disabled={busy === "regenerate"}
+                    onClick={() => setRegenerateOpen(true)}
+                  >
+                    重新生成临时密码
+                  </Button>
+                  <span>仅在企业管理员尚未完成首次改密时可用。</span>
+                </div>
+              )}
             <section className={styles.deliveryPanel} aria-labelledby="onboarding-delivery-title">
               <div>
                 <h3 id="onboarding-delivery-title">网址与交付入口</h3>
@@ -867,8 +1093,21 @@ export function PlatformOnboardingPage({
         <section className="content-panel">
           <ResourceState
             status="empty"
-            title={session.status === "cancelled" ? "开通会话已取消" : "开通会话已过期"}
+            title={
+              session.status === "cancelled"
+                ? "开通会话已取消"
+                : session.status === "failed"
+                  ? "开通会话未完成"
+                  : "开通会话已过期"
+            }
             description="该临时范围不能继续上传、生成或确认，管理员仍不可登录，名片仍不可公开。"
+            emptyAction={
+              onStartAnother ? (
+                <Button appearance="primary" onClick={onStartAnother}>
+                  开通新企业
+                </Button>
+              ) : undefined
+            }
           />
         </section>
       )}
@@ -886,8 +1125,37 @@ export function PlatformOnboardingPage({
             </MessageBar>
           )}
 
-          <div className={styles.workspace}>
-            <section className={styles.sourcesPanel} aria-labelledby="onboarding-sources-title">
+          <div className={styles.workflowLayout}>
+            <nav className={styles.workspaceNav} aria-label="资料辅助建企步骤">
+              <button
+                type="button"
+                aria-current={activeWorkspaceStep === "analysis" ? "step" : undefined}
+                onClick={() => setActiveWorkspaceStep("analysis")}
+              >
+                <span>步骤 2–3</span>
+                <strong>资料与智能候选</strong>
+                <small>{hasInsights ? `${insightCount} 项结论待复核` : hasImports ? "资料处理中" : "可选上传资料"}</small>
+              </button>
+              <button
+                type="button"
+                aria-current={activeWorkspaceStep === "review" ? "step" : undefined}
+                disabled={!canEnterReview}
+                onClick={() => setActiveWorkspaceStep("review")}
+              >
+                <span>步骤 4</span>
+                <strong>人工复核与确认</strong>
+                <small>{canEnterReview ? "确认字段与草稿去向" : "完成解析后进入"}</small>
+              </button>
+              <div>
+                <span>步骤 5</span>
+                <strong>完成与交付</strong>
+                <small>服务端确认后显示</small>
+              </div>
+            </nav>
+
+            <div className={styles.workspace}>
+            {activeWorkspaceStep === "analysis" && (
+              <section className={styles.sourcesPanel} aria-labelledby="onboarding-sources-title">
               <div className={styles.panelHeading}>
                 <div>
                   <span>步骤 2–3</span>
@@ -1027,11 +1295,16 @@ export function PlatformOnboardingPage({
                                   value={candidate.category}
                                   onChange={(event) => {
                                     const category = event.target.value as PlatformOnboardingCandidateCategory;
-                                    updateCandidate({
+                                    const nextCandidate = {
                                       ...candidate,
                                       category,
                                       payload: { ...candidatePayloadDefaults[category] },
-                                    });
+                                    };
+                                    updateCandidate(nextCandidate);
+                                    setCandidateSelections((current) => ({
+                                      ...current,
+                                      [candidate.id]: candidateSelectedByDefault(nextCandidate),
+                                    }));
                                   }}
                                 >
                                   {Object.entries(candidateCategoryLabels).map(([value, label]) => (
@@ -1039,6 +1312,21 @@ export function PlatformOnboardingPage({
                                   ))}
                                 </select>
                               </label>
+                              <Checkbox
+                                checked={candidateSelections[candidate.id] === true}
+                                disabled={
+                                  candidate.status !== "pending_review"
+                                  || candidate.category === "unclassified"
+                                  || !candidateComplete(candidate)
+                                }
+                                label="创建为草稿"
+                                onChange={(_, data) =>
+                                  setCandidateSelections((current) => ({
+                                    ...current,
+                                    [candidate.id]: data.checked === true,
+                                  }))
+                                }
+                              />
                               <span>
                                 {candidate.status === "pending_review"
                                   ? "待确认"
@@ -1067,6 +1355,16 @@ export function PlatformOnboardingPage({
                                 );
                               })}
                             </div>
+                            {!candidateComplete(candidate) && candidate.category !== "unclassified" && (
+                              <p className={styles.candidateSelectionHint}>
+                                补齐必填字段后才能选择“创建为草稿”。
+                              </p>
+                            )}
+                            {candidate.status === "ignored" && (
+                              <p className={styles.candidateSelectionHint}>
+                                已忽略候选保留在导入历史中，不会创建草稿。
+                              </p>
+                            )}
                             <details className={styles.candidateEvidence}>
                               <summary>查看原文证据</summary>
                               <blockquote>{candidate.sourceText}</blockquote>
@@ -1133,9 +1431,24 @@ export function PlatformOnboardingPage({
                   ))
                 )}
               </div>
-            </section>
+              <div className={styles.stepAdvance}>
+                <div>
+                  <strong>{canEnterReview ? "资料与候选已可复核" : "先完成当前处理"}</strong>
+                  <span>{hasInsights ? "进入下一步确认企业字段和草稿去向。" : "不上传资料也可以进入人工填写。"}</span>
+                </div>
+                <Button
+                  appearance="primary"
+                  disabled={!canEnterReview}
+                  onClick={() => setActiveWorkspaceStep("review")}
+                >
+                  下一步：人工复核
+                </Button>
+              </div>
+              </section>
+            )}
 
-            <section className={styles.reviewPanel} aria-labelledby="onboarding-review-title">
+            {activeWorkspaceStep === "review" && (
+              <section className={styles.reviewPanel} aria-labelledby="onboarding-review-title">
               <div className={styles.panelHeading}>
                 <div>
                   <span>步骤 4 / 5</span>
@@ -1153,12 +1466,18 @@ export function PlatformOnboardingPage({
                     const confirmed = await onConfirm(session.id, {
                       ...review,
                       expectedVersion: session.version,
+                      candidateSelections: selectedCandidates.map((candidate) => ({
+                        id: candidate.id,
+                        expectedVersion: candidate.version,
+                        applyFields: candidateApplyFields(candidate),
+                      })),
                     });
                     if (
                       confirmed?.status === "confirmed" &&
                       confirmed.confirmedEnterprise
                     ) {
                       setConfirmedSession(confirmed);
+                      setConfirmedDraftCount(selectedCandidates.length);
                     }
                   });
                 }}
@@ -1222,6 +1541,18 @@ export function PlatformOnboardingPage({
                   <p className={styles.draftNote}>初始名片只创建为草稿，不会自动发布或生成公开链接。</p>
                 </fieldset>
 
+                {candidates.length > 0 && (
+                  <section className={styles.candidateConfirmationSummary} aria-label="候选导入确认摘要">
+                    <strong>候选导入确认</strong>
+                    <div>
+                      <span>创建为草稿 {selectedCandidates.length} 条</span>
+                      <span>本次不创建 {unselectedCandidateCount} 条</span>
+                      <span>已忽略 {ignoredCandidateCount} 条</span>
+                    </div>
+                    <p>选中内容只会进入企业后台草稿；未选、未分类和已忽略候选继续保留在导入历史，不会自动发布。</p>
+                  </section>
+                )}
+
                 <fieldset className={styles.confirmationGate}>
                   <legend>显式确认门</legend>
                   <Checkbox
@@ -1277,7 +1608,9 @@ export function PlatformOnboardingPage({
                   </Button>
                 </div>
               </form>
-            </section>
+              </section>
+            )}
+            </div>
           </div>
 
           <Dialog
@@ -1321,6 +1654,50 @@ export function PlatformOnboardingPage({
             </DialogSurface>
           </Dialog>
         </>
+      )}
+      {completedSession && onRegenerateTemporaryCredential && (
+        <Dialog
+          open={regenerateOpen}
+          onOpenChange={(_, data) => {
+            if (!data.open && busy !== "regenerate") setRegenerateOpen(false);
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>重新生成临时密码</DialogTitle>
+              <DialogContent>
+                <p>
+                  旧临时密码会立即失效。新密码只在本次响应展示，并重新计算七天有效期。
+                </p>
+              </DialogContent>
+              <DialogActions>
+                <Button
+                  appearance="secondary"
+                  disabled={busy === "regenerate"}
+                  onClick={() => setRegenerateOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={busy === "regenerate"}
+                  onClick={() =>
+                    void run("regenerate", async () => {
+                      const updated = await onRegenerateTemporaryCredential(
+                        completedSession.id,
+                        completedSession.version,
+                      );
+                      if (updated?.credentialDelivery) setConfirmedSession(updated);
+                      setRegenerateOpen(false);
+                    })
+                  }
+                >
+                  {busy === "regenerate" ? "正在生成" : "确认重新生成"}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
       )}
     </main>
   );

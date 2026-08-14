@@ -463,6 +463,7 @@ export function PlatformOnboardingRoute() {
     [actorId],
   );
   const [session, setSession] = useState<PlatformOnboardingSession>();
+  const [sessionHistory, setSessionHistory] = useState<PlatformOnboardingSession[]>([]);
   const [sessionOwnerId, setSessionOwnerId] = useState<string>();
   const [importItems, setImportItems] = useState<PlatformOnboardingImportItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -548,16 +549,48 @@ export function PlatformOnboardingRoute() {
     [actorId, storageKey],
   );
 
+  const refreshSessionHistory = useCallback(async () => {
+    if (!actorId) return;
+    const expectedActorId = actorId;
+    try {
+      const values = await platformApi.listOnboarding({ limit: 20, offset: 0 });
+      if (ownerIdRef.current === expectedActorId) setSessionHistory(values);
+    } catch {
+      // History is secondary to the active task. Keep the current task usable
+      // when the compact list cannot be refreshed.
+    }
+  }, [actorId]);
+
+  const replaceSession = useCallback(
+    (value: PlatformOnboardingSession, expectedSessionId?: string) => {
+      if (!actorId || ownerIdRef.current !== actorId || !storageKey) return false;
+      if (
+        expectedSessionId &&
+        activeSessionIdRef.current !== expectedSessionId
+      ) {
+        return false;
+      }
+      activeSessionIdRef.current = value.id;
+      setSession(value);
+      setSessionOwnerId(actorId);
+      window.sessionStorage.setItem(storageKey, value.id);
+      return true;
+    },
+    [actorId, storageKey],
+  );
+
   useEffect(() => {
     ++loadRequestRef.current;
     setLoading(false);
     clearSessionState();
+    setSessionHistory([]);
     if (typeof window === "undefined") return;
     window.sessionStorage.removeItem(LEGACY_ONBOARDING_SESSION_KEY);
     if (!actorId || !storageKey) return;
     const stored = window.sessionStorage.getItem(storageKey);
     if (stored) void loadSession(stored);
-  }, [actorId, clearSessionState, loadSession, storageKey]);
+    void refreshSessionHistory();
+  }, [actorId, clearSessionState, loadSession, refreshSessionHistory, storageKey]);
 
   const activeSession =
     actorId && sessionOwnerId === actorId ? session : undefined;
@@ -590,7 +623,23 @@ export function PlatformOnboardingRoute() {
         }
         setImportItems(status.items);
         setImportError(undefined);
-        if (!status.settled) timer = window.setTimeout(poll, 1_500);
+        if (!status.settled) {
+          timer = window.setTimeout(poll, 1_500);
+        } else {
+          // The server reconciles a completed import into the onboarding
+          // session and increments its optimistic-lock version. Refresh the
+          // session before enabling analysis so the first click cannot submit
+          // the stale pre-settlement version and fail with a 409.
+          const updated = await platformApi.getOnboarding(expectedSessionId);
+          if (
+            cancelled ||
+            ownerIdRef.current !== expectedActorId ||
+            activeSessionIdRef.current !== expectedSessionId
+          ) {
+            return;
+          }
+          replaceSession(updated, expectedSessionId);
+        }
       } catch (caught) {
         if (
           cancelled ||
@@ -614,7 +663,7 @@ export function PlatformOnboardingRoute() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [activeSession?.id, activeSession?.status, actorId, importBatchKey]);
+  }, [activeSession?.id, activeSession?.status, actorId, importBatchKey, replaceSession]);
 
   useEffect(() => {
     if (!actorId) {
@@ -653,28 +702,11 @@ export function PlatformOnboardingRoute() {
     };
   }, [actorId]);
 
-  const replaceSession = useCallback(
-    (value: PlatformOnboardingSession, expectedSessionId?: string) => {
-      if (!actorId || ownerIdRef.current !== actorId || !storageKey) return false;
-      if (
-        expectedSessionId &&
-        activeSessionIdRef.current !== expectedSessionId
-      ) {
-        return false;
-      }
-      activeSessionIdRef.current = value.id;
-      setSession(value);
-      setSessionOwnerId(actorId);
-      window.sessionStorage.setItem(storageKey, value.id);
-      return true;
-    },
-    [actorId, storageKey],
-  );
-
   return (
     <PlatformOnboardingPage
       key={`${actorId ?? "anonymous"}:${activeSession?.id ?? "new"}:${projectionRevision}`}
       session={activeSession}
+      sessions={sessionHistory}
       importItems={activeSession ? importItems : []}
       adminSummary={activeSession ? adminSummary : undefined}
       initialReview={activeSession ? initialReview : undefined}
@@ -697,6 +729,16 @@ export function PlatformOnboardingRoute() {
         setImportItems([]);
         setImportError(undefined);
         replaceSession(created);
+        void refreshSessionHistory();
+      }}
+      onOpenSession={(sessionId) => void loadSession(sessionId)}
+      onRename={async (sessionId, expectedVersion, displayName) => {
+        const updated = await platformApi.renameOnboarding(sessionId, {
+          expectedVersion,
+          displayName,
+        });
+        replaceSession(updated, sessionId);
+        void refreshSessionHistory();
       }}
       onUpload={async (sessionId: string, files: File[]) => {
         const updated = await platformApi.uploadOnboardingDocuments(sessionId, files);
@@ -730,6 +772,7 @@ export function PlatformOnboardingRoute() {
           reload: () => platformApi.getOnboarding(sessionId),
         });
         replaceSession(updated, sessionId);
+        void refreshSessionHistory();
         return updated;
       }}
       onCancel={async (
@@ -743,6 +786,16 @@ export function PlatformOnboardingRoute() {
           expectedVersion,
         );
         replaceSession(updated, sessionId);
+        void refreshSessionHistory();
+      }}
+      onRegenerateTemporaryCredential={async (sessionId, expectedVersion) => {
+        const updated = await platformApi.regenerateOnboardingTemporaryCredential(
+          sessionId,
+          expectedVersion,
+        );
+        replaceSession(updated, sessionId);
+        void refreshSessionHistory();
+        return updated;
       }}
       onRefresh={() => {
         if (activeSession?.id) void loadSession(activeSession.id);

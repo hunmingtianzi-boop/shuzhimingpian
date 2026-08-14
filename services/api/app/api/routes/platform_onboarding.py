@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 
 from app.api.content_import_schemas import (
     ContentImportCandidateEnvelope,
@@ -19,10 +19,14 @@ from app.api.platform_schemas import (
     PlatformOnboardingImportStatusEnvelope,
     PlatformOnboardingSessionEnvelope,
     PlatformOnboardingSessionListEnvelope,
+    RegenerateTemporaryCredentialRequest,
+    RenamePlatformOnboardingRequest,
     StartPlatformOnboardingRequest,
 )
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
+from app.services.admin_store import AdminStore
+from app.services.catalog_store import CatalogStore
 from app.services.knowledge_import import (
     MAX_BATCH_BYTES,
     MAX_FILES,
@@ -49,6 +53,22 @@ def _import_store(request: Request) -> KnowledgeImportStore:
     return KnowledgeImportStore(
         request.app.state.session_factory,
         request.app.state.settings,
+    )
+
+
+def _admin_store(request: Request) -> AdminStore:
+    return AdminStore.from_runtime(
+        session_factory=request.app.state.session_factory,
+        settings=request.app.state.settings,
+        http_client=request.app.state.http_client,
+    )
+
+
+def _catalog_store(request: Request) -> CatalogStore:
+    return CatalogStore(
+        request.app.state.session_factory,
+        public_card_base_url=request.app.state.settings.public_card_base_url,
+        allow_insecure_http=request.app.state.settings.allow_insecure_public_card_http,
     )
 
 
@@ -170,6 +190,28 @@ async def get_onboarding(
     )
 
 
+@router.patch(
+    "/{onboarding_id}",
+    response_model=PlatformOnboardingSessionEnvelope,
+    operation_id="renamePlatformOnboardingSession",
+)
+async def rename_onboarding(
+    onboarding_id: uuid.UUID,
+    body: RenamePlatformOnboardingRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> PlatformOnboardingSessionEnvelope:
+    return PlatformOnboardingSessionEnvelope(
+        data=await _service(request).rename(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            display_name=body.display_name,
+            expected_version=body.expected_version,
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
 @router.get(
     "/{onboarding_id}/imports",
     response_model=PlatformOnboardingImportStatusEnvelope,
@@ -272,13 +314,40 @@ async def confirm_onboarding(
     onboarding_id: uuid.UUID,
     body: ConfirmPlatformOnboardingRequest,
     request: Request,
+    response: Response,
     principal: StaffDependency,
 ) -> PlatformOnboardingSessionEnvelope:
+    response.headers["Cache-Control"] = "private, no-store"
     return PlatformOnboardingSessionEnvelope(
         data=await _service(request).confirm(
             actor=_actor(principal),
             onboarding_id=onboarding_id,
             body=body,
+            admin=_admin_store(request),
+            catalog=_catalog_store(request),
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
+@router.post(
+    "/{onboarding_id}/temporary-credential:regenerate",
+    response_model=PlatformOnboardingSessionEnvelope,
+    operation_id="regeneratePlatformOnboardingTemporaryCredential",
+)
+async def regenerate_temporary_credential(
+    onboarding_id: uuid.UUID,
+    body: RegenerateTemporaryCredentialRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+) -> PlatformOnboardingSessionEnvelope:
+    response.headers["Cache-Control"] = "private, no-store"
+    return PlatformOnboardingSessionEnvelope(
+        data=await _service(request).regenerate_temporary_credential(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            expected_version=body.expected_version,
             trace_id=request_id_ctx.get(),
         )
     )

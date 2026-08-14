@@ -9,12 +9,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.content_import_schemas import (
+    ContentImportCandidateRecord,
+    ContentImportRunRecord,
+)
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError, api_error_handler
 from app.api.knowledge_import_schemas import KnowledgeImportBatchRecord
 from app.api.platform_schemas import (
     PlatformOnboardingImportStatusRecord,
     PlatformOnboardingSessionRecord,
+    TemporaryCredentialDelivery,
 )
 from app.api.routes import platform_onboarding as routes
 from app.core.tokens import StaffPrincipal
@@ -24,6 +29,7 @@ from app.services.platform_onboarding import (
     _SUGGESTION_SYSTEM_PROMPT,
     PlatformOnboardingImportScope,
     PlatformOnboardingService,
+    _default_onboarding_display_name,
     _parse_suggestions,
 )
 
@@ -44,8 +50,53 @@ def _principal(role: str = "platform_admin") -> StaffPrincipal:
 class RouteService:
     def __init__(self) -> None:
         now = datetime.now(UTC)
+        run_id = uuid.uuid4()
+        batch_id = uuid.uuid4()
+        content_review = ContentImportRunRecord(
+            id=run_id,
+            batch_id=batch_id,
+            status="review",
+            provider="integration",
+            model="review-v1",
+            attempts=1,
+            counts={"accepted": 1, "pending_review": 1},
+            candidates=[
+                ContentImportCandidateRecord(
+                    id=uuid.uuid4(),
+                    run_id=run_id,
+                    category="products",
+                    payload={"name": "Accepted product"},
+                    source_id="source-accepted",
+                    source_text="accepted evidence",
+                    confidence=0.9,
+                    status="accepted",
+                    target_resource_type="product",
+                    target_resource_id=uuid.uuid4(),
+                    version=2,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                ContentImportCandidateRecord(
+                    id=uuid.uuid4(),
+                    run_id=run_id,
+                    category="faqs",
+                    payload={"question": "Pending?", "answer": "Pending."},
+                    source_id="source-pending",
+                    source_text="pending evidence",
+                    confidence=0.8,
+                    status="pending_review",
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ],
+            completed_at=now,
+            created_at=now,
+            updated_at=now,
+        )
         self.record = PlatformOnboardingSessionRecord(
             id=uuid.uuid4(),
+            display_name="Acme·资料导入·2026-08-14·第 1 次",
             status="draft",
             tenant_slug="acme-demo",
             tenant_name="Acme",
@@ -54,6 +105,8 @@ class RouteService:
             initial_card_display_name="Acme",
             initial_card_title="Acme Official Card",
             version=1,
+            import_batch_ids=[batch_id],
+            content_review=content_review,
             expires_at=now + timedelta(hours=24),
             created_at=now,
             updated_at=now,
@@ -74,9 +127,16 @@ class RouteService:
         self.calls.append(("get", kwargs))
         return self.record
 
-    async def get_import_status(
-        self, **kwargs: Any
-    ) -> PlatformOnboardingImportStatusRecord:
+    async def rename(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
+        self.calls.append(("rename", kwargs))
+        return self.record.model_copy(
+            update={
+                "display_name": kwargs["display_name"],
+                "version": kwargs["expected_version"] + 1,
+            }
+        )
+
+    async def get_import_status(self, **kwargs: Any) -> PlatformOnboardingImportStatusRecord:
         self.calls.append(("import_status", kwargs))
         return PlatformOnboardingImportStatusRecord(
             session_id=self.record.id,
@@ -96,17 +156,11 @@ class RouteService:
             ),
         )
 
-    async def attach_import_batch(
-        self, **kwargs: Any
-    ) -> PlatformOnboardingSessionRecord:
+    async def attach_import_batch(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
         self.calls.append(("attach", kwargs))
-        return self.record.model_copy(
-            update={"status": "processing", "version": 2}
-        )
+        return self.record.model_copy(update={"status": "processing", "version": 2})
 
-    async def generate_suggestions(
-        self, **kwargs: Any
-    ) -> PlatformOnboardingSessionRecord:
+    async def generate_suggestions(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
         self.calls.append(("suggestions", kwargs))
         return self.record.model_copy(update={"status": "manual_required", "version": 2})
 
@@ -117,6 +171,23 @@ class RouteService:
     async def cancel(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
         self.calls.append(("cancel", kwargs))
         return self.record.model_copy(update={"status": "cancelled", "version": 2})
+
+    async def regenerate_temporary_credential(
+        self, **kwargs: Any
+    ) -> PlatformOnboardingSessionRecord:
+        self.calls.append(("credential.regenerate", kwargs))
+        return self.record.model_copy(
+            update={
+                "status": "confirmed",
+                "version": kwargs["expected_version"] + 1,
+                "credential_delivery": TemporaryCredentialDelivery(
+                    account="admin@acme.test",
+                    temporary_password="Temporary-Only-123",  # noqa: S106
+                    expires_at=datetime.now(UTC) + timedelta(days=7),
+                    shown_once=True,
+                ),
+            }
+        )
 
     async def update_content_candidate(self, **kwargs: Any) -> Any:
         self.calls.append(("candidate.update", kwargs))
@@ -183,6 +254,8 @@ def route_client(
     app.dependency_overrides[get_staff_principal] = lambda: principal_box["value"]
     monkeypatch.setattr(routes, "_service", lambda _request: service)
     monkeypatch.setattr(routes, "_import_store", lambda _request: import_store)
+    monkeypatch.setattr(routes, "_admin_store", lambda _request: object())
+    monkeypatch.setattr(routes, "_catalog_store", lambda _request: object())
     with TestClient(app) as client:
         yield client, service, import_store, principal_box
 
@@ -194,12 +267,13 @@ def test_route_surface_is_session_bound(
     paths = client.app.openapi()["paths"]
     root = "/api/v1/platform/onboarding"
     assert set(paths[root]) == {"get", "post"}
-    assert set(paths[f"{root}/{{onboarding_id}}"] ) == {"get"}
+    assert set(paths[f"{root}/{{onboarding_id}}"]) == {"get", "patch"}
     for suffix in ("suggestions", "confirm", "cancel"):
         assert set(paths[f"{root}/{{onboarding_id}}/{suffix}"]) == {"post"}
     assert set(paths[f"{root}/{{onboarding_id}}/imports"]) == {"get", "post"}
     assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}"]) == {"put"}
     assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}/ignore"]) == {"post"}
+    assert set(paths[f"{root}/{{onboarding_id}}/temporary-credential:regenerate"]) == {"post"}
     upload = paths[f"{root}/{{onboarding_id}}/imports"]["post"]
     serialized = str(upload)
     assert "tenant_id" not in serialized
@@ -210,9 +284,7 @@ def test_import_progress_resolves_scope_from_session_only(
     route_client: tuple[TestClient, RouteService, ImportStore, dict[str, StaffPrincipal]],
 ) -> None:
     client, service, _, _ = route_client
-    response = client.get(
-        f"/api/v1/platform/onboarding/{service.record.id}/imports"
-    )
+    response = client.get(f"/api/v1/platform/onboarding/{service.record.id}/imports")
     assert response.status_code == 200
     assert response.json()["data"] == {
         "session_id": str(service.record.id),
@@ -236,7 +308,88 @@ def test_open_session_review_projection_never_includes_a_password(
     assert payload["admin_display_name"] == "Acme Admin"
     assert payload["initial_card_display_name"] == "Acme"
     assert payload["initial_card_title"] == "Acme Official Card"
+    assert payload["content_review"]["counts"] == {
+        "accepted": 1,
+        "pending_review": 1,
+    }
+    assert [candidate["status"] for candidate in payload["content_review"]["candidates"]] == [
+        "accepted",
+        "pending_review",
+    ]
     assert "admin_password" not in payload
+
+    listed = client.get("/api/v1/platform/onboarding")
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["content_review"]["id"] == payload["content_review"]["id"]
+
+
+def test_start_rename_confirm_selection_and_credential_regeneration_contract(
+    route_client: tuple[TestClient, RouteService, ImportStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, service, _, _ = route_client
+    started = client.post(
+        "/api/v1/platform/onboarding",
+        json={
+            "display_name": "Acme 首批资料交接",
+            "tenant_slug": "acme-demo",
+            "tenant_name": "Acme",
+            "admin_account": "admin@acme.test",
+            "admin_display_name": "Acme Admin",
+        },
+    )
+    assert started.status_code == 201
+    start_body = next(payload for name, payload in service.calls if name == "start")["body"]
+    assert start_body.display_name == "Acme 首批资料交接"
+
+    renamed = client.patch(
+        f"/api/v1/platform/onboarding/{service.record.id}",
+        json={"expected_version": 1, "display_name": "Acme 第二版交接"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["display_name"] == "Acme 第二版交接"
+
+    candidate_id = uuid.uuid4()
+    confirmed = client.post(
+        f"/api/v1/platform/onboarding/{service.record.id}/confirm",
+        json={
+            "expected_version": 1,
+            "tenant_name": "Acme",
+            "company_name": "Acme",
+            "initial_card_display_name": "Acme",
+            "candidate_selections": [
+                {
+                    "id": str(candidate_id),
+                    "expected_version": 3,
+                    "apply_fields": ["company_name"],
+                }
+            ],
+        },
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.headers["cache-control"] == "private, no-store"
+    confirm_body = next(payload for name, payload in service.calls if name == "confirm")["body"]
+    assert confirm_body.candidate_selections[0].id == candidate_id
+
+    regenerated = client.post(
+        f"/api/v1/platform/onboarding/{service.record.id}/temporary-credential:regenerate",
+        json={"expected_version": 2},
+    )
+    assert regenerated.status_code == 200
+    assert regenerated.headers["cache-control"] == "private, no-store"
+    delivery = regenerated.json()["data"]["credential_delivery"]
+    assert delivery["temporary_password"] == "Temporary-Only-123"  # noqa: S105
+    assert delivery["shown_once"] is True
+
+
+def test_default_onboarding_name_is_human_readable() -> None:
+    assert (
+        _default_onboarding_display_name(
+            enterprise_name="星澜科技",
+            created_at=datetime(2026, 8, 14, tzinfo=UTC),
+            sequence_number=2,
+        )
+        == "星澜科技·资料导入·2026-08-14·第 2 次"
+    )
 
 
 @pytest.mark.asyncio
@@ -424,7 +577,8 @@ async def test_settled_import_reconciles_processing_session_for_recovery() -> No
         },
     )()
     changed = await PlatformOnboardingService._reconcile_import_state(  # noqa: SLF001
-        session, row  # type: ignore[arg-type]
+        session,
+        row,  # type: ignore[arg-type]
     )
     assert changed is True
     assert row.status == "manual_required"
@@ -453,7 +607,8 @@ async def test_unsettled_import_keeps_processing_session_unchanged() -> None:
         },
     )()
     changed = await PlatformOnboardingService._reconcile_import_state(  # noqa: SLF001
-        ScalarSession(), row  # type: ignore[arg-type]
+        ScalarSession(),
+        row,  # type: ignore[arg-type]
     )
     assert changed is False
     assert row.status == "processing"
@@ -480,12 +635,32 @@ def test_owner_scope_migration_protects_rows_resources_and_security_definer_read
         Path(__file__).resolve().parents[1]
         / "migrations/versions/20260717_0022_platform_onboarding_owner_scope.py"
     ).read_text(encoding="utf-8")
-    owner_predicate = (
-        "created_by = NULLIF(current_setting('app.user_id', true), '')::uuid"
-    )
+    owner_predicate = "created_by = NULLIF(current_setting('app.user_id', true), '')::uuid"
     assert owner_predicate in migration
     assert "onboarding.created_by = " in migration
     assert "platform_onboarding_platform_only" in migration
     assert "platform_onboarding_imports_settled" in migration
     assert "platform_onboarding_drafts" in migration
     assert "SECURITY DEFINER" in migration
+
+
+def test_handoff_migration_has_narrow_credential_and_retention_contract() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations/versions/20260814_0038_onboarding_content_handoff.py"
+    ).read_text(encoding="utf-8")
+    assert 'revision: str = "20260814_0038"' in migration
+    assert 'down_revision: str | None = "20260813_0037"' in migration
+    assert "staff_credentials_platform_onboarding_confirmed_update" in migration
+    assert "onboarding.status = 'confirmed'" in migration
+    assert "is_enabled AND must_change_password" in migration
+    assert "platform_onboarding_content_reviews(p_session_ids uuid[])" in migration
+    assert "WITH ORDINALITY AS bound_batch" in migration
+    assert "onboarding.created_by = NULLIF" in migration
+    assert "purge_expired_platform_onboarding_sessions" in migration
+    assert "status IN ('cancelled','expired','failed')" in migration
+    assert "confirmed_at IS NULL" in migration
+    assert "expires_at <= pg_catalog.clock_timestamp()" in migration
+    assert "RETURN expired_count + purged_count" in migration
+    assert "audit_logs_retained" in migration
+    assert "cf_ai_card_worker" in migration

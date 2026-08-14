@@ -18,6 +18,7 @@ import type {
   PlatformOnboardingSuggestion,
   PlatformOnboardingCandidate,
   PlatformOnboardingCandidateCategory,
+  RenamePlatformOnboardingInput,
   PlatformOverview,
   PlatformServiceHealth,
   PlatformTaskProjection,
@@ -265,6 +266,7 @@ function onboardingSession(value: unknown): PlatformOnboardingSession {
     : undefined;
   return {
     id: requiredString(value.id, "id"),
+    displayName: requiredString(value.display_name, "display_name"),
     status: oneOf(value.status, onboardingStatuses, "status"),
     tenantSlug: requiredString(value.tenant_slug, "tenant_slug"),
     tenantName: optionalString(value.tenant_name, "tenant_name"),
@@ -307,6 +309,10 @@ function onboardingSession(value: unknown): PlatformOnboardingSession {
             shownOnce: true,
           }
         : undefined,
+    temporaryCredentialResetAvailable: requiredBoolean(
+      value.temporary_credential_reset_available,
+      "temporary_credential_reset_available",
+    ),
     createdAt: requiredString(value.created_at, "created_at"),
     updatedAt: requiredString(value.updated_at, "updated_at"),
   };
@@ -777,6 +783,7 @@ export function createPlatformApi(client: ApiClient) {
       input: StartPlatformOnboardingInput,
     ): Promise<PlatformOnboardingSession> {
       const payload = await client.post("/platform/onboarding", {
+        display_name: input.displayName?.trim() || null,
         tenant_slug: input.tenantSlug.trim(),
         tenant_name: input.tenantName?.trim() || null,
         admin_account: input.adminAccount.trim(),
@@ -785,9 +792,38 @@ export function createPlatformApi(client: ApiClient) {
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
     },
 
+    async listOnboarding(
+      options: { limit?: number; offset?: number } = {},
+    ): Promise<PlatformOnboardingSession[]> {
+      const params = new URLSearchParams({
+        limit: String(options.limit ?? 20),
+        offset: String(options.offset ?? 0),
+      });
+      const values = unwrapData(
+        await client.get(`/platform/onboarding?${params.toString()}`),
+        "资料辅助建企任务列表",
+      );
+      if (!Array.isArray(values)) invalid("资料辅助建企任务列表");
+      return values.map(onboardingSession);
+    },
+
     async getOnboarding(sessionId: string): Promise<PlatformOnboardingSession> {
       const payload = await client.get(
         `/platform/onboarding/${encodeURIComponent(sessionId)}`,
+      );
+      return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
+    },
+
+    async renameOnboarding(
+      sessionId: string,
+      input: RenamePlatformOnboardingInput,
+    ): Promise<PlatformOnboardingSession> {
+      const payload = await client.patch(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}`,
+        {
+          expected_version: input.expectedVersion,
+          display_name: input.displayName.trim(),
+        },
       );
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
     },
@@ -870,9 +906,25 @@ export function createPlatformApi(client: ApiClient) {
           initial_card_title: input.initialCardTitle?.trim() || null,
           assistant_name: input.assistantName?.trim() || null,
           welcome_message: input.welcomeMessage?.trim() || null,
+          candidate_selections: input.candidateSelections.map((selection) => ({
+            id: selection.id,
+            expected_version: selection.expectedVersion,
+            apply_fields: selection.applyFields,
+          })),
         },
       );
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
+    },
+
+    async regenerateOnboardingTemporaryCredential(
+      sessionId: string,
+      expectedVersion: number,
+    ): Promise<PlatformOnboardingSession> {
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/temporary-credential:regenerate`,
+        { expected_version: expectedVersion },
+      );
+      return onboardingSession(unwrapData(payload, "一次性企业管理员凭证"));
     },
 
     async cancelOnboarding(

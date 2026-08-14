@@ -361,6 +361,7 @@ export type PlatformOnboardingStatus =
   | "failed";
 
 export type StartPlatformOnboardingInput = {
+  displayName?: string;
   tenantSlug: string;
   tenantName?: string;
   adminAccount: string;
@@ -430,6 +431,7 @@ export type PlatformOnboardingContentReview = {
 
 export type PlatformOnboardingSession = {
   id: string;
+  displayName: string;
   status: PlatformOnboardingStatus;
   tenantSlug: string;
   tenantName?: string;
@@ -445,6 +447,7 @@ export type PlatformOnboardingSession = {
   expiresAt?: string;
   confirmedEnterprise?: CreatedPlatformEnterprise;
   credentialDelivery?: TemporaryCredentialDelivery;
+  temporaryCredentialResetAvailable: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -474,6 +477,7 @@ export type PlatformOnboardingImportStatus = {
 
 export type ConfirmPlatformOnboardingInput = {
   expectedVersion: number;
+  candidateSelections: PlatformOnboardingCandidateSelection[];
   tenantName: string;
   companyName: string;
   industry?: string;
@@ -483,6 +487,17 @@ export type ConfirmPlatformOnboardingInput = {
   initialCardTitle?: string;
   assistantName?: string;
   welcomeMessage?: string;
+};
+
+export type PlatformOnboardingCandidateSelection = {
+  id: string;
+  expectedVersion: number;
+  applyFields: string[];
+};
+
+export type RenamePlatformOnboardingInput = {
+  expectedVersion: number;
+  displayName: string;
 };
 
 export type PlatformCompanyAggregate = {

@@ -25,6 +25,21 @@ def test_celery_uses_redis_late_ack_and_visibility_larger_than_database_lease() 
         "queue": "outbox.poll",
         "expires": settings.profile_retention_purge_seconds,
     }
+    onboarding_retention = celery_app.conf.beat_schedule[
+        "purge-expired-platform-onboarding-sessions"
+    ]
+    assert (
+        onboarding_retention["task"]
+        == "cf_worker.purge_expired_platform_onboarding_sessions"
+    )
+    assert (
+        onboarding_retention["schedule"]
+        == settings.platform_onboarding_retention_purge_seconds
+    )
+    assert onboarding_retention["options"] == {
+        "queue": "outbox.poll",
+        "expires": settings.platform_onboarding_retention_purge_seconds,
+    }
     scheduled_publish = celery_app.conf.beat_schedule["poll-scheduled-publishes"]
     assert scheduled_publish["task"] == "cf_worker.poll_scheduled_publishes"
     assert scheduled_publish["schedule"] == settings.scheduled_publish_poll_seconds

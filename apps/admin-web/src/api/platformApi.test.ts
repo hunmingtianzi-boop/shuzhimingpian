@@ -40,6 +40,7 @@ function llmProfileResponse(overrides: Record<string, unknown> = {}) {
 function onboardingResponse(overrides: Record<string, unknown> = {}) {
   return {
     id: "session/one",
+    display_name: "Acme 建企任务",
     status: "review",
     tenant_slug: "acme-demo",
     tenant_name: "Acme",
@@ -67,6 +68,7 @@ function onboardingResponse(overrides: Record<string, unknown> = {}) {
     ],
     expires_at: "2026-07-16T12:00:00Z",
     confirmed_enterprise: null,
+    temporary_credential_reset_available: false,
     created_at: "2026-07-15T10:00:00Z",
     updated_at: "2026-07-15T12:00:00Z",
     ...overrides,
@@ -401,6 +403,7 @@ describe("platformApi", () => {
       post: vi.fn().mockResolvedValue({ data: onboardingResponse() }),
     } as unknown as ApiClient;
     await createPlatformApi(client).startOnboarding({
+      displayName: "Acme 首次建企",
       tenantSlug: "acme",
       tenantName: "Acme Tenant",
       adminAccount: "admin@acme.test",
@@ -408,7 +411,62 @@ describe("platformApi", () => {
     });
     expect(client.post).toHaveBeenCalledWith(
       "/platform/onboarding",
+      expect.objectContaining({
+        display_name: "Acme 首次建企",
+        tenant_slug: "acme",
+      }),
+    );
+    expect(client.post).toHaveBeenCalledWith(
+      "/platform/onboarding",
       expect.not.objectContaining({ admin_password: expect.anything() }),
+    );
+  });
+
+  it("lists, renames and regenerates named onboarding tasks with optimistic versions", async () => {
+    const regenerated = onboardingResponse({
+      status: "confirmed",
+      version: 5,
+      temporary_credential_reset_available: true,
+      credential_delivery: {
+        account: "admin@acme.test",
+        temporary_password: "one-time-password-2026",
+        expires_at: "2026-07-22T12:00:00Z",
+        shown_once: true,
+      },
+    });
+    const client = {
+      get: vi.fn().mockResolvedValue({ data: [onboardingResponse()], total: 1 }),
+      patch: vi.fn().mockResolvedValue({
+        data: onboardingResponse({ display_name: "Acme 华东建企", version: 4 }),
+      }),
+      post: vi.fn().mockResolvedValue({ data: regenerated }),
+    } as unknown as ApiClient;
+    const api = createPlatformApi(client);
+
+    const tasks = await api.listOnboarding({ limit: 10, offset: 5 });
+    const renamed = await api.renameOnboarding("session/one", {
+      expectedVersion: 3,
+      displayName: " Acme 华东建企 ",
+    });
+    const reset = await api.regenerateOnboardingTemporaryCredential("session/one", 4);
+
+    expect(tasks[0]).toMatchObject({
+      displayName: "Acme 建企任务",
+      temporaryCredentialResetAvailable: false,
+    });
+    expect(renamed).toMatchObject({ displayName: "Acme 华东建企", version: 4 });
+    expect(reset.credentialDelivery).toMatchObject({
+      temporaryPassword: "one-time-password-2026",
+      expiresAt: "2026-07-22T12:00:00Z",
+    });
+    expect(client.get).toHaveBeenCalledWith("/platform/onboarding?limit=10&offset=5");
+    expect(client.patch).toHaveBeenCalledWith("/platform/onboarding/session%2Fone", {
+      expected_version: 3,
+      display_name: "Acme 华东建企",
+    });
+    expect(client.post).toHaveBeenCalledWith(
+      "/platform/onboarding/session%2Fone/temporary-credential:regenerate",
+      { expected_version: 4 },
     );
   });
 
@@ -654,6 +712,7 @@ describe("platformApi", () => {
     await api.generateOnboardingSuggestions("session/one", 3);
     await api.confirmOnboarding("session/one", {
       expectedVersion: 3,
+      candidateSelections: [],
       tenantName: "Acme",
       companyName: "Acme 商务",
       initialCardDisplayName: "管理员",
@@ -671,6 +730,7 @@ describe("platformApi", () => {
         expected_version: 3,
         company_name: "Acme 商务",
         initial_card_display_name: "管理员",
+        candidate_selections: [],
       }),
     );
   });

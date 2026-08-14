@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -51,14 +52,16 @@ class KnowledgeImportStore:
         batch_id = uuid.uuid4()
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
-            await session.scalar(
-                select(Company.id)
+            company = await session.scalar(
+                select(Company)
                 .where(
                     Company.tenant_id == scope.tenant_id,
                     Company.id == scope.company_id,
                 )
                 .with_for_update()
             )
+            if company is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
             last_sequence = int(
                 await session.scalar(
                     select(func.max(KnowledgeImportBatch.sequence_number)).where(
@@ -71,7 +74,8 @@ class KnowledgeImportStore:
             sequence_number = last_sequence + 1
             resolved_name = _batch_display_name(
                 requested=display_name,
-                items=items,
+                company_name=company.name,
+                created_at=datetime.now(UTC),
                 sequence_number=sequence_number,
             )
             batch = KnowledgeImportBatch(
@@ -316,13 +320,12 @@ __all__ = ["KnowledgeImportScope", "KnowledgeImportStore", "PendingImport"]
 
 
 def _batch_display_name(
-    *, requested: str | None, items: list[PendingImport], sequence_number: int
+    *,
+    requested: str | None,
+    company_name: str,
+    created_at: datetime,
+    sequence_number: int,
 ) -> str:
     if requested and requested.strip():
         return requested.strip()[:120]
-    first = items[0].file_name.rsplit(".", 1)[0].strip() if items else ""
-    if first and len(items) == 1:
-        return first[:120]
-    if first:
-        return f"{first}等 {len(items)} 份资料"[:120]
-    return f"资料导入 #{sequence_number:03d}"
+    return (f"{company_name.strip()}·资料导入·{created_at:%Y-%m-%d}·第 {sequence_number} 次")[:120]

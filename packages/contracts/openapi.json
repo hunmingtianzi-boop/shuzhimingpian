@@ -259,6 +259,65 @@
         }
       }
     },
+    "/auth/password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change Password",
+        "operationId": "changeStaffPassword",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangePasswordEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/company/profile": {
       "get": {
         "tags": [
@@ -8921,6 +8980,164 @@
         }
       }
     },
+    "/platform/onboarding/{onboarding_id}/candidates/{candidate_id}": {
+      "put": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Update Onboarding Candidate",
+        "operationId": "updatePlatformOnboardingCandidate",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContentCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentImportCandidateEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/onboarding/{onboarding_id}/candidates/{candidate_id}/ignore": {
+      "post": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Ignore Onboarding Candidate",
+        "operationId": "ignorePlatformOnboardingCandidate",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewContentCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentImportCandidateEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/platform/onboarding/{onboarding_id}": {
       "get": {
         "tags": [
@@ -8956,6 +9173,73 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOnboardingSessionEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Rename Onboarding",
+        "operationId": "renamePlatformOnboardingSession",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePlatformOnboardingRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9216,6 +9500,75 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ConfirmPlatformOnboardingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOnboardingSessionEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/onboarding/{onboarding_id}/temporary-credential:regenerate": {
+      "post": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Regenerate Temporary Credential",
+        "operationId": "regeneratePlatformOnboardingTemporaryCredential",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateTemporaryCredentialRequest"
               }
             }
           }
@@ -14171,7 +14524,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -14204,7 +14557,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14218,7 +14571,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -14233,7 +14586,7 @@
           "files": {
             "items": {
               "type": "string",
-              "contentMediaType": "application/octet-stream"
+              "format": "binary"
             },
             "type": "array",
             "title": "Files"
@@ -14596,7 +14949,7 @@
             "title": "Version"
           },
           "document": {
-            "$ref": "#/components/schemas/EnterpriseTemplateDocument"
+            "$ref": "#/components/schemas/EnterpriseTemplateDocument-Output"
           }
         },
         "additionalProperties": false,
@@ -15070,6 +15423,54 @@
         ],
         "title": "CaseStudyRecord"
       },
+      "ChangePasswordData": {
+        "properties": {
+          "changed": {
+            "type": "boolean",
+            "title": "Changed",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ChangePasswordData"
+      },
+      "ChangePasswordEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChangePasswordData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ChangePasswordEnvelope"
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 12,
+            "title": "New Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordRequest"
+      },
       "CitationView": {
         "properties": {
           "id": {
@@ -15328,6 +15729,14 @@
               }
             ],
             "title": "Welcome Message"
+          },
+          "candidate_selections": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformOnboardingCandidateSelection"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Candidate Selections"
           }
         },
         "additionalProperties": false,
@@ -16156,7 +16565,7 @@
           "template_document": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EnterpriseTemplateDocument"
+                "$ref": "#/components/schemas/EnterpriseTemplateDocument-Input"
               },
               {
                 "type": "null"
@@ -16957,6 +17366,11 @@
           },
           "membership": {
             "$ref": "#/components/schemas/StaffMembershipView"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -17998,7 +18412,293 @@
         "type": "object",
         "title": "EnterpriseTemplateBackground"
       },
-      "EnterpriseTemplateBlock": {
+      "EnterpriseTemplateBlock-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "rich_text",
+              "business_collection",
+              "image_gallery",
+              "video_link",
+              "case_collection",
+              "trust_panel",
+              "faq",
+              "cta",
+              "ai_assistant",
+              "action_collection"
+            ],
+            "title": "Type"
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible",
+            "default": true
+          },
+          "show_title": {
+            "type": "boolean",
+            "title": "Show Title",
+            "default": true
+          },
+          "directory_enabled": {
+            "type": "boolean",
+            "title": "Directory Enabled",
+            "default": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
+          },
+          "layout_variant": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "list",
+              "grid",
+              "carousel",
+              "featured",
+              "mosaic",
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Layout Variant",
+            "default": "auto"
+          },
+          "item_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 12.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Limit"
+          },
+          "action_template": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "shortcuts",
+                  "media",
+                  "event",
+                  "banner",
+                  "articles",
+                  "video",
+                  "buttons"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Template"
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseTemplatePresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "image_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Image Urls"
+          },
+          "gallery_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateGalleryItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Gallery Items"
+          },
+          "video_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Url"
+          },
+          "video_cover_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Cover Url"
+          },
+          "product_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Product Ids"
+          },
+          "product_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateProductItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Product Items"
+          },
+          "product_overrides": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateProductOverride"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Product Overrides"
+          },
+          "case_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Case Ids"
+          },
+          "case_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateCaseItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Case Items"
+          },
+          "case_overrides": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateCaseOverride"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Case Overrides"
+          },
+          "faq_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "all_published",
+                  "selected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faq Mode"
+          },
+          "faq_document_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Faq Document Ids"
+          },
+          "cta_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Label"
+          },
+          "cta_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Url"
+          },
+          "action_items": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateActionItem"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Action Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "title": "EnterpriseTemplateBlock",
+        "description": "A deliberately small, safe block contract for public enterprise cards."
+      },
+      "EnterpriseTemplateBlock-Output": {
         "properties": {
           "id": {
             "type": "string",
@@ -18548,7 +19248,7 @@
         ],
         "title": "EnterpriseTemplateCaseOverride"
       },
-      "EnterpriseTemplateDocument": {
+      "EnterpriseTemplateDocument-Input": {
         "properties": {
           "schema_version": {
             "type": "integer",
@@ -18568,7 +19268,38 @@
           },
           "blocks": {
             "items": {
-              "$ref": "#/components/schemas/EnterpriseTemplateBlock"
+              "$ref": "#/components/schemas/EnterpriseTemplateBlock-Input"
+            },
+            "type": "array",
+            "maxItems": 24,
+            "title": "Blocks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EnterpriseTemplateDocument"
+      },
+      "EnterpriseTemplateDocument-Output": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "theme_key": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "clean",
+              "warm"
+            ],
+            "title": "Theme Key",
+            "default": "brand"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseTemplateBlock-Output"
             },
             "type": "array",
             "maxItems": 24,
@@ -18926,12 +19657,12 @@
             "title": "Version"
           },
           "draft": {
-            "$ref": "#/components/schemas/EnterpriseTemplateDocument"
+            "$ref": "#/components/schemas/EnterpriseTemplateDocument-Output"
           },
           "published": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EnterpriseTemplateDocument"
+                "$ref": "#/components/schemas/EnterpriseTemplateDocument-Output"
               },
               {
                 "type": "null"
@@ -23073,6 +23804,35 @@
         ],
         "title": "PlatformLlmProfileRecord"
       },
+      "PlatformOnboardingCandidateSelection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "apply_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Apply Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "expected_version"
+        ],
+        "title": "PlatformOnboardingCandidateSelection"
+      },
       "PlatformOnboardingImportStatusEnvelope": {
         "properties": {
           "data": {
@@ -23167,6 +23927,12 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name"
           },
           "status": {
             "type": "string",
@@ -23273,6 +24039,16 @@
             "type": "array",
             "title": "Business Profile"
           },
+          "content_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentImportRunRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expires_at": {
             "anyOf": [
               {
@@ -23285,6 +24061,42 @@
             ],
             "title": "Expires At"
           },
+          "retention_cleanup_after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Cleanup After"
+          },
+          "purged_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purged At"
+          },
+          "purge_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Summary"
+          },
           "confirmed_enterprise": {
             "anyOf": [
               {
@@ -23294,6 +24106,21 @@
                 "type": "null"
               }
             ]
+          },
+          "credential_delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemporaryCredentialDelivery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temporary_credential_reset_available": {
+            "type": "boolean",
+            "title": "Temporary Credential Reset Available",
+            "default": false
           },
           "created_at": {
             "type": "string",
@@ -23310,6 +24137,7 @@
         "type": "object",
         "required": [
           "id",
+          "display_name",
           "status",
           "tenant_slug",
           "version",
@@ -25028,6 +25856,21 @@
         ],
         "title": "RecommendationEvidence"
       },
+      "RegenerateTemporaryCredentialRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "RegenerateTemporaryCredentialRequest"
+      },
       "RenameKnowledgeImportBatchRequest": {
         "properties": {
           "display_name": {
@@ -25049,6 +25892,28 @@
           "expected_version"
         ],
         "title": "RenameKnowledgeImportBatchRequest"
+      },
+      "RenamePlatformOnboardingRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "display_name"
+        ],
+        "title": "RenamePlatformOnboardingRequest"
       },
       "ResetMemberPasswordRequest": {
         "properties": {
@@ -25557,6 +26422,19 @@
       },
       "StartPlatformOnboardingRequest": {
         "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "tenant_slug": {
             "type": "string",
             "maxLength": 64,
@@ -25588,12 +26466,6 @@
             "maxLength": 120,
             "minLength": 1,
             "title": "Admin Display Name"
-          },
-          "admin_password": {
-            "type": "string",
-            "format": "password",
-            "title": "Admin Password",
-            "writeOnly": true
           }
         },
         "additionalProperties": false,
@@ -25601,8 +26473,7 @@
         "required": [
           "tenant_slug",
           "admin_account",
-          "admin_display_name",
-          "admin_password"
+          "admin_display_name"
         ],
         "title": "StartPlatformOnboardingRequest"
       },
@@ -25746,6 +26617,41 @@
           "updated_at"
         ],
         "title": "SummaryView"
+      },
+      "TemporaryCredentialDelivery": {
+        "properties": {
+          "account": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Account"
+          },
+          "temporary_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 12,
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "shown_once": {
+            "type": "boolean",
+            "const": true,
+            "title": "Shown Once",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "TemporaryCredentialDelivery"
       },
       "TestPlatformLlmProfileRequest": {
         "properties": {
@@ -25963,7 +26869,7 @@
           },
           "blocks": {
             "items": {
-              "$ref": "#/components/schemas/EnterpriseTemplateBlock"
+              "$ref": "#/components/schemas/EnterpriseTemplateBlock-Input"
             },
             "type": "array",
             "maxItems": 24,
@@ -26291,7 +27197,7 @@
           },
           "blocks": {
             "items": {
-              "$ref": "#/components/schemas/EnterpriseTemplateBlock"
+              "$ref": "#/components/schemas/EnterpriseTemplateBlock-Input"
             },
             "type": "array",
             "maxItems": 24,
@@ -27080,13 +27986,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

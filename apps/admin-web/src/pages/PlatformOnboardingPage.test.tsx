@@ -10,6 +10,7 @@ import {
 
 const reviewSession: PlatformOnboardingSession = {
   id: "onboarding-session-7",
+  displayName: "阿特拉斯资料建企",
   status: "review",
   tenantSlug: "atlas-labs",
   tenantName: "",
@@ -49,6 +50,7 @@ const reviewSession: PlatformOnboardingSession = {
   ],
   createdAt: "2026-07-15T12:00:00Z",
   updatedAt: "2026-07-15T12:05:00Z",
+  temporaryCredentialResetAvailable: false,
 };
 
 const reviewCandidate = {
@@ -88,6 +90,12 @@ function props(overrides: Partial<PlatformOnboardingPageProps> = {}): PlatformOn
 }
 
 async function fillConfirmationGate(user: ReturnType<typeof userEvent.setup>) {
+  if (!screen.queryByRole("heading", { name: "人工复核与确认" })) {
+    await user.click(
+      screen.getByRole("button", { name: /人工复核与确认/ }),
+    );
+    await screen.findByRole("heading", { name: "人工复核与确认" });
+  }
   await user.click(screen.getByRole("checkbox", { name: "我已逐项复核企业信息" }));
   await user.click(
     screen.getByRole("checkbox", { name: "我已核对管理员账号与交付对象" }),
@@ -106,6 +114,114 @@ afterEach(() => {
 });
 
 describe("PlatformOnboardingPage", () => {
+  it("opens retained task history and refreshes the latest name after a rename conflict", async () => {
+    const user = userEvent.setup();
+    const onOpenSession = vi.fn();
+    const onRefresh = vi.fn();
+    const onRename = vi.fn().mockRejectedValue({ status: 409, code: "VERSION_CONFLICT" });
+    const expired = {
+      ...reviewSession,
+      id: "expired-task",
+      displayName: "旧客户建企",
+      status: "expired" as const,
+      expiresAt: "2026-07-16T12:00:00Z",
+    };
+    render(
+      <PlatformOnboardingPage
+        {...props({
+          sessions: [reviewSession, expired],
+          onOpenSession,
+          onRefresh,
+          onRename,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /旧客户建企/ }));
+    expect(onOpenSession).toHaveBeenCalledWith("expired-task");
+    expect(screen.getByText("已过期")).toBeInTheDocument();
+
+    const name = screen.getByLabelText("任务名称");
+    await user.clear(name);
+    await user.type(name, "阿特拉斯华东建企");
+    await user.click(screen.getByRole("button", { name: "保存名称" }));
+
+    await waitFor(() =>
+      expect(onRename).toHaveBeenCalledWith(
+        reviewSession.id,
+        reviewSession.version,
+        "阿特拉斯华东建企",
+      ),
+    );
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("会话版本冲突")).toBeInTheDocument();
+  });
+
+  it("selects only complete pending candidates as drafts and summarizes the final choice", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const session: PlatformOnboardingSession = {
+      ...reviewSession,
+      contentReview: {
+        id: "run-1",
+        batchId: "batch-1",
+        status: "review" as const,
+        provider: "deepseek",
+        model: "flash",
+        attempts: 1,
+        counts: { products: 1, unclassified: 1, faqs: 1 },
+        candidates: [
+          reviewCandidate,
+          {
+            ...reviewCandidate,
+            id: "candidate-unclassified",
+            category: "unclassified" as const,
+            payload: { text: "待判断内容", reason: "缺少上下文" },
+          },
+          {
+            ...reviewCandidate,
+            id: "candidate-ignored",
+            category: "faqs" as const,
+            payload: { question: "是否支持试用？", answer: "请联系企业顾问。" },
+            status: "ignored" as const,
+          },
+        ],
+      },
+    };
+    render(
+      <PlatformOnboardingPage
+        {...props({
+          session,
+          initialReview: {
+            tenantName: "阿特拉斯租户",
+            companyName: "阿特拉斯材料实验室",
+            initialCardDisplayName: "陈工程师",
+          },
+          onConfirm,
+        })}
+      />,
+    );
+
+    expect(await screen.findByRole("checkbox", { name: "创建为草稿" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: /人工复核与确认/ }));
+    const summary = screen.getByLabelText("候选导入确认摘要");
+    expect(summary).toHaveTextContent("创建为草稿 1 条");
+    expect(summary).toHaveTextContent("本次不创建 1 条");
+    expect(summary).toHaveTextContent("已忽略 1 条");
+
+    await fillConfirmationGate(user);
+    await user.click(screen.getByRole("button", { name: "确认并激活企业" }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({
+        candidateSelections: [
+          { id: reviewCandidate.id, expectedVersion: 1, applyFields: [] },
+        ],
+      }),
+    );
+  });
+
   it("resets fields when reclassifying and supports explicitly ignoring a candidate", async () => {
     const user = userEvent.setup();
     const onIgnoreCandidate = vi.fn().mockResolvedValue(undefined);
@@ -192,14 +308,17 @@ describe("PlatformOnboardingPage", () => {
     const user = userEvent.setup();
     render(<PlatformOnboardingPage {...props()} />);
 
+    await user.click(screen.getByRole("button", { name: /人工复核与确认/ }));
     const companyInput = await screen.findByLabelText("企业名称");
     expect(companyInput).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: /资料与智能候选/ }));
     const suggestion = screen.getByLabelText("企业名称建议");
     expect(within(suggestion).getByText("阿特拉斯材料实验室专注复合材料研发。")).toBeInTheDocument();
     expect(within(suggestion).getByText("导入项：item-1")).toBeInTheDocument();
     expect(within(suggestion).getByText("高置信 · 生成版本 3")).toBeInTheDocument();
     await user.click(within(suggestion).getByRole("button", { name: "采用建议" }));
-    expect(companyInput).toHaveValue("阿特拉斯材料实验室");
+    await user.click(screen.getByRole("button", { name: /人工复核与确认/ }));
+    expect(screen.getByLabelText("企业名称")).toHaveValue("阿特拉斯材料实验室");
   });
 
   it("blocks analysis and confirmation while a real import item is pending, then unlocks", async () => {
@@ -226,10 +345,7 @@ describe("PlatformOnboardingPage", () => {
     );
 
     expect(screen.getByRole("button", { name: "开始智能分析" })).toBeDisabled();
-    await fillConfirmationGate(user);
-    expect(screen.getByRole("button", { name: "确认并激活企业" })).toBeDisabled();
-    expect(screen.getByText("资料仍在解析，暂不能确认")).toBeInTheDocument();
-    expect(screen.getByText("请等待所有资料解析完成后再复核激活")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /人工复核与确认/ })).toBeDisabled();
     expect(screen.getByRole("region", { name: "资料分析进度" })).toHaveTextContent(
       "正在处理",
     );
@@ -257,6 +373,8 @@ describe("PlatformOnboardingPage", () => {
 
     expect(screen.getByText("1/1 个文件已处理")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始智能分析" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: /人工复核与确认/ }));
+    await fillConfirmationGate(user);
     expect(screen.getByRole("button", { name: "确认并激活企业" })).toBeEnabled();
   });
 
@@ -358,6 +476,60 @@ describe("PlatformOnboardingPage", () => {
     expect(onOpenEnterprises).toHaveBeenCalledTimes(1);
   });
 
+  it("confirms temporary password regeneration and renders the returned password once with its expiry", async () => {
+    const user = userEvent.setup();
+    const completed: PlatformOnboardingSession = {
+      ...reviewSession,
+      status: "confirmed",
+      version: 8,
+      temporaryCredentialResetAvailable: true,
+      confirmedEnterprise: {
+        tenantId: "tenant-1",
+        tenantSlug: "atlas-labs",
+        tenantName: "阿特拉斯租户",
+        companyId: "company-1",
+        companyName: "阿特拉斯材料实验室",
+        status: "active",
+        adminUserId: "user-1",
+        adminMembershipId: "membership-1",
+        initialCardId: "card-1",
+        initialCardSlug: "atlas-card",
+        createdAt: "2026-07-15T12:10:00Z",
+      },
+    };
+    const regenerated: PlatformOnboardingSession = {
+      ...completed,
+      version: 9,
+      credentialDelivery: {
+        account: "admin@atlas.example",
+        temporaryPassword: "new-one-time-password",
+        expiresAt: "2026-07-22T12:30:00Z",
+        shownOnce: true,
+      },
+    };
+    const onRegenerateTemporaryCredential = vi.fn().mockResolvedValue(regenerated);
+    render(
+      <PlatformOnboardingPage
+        {...props({
+          session: completed,
+          onRegenerateTemporaryCredential,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "重新生成临时密码" }));
+    expect(screen.getByText(/旧临时密码会立即失效/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    await waitFor(() =>
+      expect(onRegenerateTemporaryCredential).toHaveBeenCalledWith(completed.id, 8),
+    );
+    expect(await screen.findByLabelText("一次性临时密码")).toHaveValue(
+      "new-one-time-password",
+    );
+    expect(screen.getByText(/有效至/)).toBeInTheDocument();
+  });
+
   it("keeps the confirmed result visible as soon as confirmation resolves, without waiting for a parent rerender", async () => {
     const user = userEvent.setup();
     const confirmed: PlatformOnboardingSession = {
@@ -389,8 +561,8 @@ describe("PlatformOnboardingPage", () => {
     });
     const view = render(<PlatformOnboardingPage {...pageProps} />);
 
-    await waitFor(() => expect(screen.getByLabelText("租户名称")).toHaveValue("阿特拉斯租户"));
     await fillConfirmationGate(user);
+    await waitFor(() => expect(screen.getByLabelText("租户名称")).toHaveValue("阿特拉斯租户"));
     await user.click(screen.getByRole("button", { name: "确认并激活企业" }));
 
     expect(await screen.findByRole("heading", { name: "企业已由服务端确认激活" })).toBeInTheDocument();
@@ -419,10 +591,9 @@ describe("PlatformOnboardingPage", () => {
       />,
     );
 
+    await fillConfirmationGate(user);
     const confirm = screen.getByRole("button", { name: "确认并激活企业" });
     await waitFor(() => expect(screen.getByLabelText("租户名称")).toHaveValue("阿特拉斯租户"));
-    expect(confirm).toBeDisabled();
-    await fillConfirmationGate(user);
     expect(confirm).toBeEnabled();
     await user.click(confirm);
 
@@ -456,8 +627,8 @@ describe("PlatformOnboardingPage", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByLabelText("企业名称")).toHaveValue("阿特拉斯材料实验室"));
     await fillConfirmationGate(user);
+    await waitFor(() => expect(screen.getByLabelText("企业名称")).toHaveValue("阿特拉斯材料实验室"));
     await user.click(screen.getByRole("button", { name: "确认并激活企业" }));
     expect(await screen.findByText("会话版本冲突")).toBeInTheDocument();
     expect(screen.getByText(/请刷新后重新复核/)).toBeInTheDocument();
@@ -515,8 +686,10 @@ describe("PlatformOnboardingPage", () => {
       />,
     );
 
-    expect(screen.getByRole("navigation", { name: "资料辅助建企进度" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "资料辅助建企步骤" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "资料分析与业务归纳" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "人工复核与确认" })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: /人工复核与确认/ }));
     expect(screen.getByRole("heading", { name: "人工复核与确认" })).toBeInTheDocument();
     expect(screen.getByLabelText("开通会话主操作")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消会话" })).toBeVisible();

@@ -83,14 +83,17 @@ Evidence:
 - A platform admin can start a provisional onboarding session, upload a supported file through current `knowledge_import`, and receive sourced/editable enterprise and initial-card suggestions.
 - Provisional credentials cannot log in, provisional cards cannot be public, enterprise roles receive 403, and a session cannot access another session's tenant/import data.
 - LLM failure preserves parsed drafts and allows manual completion; document text is treated as untrusted and cannot trigger tools, external URLs, secret access or automatic activation/publication.
-- Confirm with the current `expected_version` is idempotent and atomically produces exactly one active enterprise/admin plus one employee-independent enterprise official draft card; imported knowledge remains draft. Stale confirmation returns 409.
+- Confirm with the current `expected_version` is idempotent and produces exactly one active enterprise/admin plus one employee-independent enterprise official draft card. Selected valid candidates materialize through the existing review service into traceable unpublished enterprise/product/case/FAQ content; invalid, ignored and unselected candidates remain review history. Stale confirmation returns 409.
+- A one-time temporary password can be regenerated only while first password change is still required; the old password is invalid immediately and plaintext appears in one response only.
+- Platform onboarding/import tasks use editable human-readable names with optimistic conflict handling. Open sessions expire after 24 hours; cancelled/failed/expired provisional resources are cleaned only after 30 days and confirmed enterprises are excluded.
 
 Evidence:
 
 - focused onboarding model/schema/store/route/security/idempotency/prompt-injection tests;
 - focused platform onboarding wizard tests and admin build;
 - one real small-file onboarding smoke from upload through reviewed confirmation;
-- database/API observation before and after confirmation plus cross-session/role denial.
+- database/API observation before and after confirmation plus cross-session/role denial;
+- focused regenerate-password success/rejection, rename conflict, expiry and retention-cleanup tests.
 
 ### AC7 — Runtime ports and deployment base paths do not drift
 

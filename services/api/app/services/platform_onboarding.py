@@ -27,10 +27,12 @@ from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ConfirmPlatformOnboardingRequest,
     EnterpriseRecord,
+    PlatformOnboardingCandidateSelection,
     PlatformOnboardingImportStatusRecord,
     PlatformOnboardingSessionRecord,
     PlatformOnboardingSuggestion,
     StartPlatformOnboardingRequest,
+    TemporaryCredentialDelivery,
 )
 from app.core.config import Settings
 from app.core.pii import PiiCipher
@@ -52,12 +54,13 @@ from app.db.models import (
     User,
 )
 from app.db.session import set_rls_context
-from app.services.admin_store import AdminScope
+from app.services.admin_store import AdminScope, AdminStore
 from app.services.ai_configuration import (
     ENVIRONMENT_LLM_SECRET_REF,
     provision_chat_configuration,
 )
 from app.services.audit import append_audit
+from app.services.catalog_store import CatalogScope, CatalogStore
 from app.services.content_import_review import ContentImportReviewService
 from app.services.knowledge_import_store import KnowledgeImportScope, KnowledgeImportStore
 from app.services.platform_llm_profiles import (
@@ -163,9 +166,10 @@ class PlatformOnboardingImportScope:
 @dataclass(frozen=True, slots=True)
 class _OnboardingReviewProjection:
     admin_account: str
-    admin_display_name: str
-    initial_card_display_name: str
+    admin_display_name: str | None
+    initial_card_display_name: str | None
     initial_card_title: str | None
+    temporary_credential_reset_available: bool
 
 
 class PlatformOnboardingService:
@@ -204,6 +208,10 @@ class PlatformOnboardingService:
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": f"platform-onboarding:{body.tenant_slug}:{account}"},
             )
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                {"key": f"platform-onboarding-sequence:{actor.user_id}"},
+            )
             existing = await session.scalar(
                 select(PlatformOnboardingSession).where(
                     PlatformOnboardingSession.created_by == actor.user_id,
@@ -223,6 +231,26 @@ class PlatformOnboardingService:
                 select(StaffCredential.id).where(StaffCredential.account_normalized == account)
             ):
                 raise ApiError(409, "ACCOUNT_CONFLICT", "管理员登录账号已存在")
+            sequence_number = (
+                int(
+                    await session.scalar(
+                        select(func.count(PlatformOnboardingSession.id)).where(
+                            PlatformOnboardingSession.created_by == actor.user_id
+                        )
+                    )
+                    or 0
+                )
+                + 1
+            )
+            display_name = (
+                body.display_name.strip()
+                if body.display_name
+                else _default_onboarding_display_name(
+                    enterprise_name=provisional_name,
+                    created_at=now,
+                    sequence_number=sequence_number,
+                )
+            )
 
             tenant = Tenant(
                 id=tenant_id,
@@ -314,6 +342,7 @@ class PlatformOnboardingService:
                 credential_id=credential_id,
                 initial_card_id=card_id,
                 created_by=actor.user_id,
+                display_name=display_name,
                 tenant_slug=body.tenant_slug,
                 tenant_name=tenant_name,
                 admin_account=account,
@@ -342,6 +371,7 @@ class PlatformOnboardingService:
                 trace_id=trace_id,
                 event_data={
                     "tenant_slug": body.tenant_slug,
+                    "display_name": display_name,
                     "provisional": True,
                     "credential_enabled": False,
                     "card_status": "draft",
@@ -352,6 +382,49 @@ class PlatformOnboardingService:
             # operation boundary instead of during context-manager commit.
             await session.flush()
             return await self._record_with_review(session, onboarding)
+
+    async def rename(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        display_name: str,
+        expected_version: int,
+        trace_id: str | None,
+    ) -> PlatformOnboardingSessionRecord:
+        self._require_platform(actor)
+        normalized = display_name.strip()
+        if not normalized:
+            raise ApiError(422, "ONBOARDING_NAME_EMPTY", "任务名称不能为空")
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(
+                session,
+                onboarding_id,
+                actor_user_id=actor.user_id,
+                lock=True,
+            )
+            self._require_version(row, expected_version)
+            previous_name = row.display_name
+            row.display_name = normalized[:200]
+            row.version += 1
+            await append_audit(
+                session,
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=actor.user_id,
+                action="platform.onboarding.rename",
+                resource_type="platform_onboarding_session",
+                resource_id=row.id,
+                trace_id=trace_id,
+                event_data={
+                    "previous_name": previous_name,
+                    "display_name": row.display_name,
+                },
+            )
+            await session.flush()
+            await session.refresh(row)
+            return await self._record_with_review(session, row)
 
     async def get_import_status(
         self,
@@ -464,18 +537,7 @@ class PlatformOnboardingService:
             )
             await self._expire_if_needed(row)
             await self._reconcile_import_state(session, row)
-            record = await self._record_with_review(session, row)
-            review_scope = AdminScope(
-                tenant_id=row.tenant_id,
-                company_id=row.company_id,
-                actor_user_id=row.admin_user_id,
-            )
-            batch_ids = list(row.import_batch_ids)
-        content_review = await self._latest_content_review(
-            scope=review_scope,
-            batch_ids=batch_ids,
-        )
-        return record.model_copy(update={"content_review": content_review})
+            return await self._record_with_review(session, row)
 
     async def import_scope(
         self,
@@ -568,6 +630,7 @@ class PlatformOnboardingService:
             row.status = "cancelled"
             row.cancelled_at = datetime.now(UTC)
             row.cancel_reason = reason.strip()
+            row.retention_cleanup_after = row.cancelled_at + timedelta(days=30)
             row.version += 1
             await append_audit(
                 session,
@@ -729,20 +792,6 @@ class PlatformOnboardingService:
                 actor_user_id=row.admin_user_id,
             )
 
-    async def _latest_content_review(
-        self,
-        *,
-        scope: AdminScope,
-        batch_ids: list[uuid.UUID],
-    ) -> ContentImportRunRecord | None:
-        if not batch_ids:
-            return None
-        runs = await ContentImportReviewService(self._sessions, self._settings).list_runs(
-            scope=scope
-        )
-        by_batch = {run.batch_id: run for run in runs}
-        return next((by_batch[batch] for batch in reversed(batch_ids) if batch in by_batch), None)
-
     async def _generate_from_drafts(
         self,
         draft_rows: list[Mapping[str, Any]],
@@ -813,6 +862,122 @@ class PlatformOnboardingService:
         actor: PlatformActor,
         onboarding_id: uuid.UUID,
         body: ConfirmPlatformOnboardingRequest,
+        admin: AdminStore,
+        catalog: CatalogStore,
+        trace_id: str | None,
+    ) -> PlatformOnboardingSessionRecord:
+        """Materialize selected drafts before enabling any provisional resource.
+
+        The advisory lock serializes confirmation attempts while the existing
+        review service performs its own scoped transactions. Accepted
+        candidates are idempotent, so a partial candidate failure leaves the
+        enterprise provisional and a retry resumes from the first pending
+        selection.
+        """
+
+        self._require_platform(actor)
+        async with self._sessions() as guard:
+            lock_key = f"platform-onboarding-confirm:{onboarding_id}"
+            await guard.execute(
+                text("SELECT pg_advisory_lock(hashtextextended(:key, 0))"),
+                {"key": lock_key},
+            )
+            try:
+                await self._materialize_candidate_selections(
+                    actor=actor,
+                    onboarding_id=onboarding_id,
+                    expected_session_version=body.expected_version,
+                    selections=body.candidate_selections,
+                    admin=admin,
+                    catalog=catalog,
+                    trace_id=trace_id,
+                )
+                return await self._activate_confirmed_session(
+                    actor=actor,
+                    onboarding_id=onboarding_id,
+                    body=body,
+                    trace_id=trace_id,
+                )
+            finally:
+                await guard.execute(
+                    text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
+                    {"key": lock_key},
+                )
+
+    async def _materialize_candidate_selections(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        expected_session_version: int,
+        selections: list[PlatformOnboardingCandidateSelection],
+        admin: AdminStore,
+        catalog: CatalogStore,
+        trace_id: str | None,
+    ) -> None:
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(
+                session,
+                onboarding_id,
+                actor_user_id=actor.user_id,
+            )
+            if row.status == "confirmed":
+                return
+            await self._expire_if_needed(row)
+            self._require_open(row)
+            self._require_version(row, expected_session_version)
+            await self._require_imports_settled(session, row)
+            scope = AdminScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+            )
+            catalog_scope = CatalogScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+                role=MembershipRole.COMPANY_ADMIN.value,
+            )
+
+        review = ContentImportReviewService(self._sessions, self._settings)
+        selected_ids: set[uuid.UUID] = set()
+        for selection in selections:
+            if selection.id in selected_ids:
+                raise ApiError(
+                    422,
+                    "DUPLICATE_CANDIDATE_SELECTION",
+                    "同一候选不能重复选择",
+                )
+            selected_ids.add(selection.id)
+            candidate = await review.get_candidate(
+                scope=scope,
+                candidate_id=selection.id,
+            )
+            if candidate.category == "enterprise_profile" and not selection.apply_fields:
+                raise ApiError(
+                    422,
+                    "INVALID_APPLY_FIELDS",
+                    "企业资料候选必须明确勾选要应用的字段",
+                )
+            await review.accept_candidate(
+                scope=scope,
+                catalog_scope=catalog_scope,
+                candidate_id=selection.id,
+                expected_version=selection.expected_version,
+                apply_fields=selection.apply_fields,
+                confirm_sensitive_fields=True,
+                admin=admin,
+                catalog=catalog,
+                trace_id=trace_id,
+            )
+
+    async def _activate_confirmed_session(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        body: ConfirmPlatformOnboardingRequest,
         trace_id: str | None,
     ) -> PlatformOnboardingSessionRecord:
         self._require_platform(actor)
@@ -825,7 +990,7 @@ class PlatformOnboardingService:
                 lock=True,
             )
             if row.status == "confirmed":
-                return self._record(row)
+                return await self._record_with_review(session, row)
             await self._expire_if_needed(row)
             self._require_open(row)
             self._require_version(row, body.expected_version)
@@ -944,6 +1109,7 @@ class PlatformOnboardingService:
             }
             row.status = "confirmed"
             row.confirmed_at = now
+            row.retention_cleanup_after = None
             row.confirmed_enterprise = snapshot
             row.tenant_name = tenant.name
             row.version += 1
@@ -989,14 +1155,89 @@ class PlatformOnboardingService:
             )
             await session.flush()
             await session.refresh(row)
-            return self._record(row).model_copy(
+            record = await self._record_with_review(session, row)
+            return record.model_copy(
                 update={
-                    "credential_delivery": {
-                        "account": row.admin_account,
-                        "temporary_password": temporary_password,
-                        "expires_at": credential.temporary_password_expires_at,
-                        "shown_once": True,
-                    }
+                    "credential_delivery": TemporaryCredentialDelivery(
+                        account=row.admin_account,
+                        temporary_password=temporary_password,
+                        expires_at=credential.temporary_password_expires_at,
+                        shown_once=True,
+                    )
+                }
+            )
+
+    async def regenerate_temporary_credential(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        expected_version: int,
+        trace_id: str | None,
+    ) -> PlatformOnboardingSessionRecord:
+        self._require_platform(actor)
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(
+                session,
+                onboarding_id,
+                actor_user_id=actor.user_id,
+                lock=True,
+            )
+            if row.status != "confirmed":
+                raise ApiError(
+                    409,
+                    "ONBOARDING_NOT_CONFIRMED",
+                    "仅已确认的企业可重新生成临时密码",
+                )
+            self._require_version(row, expected_version)
+            credential = await session.get(
+                StaffCredential,
+                row.credential_id,
+                with_for_update=True,
+            )
+            if credential is None:
+                raise ApiError(409, "ONBOARDING_RESOURCE_MISSING", "临时登录凭据不存在")
+            if not credential.is_enabled or not credential.must_change_password:
+                raise ApiError(
+                    409,
+                    "TEMPORARY_CREDENTIAL_RESET_UNAVAILABLE",
+                    "管理员已完成首次改密或凭据不可用",
+                )
+            now = datetime.now(UTC)
+            temporary_password = _generate_temporary_password()
+            credential.password_hash = hash_staff_password(temporary_password)
+            credential.temporary_password_expires_at = now + timedelta(days=7)
+            credential.failed_attempts = 0
+            credential.locked_until = None
+            credential.last_failed_at = None
+            row.version += 1
+            await append_audit(
+                session,
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=actor.user_id,
+                action="platform.onboarding.temporary_credential.regenerate",
+                resource_type="platform_onboarding_session",
+                resource_id=row.id,
+                trace_id=trace_id,
+                event_data={
+                    "credential_id": str(row.credential_id),
+                    "expires_at": credential.temporary_password_expires_at.isoformat(),
+                    "must_change_password": True,
+                },
+            )
+            await session.flush()
+            await session.refresh(row)
+            record = await self._record_with_review(session, row)
+            return record.model_copy(
+                update={
+                    "credential_delivery": TemporaryCredentialDelivery(
+                        account=row.admin_account,
+                        temporary_password=temporary_password,
+                        expires_at=credential.temporary_password_expires_at,
+                        shown_once=True,
+                    )
                 }
             )
 
@@ -1074,7 +1315,9 @@ class PlatformOnboardingService:
     @staticmethod
     async def _expire_if_needed(row: PlatformOnboardingSession) -> None:
         if row.status in _OPEN_STATUSES and row.expires_at <= datetime.now(UTC):
+            now = datetime.now(UTC)
             row.status = "expired"
+            row.retention_cleanup_after = now + timedelta(days=30)
             row.version += 1
 
     @staticmethod
@@ -1108,47 +1351,65 @@ class PlatformOnboardingService:
         rows: list[PlatformOnboardingSession],
     ) -> dict[uuid.UUID, _OnboardingReviewProjection]:
         open_rows = [row for row in rows if row.status in _OPEN_STATUSES]
-        if not open_rows:
+        users = (
+            {
+                user.id: user
+                for user in (
+                    await session.scalars(
+                        select(User).where(User.id.in_({row.admin_user_id for row in open_rows}))
+                    )
+                ).all()
+            }
+            if open_rows
+            else {}
+        )
+        cards = (
+            {
+                card.id: card
+                for card in (
+                    await session.scalars(
+                        select(Card).where(Card.id.in_({row.initial_card_id for row in open_rows}))
+                    )
+                ).all()
+            }
+            if open_rows
+            else {}
+        )
+        credential_rows = [
+            row for row in rows if row.status in _OPEN_STATUSES or row.status == "confirmed"
+        ]
+        if not credential_rows:
             return {}
-        users = {
-            user.id: user
-            for user in (
-                await session.scalars(
-                    select(User).where(User.id.in_({row.admin_user_id for row in open_rows}))
-                )
-            ).all()
-        }
-        cards = {
-            card.id: card
-            for card in (
-                await session.scalars(
-                    select(Card).where(Card.id.in_({row.initial_card_id for row in open_rows}))
-                )
-            ).all()
-        }
         credentials = {
             credential.id: credential
             for credential in (
                 await session.scalars(
                     select(StaffCredential).where(
-                        StaffCredential.id.in_({row.credential_id for row in open_rows})
+                        StaffCredential.id.in_({row.credential_id for row in credential_rows})
                     )
                 )
             ).all()
         }
         projections: dict[uuid.UUID, _OnboardingReviewProjection] = {}
-        for row in open_rows:
+        for row in credential_rows:
             user = users.get(row.admin_user_id)
             card = cards.get(row.initial_card_id)
             credential = credentials.get(row.credential_id)
-            if user is None or card is None or credential is None:
+            if credential is None:
                 continue
-            raw_title = card.settings.get("title")
+            if row.status in _OPEN_STATUSES and (user is None or card is None):
+                continue
+            raw_title = card.settings.get("title") if card else None
             projections[row.id] = _OnboardingReviewProjection(
                 admin_account=credential.account_normalized,
-                admin_display_name=user.display_name,
-                initial_card_display_name=card.display_name,
+                admin_display_name=user.display_name if user else None,
+                initial_card_display_name=card.display_name if card else None,
                 initial_card_title=str(raw_title) if raw_title is not None else None,
+                temporary_credential_reset_available=(
+                    row.status == "confirmed"
+                    and credential.is_enabled
+                    and credential.must_change_password
+                ),
             )
         return projections
 
@@ -1158,7 +1419,36 @@ class PlatformOnboardingService:
         rows: list[PlatformOnboardingSession],
     ) -> list[PlatformOnboardingSessionRecord]:
         projections = await self._review_projections(session, rows)
-        return [self._record(row, review=projections.get(row.id)) for row in rows]
+        content_reviews = await self._content_review_projections(session, rows)
+        return [
+            self._record(
+                row,
+                review=projections.get(row.id),
+                content_review=content_reviews.get(row.id),
+            )
+            for row in rows
+        ]
+
+    @staticmethod
+    async def _content_review_projections(
+        session: AsyncSession,
+        rows: list[PlatformOnboardingSession],
+    ) -> dict[uuid.UUID, ContentImportRunRecord]:
+        session_ids = [row.id for row in rows if row.import_batch_ids]
+        if not session_ids:
+            return {}
+        result = await session.execute(
+            text(
+                "SELECT session_id, review "
+                "FROM app.platform_onboarding_content_reviews("
+                "CAST(:session_ids AS uuid[]))"
+            ),
+            {"session_ids": session_ids},
+        )
+        return {
+            uuid.UUID(str(item.session_id)): ContentImportRunRecord.model_validate(item.review)
+            for item in result
+        }
 
     async def _record_with_review(
         self,
@@ -1172,6 +1462,7 @@ class PlatformOnboardingService:
         row: PlatformOnboardingSession,
         *,
         review: _OnboardingReviewProjection | None = None,
+        content_review: ContentImportRunRecord | None = None,
     ) -> PlatformOnboardingSessionRecord:
         confirmed = None
         if row.confirmed_enterprise:
@@ -1191,6 +1482,7 @@ class PlatformOnboardingService:
             )
         return PlatformOnboardingSessionRecord(
             id=row.id,
+            display_name=row.display_name,
             status=cast(OnboardingStatus, row.status),
             tenant_slug=row.tenant_slug,
             tenant_name=row.tenant_name,
@@ -1206,8 +1498,15 @@ class PlatformOnboardingService:
             business_profile=[
                 PlatformOnboardingSuggestion.model_validate(value) for value in row.business_profile
             ],
+            content_review=content_review,
             expires_at=row.expires_at,
+            retention_cleanup_after=row.retention_cleanup_after,
+            purged_at=row.purged_at,
+            purge_summary=row.purge_summary,
             confirmed_enterprise=confirmed,
+            temporary_credential_reset_available=(
+                review.temporary_credential_reset_available if review else False
+            ),
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
@@ -1280,6 +1579,17 @@ def _parse_suggestions(
         )
         seen_fields.add(field_name)
     return result
+
+
+def _default_onboarding_display_name(
+    *,
+    enterprise_name: str,
+    created_at: datetime,
+    sequence_number: int,
+) -> str:
+    return (f"{enterprise_name.strip()}·资料导入·{created_at:%Y-%m-%d}·第 {sequence_number} 次")[
+        :200
+    ]
 
 
 def _generate_temporary_password() -> str:

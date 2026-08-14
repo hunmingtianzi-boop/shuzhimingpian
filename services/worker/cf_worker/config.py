@@ -44,6 +44,9 @@ class WorkerSettings(BaseSettings):
     export_retention_hours: int = Field(default=24, ge=1, le=168)
     export_max_rows: int = Field(default=100_000, ge=1, le=1_000_000)
     profile_retention_purge_seconds: int = Field(default=3_600, ge=60, le=86_400)
+    platform_onboarding_retention_purge_seconds: int = Field(
+        default=3_600, ge=60, le=86_400
+    )
     scheduled_publish_poll_seconds: float = Field(default=5.0, ge=1, le=300)
     scheduled_publish_batch_size: int = Field(default=10, ge=1, le=100)
     scheduled_publish_lease_seconds: int = Field(default=900, ge=30, le=3_600)

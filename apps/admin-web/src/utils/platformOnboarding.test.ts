@@ -13,11 +13,13 @@ function session(
 ): PlatformOnboardingSession {
   return {
     id: "session-1",
+    displayName: "阿特拉斯建企任务",
     status,
     tenantSlug: "atlas-labs",
     version: status === "confirmed" ? 8 : 7,
     importBatchIds: [],
     suggestions: [],
+    temporaryCredentialResetAvailable: status === "confirmed",
     confirmedEnterprise:
       status === "confirmed"
         ? {

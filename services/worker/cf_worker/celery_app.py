@@ -47,6 +47,14 @@ celery_app.conf.update(
                 "expires": settings.profile_retention_purge_seconds,
             },
         },
+        "purge-expired-platform-onboarding-sessions": {
+            "task": "cf_worker.purge_expired_platform_onboarding_sessions",
+            "schedule": settings.platform_onboarding_retention_purge_seconds,
+            "options": {
+                "queue": "outbox.poll",
+                "expires": settings.platform_onboarding_retention_purge_seconds,
+            },
+        },
         "poll-scheduled-publishes": {
             "task": "cf_worker.poll_scheduled_publishes",
             "schedule": settings.scheduled_publish_poll_seconds,

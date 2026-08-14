@@ -136,6 +136,7 @@ def test_onboarding_session_read_model_hides_provisional_scope_ids() -> None:
     session = PlatformOnboardingSessionRecord.model_validate(
         {
             "id": uuid4(),
+            "display_name": "Acme·资料导入·2026-08-14·第 1 次",
             "status": "draft",
             "tenant_slug": "acme",
             "admin_account": "admin@acme.test",
@@ -168,6 +169,7 @@ def test_terminal_onboarding_session_allows_review_projection_to_be_redacted() -
     session = PlatformOnboardingSessionRecord.model_validate(
         {
             "id": uuid4(),
+            "display_name": "Acme·资料导入·2026-08-14·第 1 次",
             "status": "cancelled",
             "tenant_slug": "acme",
             "version": 2,

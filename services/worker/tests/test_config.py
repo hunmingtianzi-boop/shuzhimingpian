@@ -38,6 +38,17 @@ def test_profile_retention_purge_interval_is_bounded() -> None:
         WorkerSettings(profile_retention_purge_seconds=59)
 
 
+def test_platform_onboarding_retention_purge_interval_is_bounded() -> None:
+    assert (
+        WorkerSettings(_env_file=None).platform_onboarding_retention_purge_seconds
+        == 3_600
+    )
+    with pytest.raises(ValidationError):
+        WorkerSettings(platform_onboarding_retention_purge_seconds=59)
+    with pytest.raises(ValidationError):
+        WorkerSettings(platform_onboarding_retention_purge_seconds=86_401)
+
+
 def test_production_rejects_local_worker_identity() -> None:
     with pytest.raises(ValidationError):
         WorkerSettings(app_env="production")

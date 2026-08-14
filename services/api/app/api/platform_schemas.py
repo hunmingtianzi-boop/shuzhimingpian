@@ -389,6 +389,7 @@ class PlatformLlmConnectionTestEnvelope(PlatformModel):
 
 
 class StartPlatformOnboardingRequest(PlatformModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
     tenant_slug: str = Field(
         min_length=3,
         max_length=64,
@@ -404,6 +405,7 @@ class StartPlatformOnboardingRequest(PlatformModel):
         if any(character.isspace() for character in value):
             raise ValueError("admin_account must not contain whitespace")
         return value.casefold()
+
 
 class PlatformOnboardingSuggestionSource(PlatformModel):
     import_item_id: uuid.UUID
@@ -429,6 +431,7 @@ class TemporaryCredentialDelivery(PlatformModel):
 
 class PlatformOnboardingSessionRecord(PlatformModel):
     id: uuid.UUID
+    display_name: str = Field(min_length=1, max_length=200)
     status: Literal[
         "draft",
         "processing",
@@ -452,8 +455,12 @@ class PlatformOnboardingSessionRecord(PlatformModel):
     business_profile: list[PlatformOnboardingSuggestion] = Field(default_factory=list)
     content_review: ContentImportRunRecord | None = None
     expires_at: datetime | None = None
+    retention_cleanup_after: datetime | None = None
+    purged_at: datetime | None = None
+    purge_summary: dict[str, object] | None = None
     confirmed_enterprise: EnterpriseRecord | None = None
     credential_delivery: TemporaryCredentialDelivery | None = None
+    temporary_credential_reset_available: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -479,6 +486,12 @@ class PlatformOnboardingImportStatusEnvelope(PlatformModel):
     data: PlatformOnboardingImportStatusRecord
 
 
+class PlatformOnboardingCandidateSelection(PlatformModel):
+    id: uuid.UUID
+    expected_version: int = Field(ge=1)
+    apply_fields: list[str] = Field(default_factory=list, max_length=32)
+
+
 class ConfirmPlatformOnboardingRequest(PlatformModel):
     expected_version: int = Field(ge=1)
     tenant_name: str = Field(min_length=1, max_length=200)
@@ -490,6 +503,19 @@ class ConfirmPlatformOnboardingRequest(PlatformModel):
     initial_card_title: str | None = Field(default=None, max_length=200)
     assistant_name: str | None = Field(default=None, max_length=120)
     welcome_message: str | None = Field(default=None, max_length=1000)
+    candidate_selections: list[PlatformOnboardingCandidateSelection] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+
+
+class RenamePlatformOnboardingRequest(PlatformModel):
+    expected_version: int = Field(ge=1)
+    display_name: str = Field(min_length=1, max_length=200)
+
+
+class RegenerateTemporaryCredentialRequest(PlatformModel):
+    expected_version: int = Field(ge=1)
 
 
 class GeneratePlatformOnboardingSuggestionsRequest(PlatformModel):
@@ -531,10 +557,13 @@ __all__ = [
     "PlatformOnboardingSessionEnvelope",
     "PlatformOnboardingImportStatusEnvelope",
     "PlatformOnboardingImportStatusRecord",
+    "PlatformOnboardingCandidateSelection",
     "PlatformOnboardingSessionListEnvelope",
     "PlatformOnboardingSessionRecord",
     "PlatformOnboardingSuggestion",
     "PlatformOnboardingSuggestionSource",
+    "RegenerateTemporaryCredentialRequest",
+    "RenamePlatformOnboardingRequest",
     "PlatformOverviewEnvelope",
     "PlatformOverviewRecord",
     "PlatformServiceHealthEnvelope",
