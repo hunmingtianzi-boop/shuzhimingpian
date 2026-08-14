@@ -5,7 +5,7 @@ Revises: 20260807_0028
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 from sqlalchemy.dialects import postgresql
 
 revision = "20260812_0029"
@@ -39,19 +39,22 @@ def _scope_table(table_name: str) -> None:
 
 
 def upgrade() -> None:
-    inspector = sa.inspect(op.get_bind())
-    tables = set(inspector.get_table_names())
-    existing = {"content_import_runs", "content_import_candidates"} & tables
-    if existing:
-        if existing != {"content_import_runs", "content_import_candidates"}:
-            raise RuntimeError("content import review schema is only partially provisioned")
-        run_columns = {column["name"] for column in inspector.get_columns("content_import_runs")}
-        candidate_columns = {
-            column["name"] for column in inspector.get_columns("content_import_candidates")
-        }
-        if not RUN_COLUMNS <= run_columns or not CANDIDATE_COLUMNS <= candidate_columns:
-            raise RuntimeError("existing content import review schema is incompatible")
-        return
+    if not context.is_offline_mode():
+        inspector = sa.inspect(op.get_bind())
+        tables = set(inspector.get_table_names())
+        existing = {"content_import_runs", "content_import_candidates"} & tables
+        if existing:
+            if existing != {"content_import_runs", "content_import_candidates"}:
+                raise RuntimeError("content import review schema is only partially provisioned")
+            run_columns = {
+                column["name"] for column in inspector.get_columns("content_import_runs")
+            }
+            candidate_columns = {
+                column["name"] for column in inspector.get_columns("content_import_candidates")
+            }
+            if not RUN_COLUMNS <= run_columns or not CANDIDATE_COLUMNS <= candidate_columns:
+                raise RuntimeError("existing content import review schema is incompatible")
+            return
 
     op.create_table(
         "content_import_runs",

@@ -387,7 +387,10 @@ describe("EnterpriseTemplateEditor", () => {
     await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
     expect(await screen.findByAltText("gallery")).toHaveAttribute(
       "src",
-      "/api/v1/public/card-assets/company-1/gallery.webp",
+      new URL(
+        "/api/v1/public/card-assets/company-1/gallery.webp",
+        window.location.origin,
+      ).href,
     );
     expect(screen.getByRole("link", { name: /预览原图/ })).toHaveAttribute(
       "href",
@@ -502,7 +505,10 @@ describe("EnterpriseTemplateEditor", () => {
     await waitFor(() => expect(upload).toHaveBeenCalledWith(background));
     expect(await screen.findByAltText("基础名片背景预览")).toHaveAttribute(
       "src",
-      "/api/v1/public/card-assets/company-1/identity-background.webp",
+      new URL(
+        "/api/v1/public/card-assets/company-1/identity-background.webp",
+        window.location.origin,
+      ).href,
     );
     const [scaleSlider, opacitySlider] = screen.getAllByRole("slider", { hidden: true });
     fireEvent.change(scaleSlider, { target: { value: "118" } });

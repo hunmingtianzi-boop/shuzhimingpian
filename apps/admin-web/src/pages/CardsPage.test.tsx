@@ -394,7 +394,7 @@ describe("CardsPage", () => {
     );
     const avatar = new File(["avatar"], "portrait.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择员工头像"), avatar);
-    expect(screen.getByText("portrait.png")).toBeInTheDocument();
+    expect(await screen.findByText(/portrait\.png/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "创建名片" }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledWith(avatar));

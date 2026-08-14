@@ -181,15 +181,23 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
   return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy"><p>{module.body || "内容待补充"}</p>{module.ctaUrl ? <a className="module-more" href={module.ctaUrl}>{module.ctaLabel || "了解更多"} →</a> : null}</div></section>;
 }
 
-function VideoModule({ module, editor }: { module: StudioModule; editor: boolean }) {
+function VideoModule({
+  module,
+  editor,
+  className,
+  children,
+  ...sectionProps
+}: { module: StudioModule; editor: boolean } & HTMLAttributes<HTMLElement>) {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (!playing) return;
-    void videoRef.current?.play().catch(() => undefined);
+    const playResult = videoRef.current?.play();
+    void playResult?.catch(() => undefined);
   }, [playing]);
-  if (!module.videoUrl) return <section className="content-module"><ModuleHeading module={module}/><div className="empty-state"><strong>视频待配置</strong><p>请上传视频或添加安全的视频地址。</p></div></section>;
-  return <section className="content-module"><ModuleHeading module={module}/>{playing && !editor
+  const sectionClassName = ["content-module", className].filter(Boolean).join(" ");
+  if (!module.videoUrl) return <section {...sectionProps} className={sectionClassName}>{children}<ModuleHeading module={module}/><div className="empty-state"><strong>视频待配置</strong><p>请上传视频或添加安全的视频地址。</p></div></section>;
+  return <section {...sectionProps} className={sectionClassName}>{children}<ModuleHeading module={module}/>{playing && !editor
     ? <div className="video-card is-playing"><video ref={videoRef} src={module.videoUrl} poster={module.videoCoverUrl} controls playsInline preload="metadata">当前浏览器无法播放该视频。</video><a className="video-fallback-link" href={module.videoUrl} target="_blank" rel="noreferrer">在新窗口打开视频</a></div>
     : <button className="video-card video-card-trigger" type="button" aria-label={editor ? `选中${module.title}模块` : `播放${module.title}`} onClick={() => { if (!editor) setPlaying(true); }}>{module.videoCoverUrl ? <img src={module.videoCoverUrl} alt={`${module.title}封面`}/> : null}<span className="video-play"><StudioIcon name="play"/></span><span className="video-caption"><strong>{module.title}</strong><span>{editor ? "在右侧测试播放" : "点击播放"}</span></span></button>}</section>;
 }

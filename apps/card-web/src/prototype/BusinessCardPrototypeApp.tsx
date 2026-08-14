@@ -768,7 +768,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   const websiteHref = isBlankTemplate
     ? undefined
     : card
-      ? safeContactHref({ href: card.company.website })
+      ? safeContactHref({ href: card.company.website ?? "" })
       : safeContactHref({ href: tenant.brand.officialAction.target });
   const websiteLabel = card?.company.website
     ? `${companyName}官网`

@@ -5,7 +5,7 @@ Revises: 20260813_0031
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 revision = "20260813_0032"
 down_revision = "20260813_0031"
@@ -24,6 +24,10 @@ def _constraint_exists() -> bool:
 
 
 def upgrade() -> None:
+    # A full offline render already receives this constraint from revision
+    # 0029. Reflection is only needed for live databases that may predate it.
+    if context.is_offline_mode():
+        return
     if not _constraint_exists():
         op.create_unique_constraint(
             CONSTRAINT_NAME,
@@ -33,5 +37,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if context.is_offline_mode():
+        return
     if _constraint_exists():
         op.drop_constraint(CONSTRAINT_NAME, "content_import_runs", type_="unique")

@@ -129,10 +129,8 @@ describe("TemplateCanvas draft interactions", () => {
       "aria-expanded",
       "true",
     );
-    expect(screen.getByRole("link", { name: /打开视频/ })).toHaveAttribute(
-      "href",
-      "https://video.example.test/intro",
-    );
+    await user.click(screen.getByRole("button", { name: "选中企业视频模块" }));
+    expect(onSelectBlock).toHaveBeenCalledWith("video");
     expect(screen.getByRole("link", { name: /预约沟通/ })).toHaveAttribute(
       "href",
       "https://example.test/contact",
@@ -146,7 +144,7 @@ describe("TemplateCanvas draft interactions", () => {
     expect(screen.getByText(product.detail)).toBeInTheDocument();
     expect(screen.getByAltText(`${product.name}封面`)).toHaveAttribute(
       "src",
-      product.imageUrl,
+      new URL(product.imageUrl, window.location.origin).href,
     );
     expect(onSelectBlock).toHaveBeenCalledWith("products");
 
@@ -159,7 +157,7 @@ describe("TemplateCanvas draft interactions", () => {
     expect(screen.getByText(caseStudy.result)).toBeInTheDocument();
     expect(screen.getByAltText(`${caseStudy.title}封面`)).toHaveAttribute(
       "src",
-      caseStudy.imageUrl,
+      new URL(caseStudy.imageUrl, window.location.origin).href,
     );
     expect(onSelectBlock).toHaveBeenCalledWith("cases");
 

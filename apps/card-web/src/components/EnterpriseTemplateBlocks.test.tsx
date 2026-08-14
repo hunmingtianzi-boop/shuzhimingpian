@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { CardPageExperience } from "@cf/card-page-renderer";
 import { describe, expect, it, vi } from "vitest";
 
@@ -350,10 +350,11 @@ describe("EnterpriseTemplateBlocks", () => {
     }]}/>);
 
     fireEvent.click(screen.getByRole("button", { name: "查看大图：项目启动" }));
-    expect(screen.getByRole("dialog", { name: "工作相册大图预览" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "项目启动" })).toHaveAttribute("src", "/one.jpg");
-    fireEvent.click(screen.getByRole("button", { name: "下一张" }));
-    expect(screen.getByRole("img", { name: "交付验收" })).toHaveAttribute("src", "/two.jpg");
+    const lightbox = screen.getByRole("dialog", { name: "工作相册大图预览" });
+    expect(lightbox).toBeInTheDocument();
+    expect(within(lightbox).getByRole("img", { name: "项目启动" })).toHaveAttribute("src", "/one.jpg");
+    fireEvent.click(within(lightbox).getByRole("button", { name: "下一张" }));
+    expect(within(lightbox).getByRole("img", { name: "交付验收" })).toHaveAttribute("src", "/two.jpg");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
