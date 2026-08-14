@@ -314,9 +314,9 @@ describe("CardsPage", () => {
     await user.click(screen.getByRole("checkbox", { name: "公开工作手机" }));
     await user.click(screen.getByRole("checkbox", { name: "公开工作邮箱" }));
     for (let index = 0; index < 4; index += 1) {
-      await user.click(screen.getByRole("button", { name: "添加联系方式" }));
+      await user.click(screen.getByRole("button", { name: "添加联系方式", hidden: true }));
     }
-    const values = screen.getAllByRole("textbox", { name: "内容" });
+    const values = screen.getAllByRole("textbox", { name: "内容", hidden: true });
     await user.type(values[0], "13800000001");
     await user.type(values[1], "13800000002");
     await user.type(values[2], "13800000003");
