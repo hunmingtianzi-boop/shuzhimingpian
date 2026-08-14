@@ -72,9 +72,13 @@ async def test_real_knowledge_import_rls_lease_draft_cleanup_retry_and_idempoten
                     text(
                         """
                         INSERT INTO knowledge_import_batches (
-                          id, tenant_id, company_id, requested_by, status,
+                          id, tenant_id, company_id, requested_by,
+                          sequence_number, display_name, status,
                           total_items, pending_items, succeeded_items, failed_items
-                        ) VALUES (:batch, :tenant, :company, :user, 'pending', 1, 1, 0, 0)
+                        ) VALUES (
+                          :batch, :tenant, :company, :user,
+                          1, '集成测试导入 #001', 'pending', 1, 1, 0, 0
+                        )
                         """
                     ),
                     {
