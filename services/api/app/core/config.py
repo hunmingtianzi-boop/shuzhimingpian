@@ -60,9 +60,7 @@ class Settings(BaseSettings):
     field_encryption_previous_keys: SecretStr | None = None
     trusted_proxy_cidrs: list[str] = Field(default_factory=list)
     visitor_token_ttl_seconds: int = Field(default=7_200, ge=300, le=86_400)
-    profile_link_token_ttl_seconds: int = Field(
-        default=15_552_000, ge=86_400, le=31_536_000
-    )
+    profile_link_token_ttl_seconds: int = Field(default=15_552_000, ge=86_400, le=31_536_000)
     visitor_profile_retention_days: int = Field(default=365, ge=1, le=730)
     access_token_ttl_seconds: int = Field(default=900, ge=300, le=3_600)
     refresh_token_ttl_seconds: int = Field(default=604_800, ge=3_600, le=7_776_000)
@@ -92,7 +90,7 @@ class Settings(BaseSettings):
     llm_thinking: Literal["enabled", "disabled"] = "disabled"
     llm_reasoning_effort: Literal["high", "max"] = "high"
     llm_timeout_seconds: float = Field(default=30.0, ge=2, le=120)
-    llm_max_output_tokens: int = Field(default=1_000, ge=128, le=8_192)
+    llm_max_output_tokens: int = Field(default=32_768, ge=128, le=65_536)
     llm_temperature: float = Field(default=0.1, ge=0, le=2)
     llm_max_concurrency: int = Field(default=20, ge=1, le=500)
     llm_queue_timeout_seconds: float = Field(default=3.0, ge=0.1, le=30)
@@ -330,8 +328,7 @@ class Settings(BaseSettings):
             and not self.allow_insecure_public_card_http
         ):
             raise ValueError(
-                "remote HTTP PUBLIC_CARD_BASE_URL requires "
-                "ALLOW_INSECURE_PUBLIC_CARD_HTTP=true"
+                "remote HTTP PUBLIC_CARD_BASE_URL requires ALLOW_INSECURE_PUBLIC_CARD_HTTP=true"
             )
         self.public_card_base_url = public_base
 
@@ -348,8 +345,7 @@ class Settings(BaseSettings):
                 )
             if self.field_encryption_key_ref.casefold().startswith("local"):
                 raise ValueError(
-                    "FIELD_ENCRYPTION_KEY_REF must identify a managed key outside local "
-                    "development"
+                    "FIELD_ENCRYPTION_KEY_REF must identify a managed key outside local development"
                 )
             if self.field_encryption_previous_keys is not None:
                 try:
@@ -373,9 +369,7 @@ class Settings(BaseSettings):
             if self.app_env == "production" and not self.staff_auth_cookie_secure:
                 raise ValueError("STAFF_AUTH_COOKIE_SECURE must be true in production")
             if self.metrics_bearer_token is None:
-                raise ValueError(
-                    "METRICS_BEARER_TOKEN is required outside local development"
-                )
+                raise ValueError("METRICS_BEARER_TOKEN is required outside local development")
             if (
                 self.object_storage_access_key == "minioadmin"
                 or self.object_storage_secret_key.get_secret_value().startswith("change-me")
@@ -419,26 +413,18 @@ class Settings(BaseSettings):
         if any(value is not None for value in wecom_scope) and not all(
             value is not None for value in wecom_scope
         ):
-            raise ValueError(
-                "WECOM_TENANT_ID and WECOM_COMPANY_ID must be configured together"
-            )
-        if self.wecom_oauth_redirect_uri and not all(
-            value is not None for value in wecom_core
-        ):
+            raise ValueError("WECOM_TENANT_ID and WECOM_COMPANY_ID must be configured together")
+        if self.wecom_oauth_redirect_uri and not all(value is not None for value in wecom_core):
             raise ValueError(
                 "WeCom OAuth requires WECOM_CORP_ID, WECOM_AGENT_ID and WECOM_APP_SECRET"
             )
         if any(wecom_callback) and not all(
             value is not None for value in (*wecom_core, *wecom_scope)
         ):
-            raise ValueError(
-                "WeCom callbacks require core credentials and a tenant/company scope"
-            )
+            raise ValueError("WeCom callbacks require core credentials and a tenant/company scope")
         wecom_suite_core = (self.wecom_suite_id, self.wecom_suite_secret)
         if self.wecom_suite_secret is not None and self.wecom_suite_id is None:
-            raise ValueError(
-                "WECOM_SUITE_SECRET requires WECOM_SUITE_ID"
-            )
+            raise ValueError("WECOM_SUITE_SECRET requires WECOM_SUITE_ID")
         wecom_suite_callback = (
             self.wecom_suite_callback_token,
             self.wecom_suite_callback_encoding_aes_key,

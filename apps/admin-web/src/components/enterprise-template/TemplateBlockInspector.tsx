@@ -2,12 +2,12 @@ import {
   Button,
   Checkbox,
   Field,
-  Input,
+  Input as FluentInput,
   Radio,
   RadioGroup,
   Select,
   Slider,
-  Textarea,
+  Textarea as FluentTextarea,
 } from "@fluentui/react-components";
 import {
   Add24Regular,
@@ -18,8 +18,16 @@ import {
   Delete24Regular,
   Open24Regular,
 } from "@fluentui/react-icons";
-import type { ChangeEvent, MutableRefObject, PointerEvent as ReactPointerEvent } from "react";
-import { StudioInspectorSection, StudioInspectorTitle, type StudioIconName } from "@cf/card-page-renderer";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ComponentProps,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { StudioIcon, StudioInspectorSection, StudioInspectorTitle, type StudioIconName } from "@cf/card-page-renderer";
 import { IdentityTitlesEditor } from "../IdentityTitlesEditor";
 
 import type {
@@ -38,6 +46,7 @@ import { resolveApiResourceUrl } from "../../lib/resourceUrl";
 
 type Props = {
   block: EnterpriseTemplateBlock;
+  cardKind: "enterprise" | "employee";
   index: number;
   blockCount: number;
   busy: boolean;
@@ -55,7 +64,9 @@ type Props = {
   backgroundInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   actionCoverInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   collectionCoverInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
-  onUpdate: (patch: Partial<EnterpriseTemplateBlock>) => void;
+  onUpdate: (
+    patch: Partial<EnterpriseTemplateBlock> | ((current: EnterpriseTemplateBlock) => Partial<EnterpriseTemplateBlock>),
+  ) => void;
   onIdentityTitlesChange: (titles: string[]) => void;
   onIdentityContactFieldsChange: (fields: IdentityContactField[]) => void;
   onMove: (direction: -1 | 1) => void;
@@ -79,6 +90,62 @@ const identityContactKindLabels: Record<IdentityContactKind, string> = {
 };
 
 const PUBLIC_CONTACT_SHORTCUT_LIMIT = 4;
+
+type StableInputProps = ComponentProps<typeof FluentInput>;
+type StableTextareaProps = ComponentProps<typeof FluentTextarea>;
+
+/**
+ * Keep a field responsive while its value is also rebuilding the live card
+ * preview. The parent remains the persisted source of truth, but it cannot
+ * write an older render back over an in-progress keystroke.
+ */
+function Input({ value, onChange, ...props }: StableInputProps) {
+  const controlledValue = typeof value === "string" ? value : undefined;
+  const [draft, setDraft] = useState(controlledValue ?? "");
+  const lastCommitted = useRef(controlledValue);
+
+  useEffect(() => {
+    if (controlledValue !== undefined && controlledValue !== lastCommitted.current) {
+      lastCommitted.current = controlledValue;
+      setDraft(controlledValue);
+    }
+  }, [controlledValue]);
+
+  if (controlledValue === undefined) return <FluentInput {...props} onChange={onChange} />;
+  return <FluentInput
+    {...props}
+    value={draft}
+    onChange={(event, data) => {
+      lastCommitted.current = data.value;
+      setDraft(data.value);
+      onChange?.(event, data);
+    }}
+  />;
+}
+
+function Textarea({ value, onChange, ...props }: StableTextareaProps) {
+  const controlledValue = typeof value === "string" ? value : undefined;
+  const [draft, setDraft] = useState(controlledValue ?? "");
+  const lastCommitted = useRef(controlledValue);
+
+  useEffect(() => {
+    if (controlledValue !== undefined && controlledValue !== lastCommitted.current) {
+      lastCommitted.current = controlledValue;
+      setDraft(controlledValue);
+    }
+  }, [controlledValue]);
+
+  if (controlledValue === undefined) return <FluentTextarea {...props} onChange={onChange} />;
+  return <FluentTextarea
+    {...props}
+    value={draft}
+    onChange={(event, data) => {
+      lastCommitted.current = data.value;
+      setDraft(data.value);
+      onChange?.(event, data);
+    }}
+  />;
+}
 
 function isHttpsUrl(value?: string) {
   if (!value) return false;
@@ -157,6 +224,49 @@ const backgroundRatioOptions = [
   ["auto", "跟随名片"], ["16:9", "横向 16:9"], ["4:3", "标准 4:3"], ["3:2", "照片 3:2"], ["1:1", "方形 1:1"],
 ] as const;
 
+type ActionIcon = NonNullable<EnterpriseTemplateActionItem["icon"]>;
+
+const actionIconPresets: ReadonlyArray<{ value: ActionIcon; label: string }> = [
+  { value: "external", label: "官网" },
+  { value: "phone", label: "电话" },
+  { value: "mail", label: "邮件" },
+  { value: "message", label: "咨询" },
+  { value: "map", label: "地址" },
+  { value: "building", label: "企业" },
+  { value: "calendar", label: "活动" },
+  { value: "file", label: "资料" },
+  { value: "play", label: "视频" },
+];
+
+function ActionIconPresetPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value?: ActionIcon;
+  disabled: boolean;
+  onChange: (value: ActionIcon) => void;
+}) {
+  const selected = value ?? "external";
+  return (
+    <div className="template-action-icon-presets" role="group" aria-label="预设图标">
+      {actionIconPresets.map((preset) => (
+        <button
+          type="button"
+          key={preset.value}
+          aria-label={`使用${preset.label}图标`}
+          aria-pressed={selected === preset.value}
+          disabled={disabled}
+          onClick={() => onChange(preset.value)}
+        >
+          <StudioIcon name={preset.value} />
+          <span>{preset.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function nextActionItem(): EnterpriseTemplateActionItem {
   const suffix = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID().slice(0, 8)
@@ -166,7 +276,7 @@ function nextActionItem(): EnterpriseTemplateActionItem {
     title: "新入口",
     label: "查看详情",
     targetType: "external_url",
-    targetValue: "https://",
+    targetValue: "",
     openMode: "new_tab",
   };
 }
@@ -181,6 +291,7 @@ function actionTestHref(item: EnterpriseTemplateActionItem) {
 
 export function TemplateBlockInspector({
   block,
+  cardKind,
   index,
   blockCount,
   busy,
@@ -212,10 +323,17 @@ export function TemplateBlockInspector({
   onCollectionCoverUpload,
 }: Props) {
   const isIdentity = block.type === "identity";
+  const identityContactsRef = useRef(identityContactFields);
+  identityContactsRef.current = identityContactFields;
+  const commitIdentityContacts = (updater: (current: IdentityContactField[]) => IdentityContactField[]) => {
+    const next = updater(identityContactsRef.current);
+    identityContactsRef.current = next;
+    onIdentityContactFieldsChange(next);
+  };
   const completedIdentityContacts = identityContactFields.filter((field) => field.value.trim());
   const incompleteIdentityContactCount = identityContactFields.length - completedIdentityContacts.length;
   const updateIdentityContact = (id: string, patch: Partial<IdentityContactField>) => {
-    onIdentityContactFieldsChange(identityContactFields.map((field) => (
+    commitIdentityContacts((current) => current.map((field) => (
       field.id === id ? { ...field, ...patch } : field
     )));
   };
@@ -224,7 +342,7 @@ export function TemplateBlockInspector({
     const suffix = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID().slice(0, 8)
       : Math.random().toString(36).slice(2, 10);
-    onIdentityContactFieldsChange([...identityContactFields, {
+    commitIdentityContacts((current) => [...current, {
       id: `contact-${suffix}`,
       kind: "phone",
       label: "电话",
@@ -242,23 +360,44 @@ export function TemplateBlockInspector({
     title: `工作记录 ${itemIndex + 1}`,
     badgeMode: "title" as const,
   }));
-  const updateProductOverride = (id: string, patch: Record<string, string | undefined>) => onUpdate({
+  const updateProductOverride = (id: string, patch: Record<string, string | undefined>) => onUpdate((currentBlock) => ({
     productOverrides: [
-      ...(block.productOverrides ?? []).filter((item) => item.id !== id),
-      { ...(block.productOverrides ?? []).find((item) => item.id === id), id, ...patch },
+      ...(currentBlock.productOverrides ?? []).filter((item) => item.id !== id),
+      { ...(currentBlock.productOverrides ?? []).find((item) => item.id === id), id, ...patch },
     ],
-  });
-  const updateCaseOverride = (id: string, patch: Record<string, string | undefined>) => onUpdate({
+  }));
+  const updateCaseOverride = (id: string, patch: Record<string, string | undefined>) => onUpdate((currentBlock) => ({
     caseOverrides: [
-      ...(block.caseOverrides ?? []).filter((item) => item.id !== id),
-      { ...(block.caseOverrides ?? []).find((item) => item.id === id), id, ...patch },
+      ...(currentBlock.caseOverrides ?? []).filter((item) => item.id !== id),
+      { ...(currentBlock.caseOverrides ?? []).find((item) => item.id === id), id, ...patch },
     ],
-  });
+  }));
   const updateCaseMetric = (id: string, metricIndex: number, field: "value" | "label", value: string) => {
-    const current = block.caseOverrides?.find((item) => item.id === id);
-    const metrics = Array.from({ length: 3 }, (_, index) => current?.metrics?.[index] ?? { value: "", label: "" });
-    metrics[metricIndex] = { ...metrics[metricIndex], [field]: value };
-    onUpdate({ caseOverrides: [...(block.caseOverrides ?? []).filter((item) => item.id !== id), { ...current, id, metrics }] });
+    onUpdate((currentBlock) => {
+      const current = currentBlock.caseOverrides?.find((item) => item.id === id);
+      const metrics = Array.from({ length: 3 }, (_, index) => current?.metrics?.[index] ?? { value: "", label: "" });
+      metrics[metricIndex] = { ...metrics[metricIndex], [field]: value };
+      return { caseOverrides: [...(currentBlock.caseOverrides ?? []).filter((item) => item.id !== id), { ...current, id, metrics }] };
+    });
+  };
+  const updateIdentityBackground = (patch: Partial<NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>>) => {
+    onUpdate((currentBlock) => ({
+      presentation: {
+        ...currentBlock.presentation,
+        background: { ...currentBlock.presentation?.background, ...patch },
+      },
+    }));
+  };
+  const updateGalleryItem = (id: string, patch: Partial<EnterpriseTemplateGalleryItem>) => {
+    onUpdate((currentBlock) => {
+      const currentItems = currentBlock.galleryItems ?? (currentBlock.imageUrls ?? []).map((imageUrl, itemIndex) => ({
+        id: `legacy-${itemIndex + 1}`,
+        imageUrl,
+        title: `工作记录 ${itemIndex + 1}`,
+        badgeMode: "title" as const,
+      }));
+      return { galleryItems: currentItems.map((item) => item.id === id ? { ...item, ...patch } : item) };
+    });
   };
   const availableLayouts = layoutOptions[block.type];
   const backgroundOpacityPercent = Math.round(
@@ -280,12 +419,7 @@ export function TemplateBlockInspector({
     }
     const focalX = Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * 100);
     const focalY = Math.round(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) * 100);
-    onUpdate({
-      presentation: {
-        ...block.presentation,
-        background: { ...identityBackground, focalX, focalY },
-      },
-    });
+    updateIdentityBackground({ focalX, focalY });
   };
   const faqById = new Map(selectableFaqs.map((item) => [item.id, item]));
   const orderedFaqs = [
@@ -350,8 +484,13 @@ export function TemplateBlockInspector({
 
       {isIdentity ? (
         <div className="identity-inspector-fields">
-          <Field label="身份头衔" hint="逐条添加、独立排序；保存后同步到真实公开名片。">
-            <IdentityTitlesEditor values={identityTitles} disabled={busy} onChange={onIdentityTitlesChange} />
+          <Field
+            label={cardKind === "enterprise" ? "企业标签与资质" : "身份头衔"}
+            hint={cardKind === "enterprise"
+              ? "逐条添加企业标签或资质，例如高新技术企业、专精特新企业、优秀企业。"
+              : "逐条添加、独立排序；保存后同步到真实公开名片。"}
+          >
+            <IdentityTitlesEditor values={identityTitles} kind={cardKind} disabled={busy} onChange={onIdentityTitlesChange} />
           </Field>
           <div className="identity-inspector-contact-heading">
             <div><strong>联系快捷入口</strong><span>电话、微信、邮箱、地址和官网都会在基础名片中显示。</span></div>
@@ -382,7 +521,7 @@ export function TemplateBlockInspector({
                   icon={<Delete24Regular />}
                   aria-label={`删除${contact.label || "联系方式"}`}
                   disabled={busy}
-                  onClick={() => onIdentityContactFieldsChange(identityContactFields.filter((field) => field.id !== contact.id))}
+                  onClick={() => commitIdentityContacts((current) => current.filter((field) => field.id !== contact.id))}
                 />
               </div>
             ))}
@@ -459,10 +598,10 @@ export function TemplateBlockInspector({
                     aria-checked={(block.presentation?.identityLayout ?? "horizontal") === value}
                     className={`option-card ${(block.presentation?.identityLayout ?? "horizontal") === value ? "active" : ""}`}
                     disabled={busy}
-                    onClick={() => onUpdate({
+                    onClick={() => onUpdate((currentBlock) => ({
                       layoutVariant: value,
-                      presentation: { ...block.presentation, identityLayout: value },
-                    })}
+                      presentation: { ...currentBlock.presentation, identityLayout: value },
+                    }))}
                   ><strong>{title}</strong><small>{detail}</small></button>
                 ))}
               </div>
@@ -481,15 +620,7 @@ export function TemplateBlockInspector({
                     icon={<Delete24Regular />}
                     aria-label="移除基础名片背景"
                     disabled={busy}
-                    onClick={() => onUpdate({
-                      presentation: {
-                        ...block.presentation,
-                        background: {
-                          ...block.presentation?.background,
-                          assetUrl: undefined,
-                        },
-                      },
-                    })}
+                    onClick={() => updateIdentityBackground({ assetUrl: undefined })}
                   />
                 </figure>
               ) : <p className="template-inspector-empty">未设置背景时沿用项目的浅青品牌底色。</p>}
@@ -543,12 +674,7 @@ export function TemplateBlockInspector({
                       className={backgroundAspectRatio === value ? "is-active" : undefined}
                       key={value}
                       disabled={busy}
-                      onClick={() => onUpdate({
-                        presentation: {
-                          ...block.presentation,
-                          background: { ...identityBackground, aspectRatio: value },
-                        },
-                      })}
+                      onClick={() => updateIdentityBackground({ aspectRatio: value })}
                     >{label}</button>
                   ))}
                 </div>
@@ -560,14 +686,8 @@ export function TemplateBlockInspector({
                 <Select
                   value={block.presentation?.background?.fit ?? "cover"}
                   disabled={busy || !block.presentation?.background?.assetUrl}
-                  onChange={(_, data) => onUpdate({
-                    presentation: {
-                      ...block.presentation,
-                      background: {
-                        ...block.presentation?.background,
-                        fit: data.value as "cover" | "contain" | "custom",
-                      },
-                    },
+                  onChange={(_, data) => updateIdentityBackground({
+                    fit: data.value as "cover" | "contain" | "custom",
                   })}
                 >
                   <option value="cover">铺满裁切</option>
@@ -582,12 +702,7 @@ export function TemplateBlockInspector({
                   onChange={(_, data) => {
                     const position = data.value as keyof typeof backgroundPositionFocal;
                     const [focalX, focalY] = backgroundPositionFocal[position];
-                    onUpdate({
-                      presentation: {
-                        ...block.presentation,
-                        background: { ...block.presentation?.background, position, focalX, focalY },
-                      },
-                    });
+                    updateIdentityBackground({ position, focalX, focalY });
                   }}
                 >
                   <option value="center">居中</option>
@@ -609,12 +724,7 @@ export function TemplateBlockInspector({
                 step={1}
                 value={Math.round((block.presentation?.background?.scale ?? 1) * 100)}
                 disabled={busy || !block.presentation?.background?.assetUrl}
-                onChange={(_, data) => onUpdate({
-                  presentation: {
-                    ...block.presentation,
-                    background: { ...block.presentation?.background, scale: data.value / 100 },
-                  },
-                })}
+                onChange={(_, data) => updateIdentityBackground({ scale: data.value / 100 })}
               />
             </Field>
             <Field label={`图片透明度 ${backgroundOpacityPercent}%`}>
@@ -623,26 +733,15 @@ export function TemplateBlockInspector({
                 max={100}
                 value={backgroundOpacityPercent}
                 disabled={busy || !block.presentation?.background?.assetUrl}
-                onChange={(_, data) => onUpdate({
-                  presentation: {
-                    ...block.presentation,
-                    background: { ...block.presentation?.background, opacity: data.value / 100 },
-                  },
-                })}
+                onChange={(_, data) => updateIdentityBackground({ opacity: data.value / 100 })}
               />
             </Field>
             <Field label="内容遮罩">
               <Select
                 value={block.presentation?.background?.overlay ?? "light"}
                 disabled={busy || !block.presentation?.background?.assetUrl}
-                onChange={(_, data) => onUpdate({
-                  presentation: {
-                    ...block.presentation,
-                    background: {
-                      ...block.presentation?.background,
-                      overlay: data.value as "none" | "light" | "dark" | "brand",
-                    },
-                  },
+                onChange={(_, data) => updateIdentityBackground({
+                  overlay: data.value as "none" | "light" | "dark" | "brand",
                 })}
               >
                 <option value="none">无遮罩</option>
@@ -727,14 +826,14 @@ export function TemplateBlockInspector({
                       target="_blank"
                       rel="noreferrer"
                     >预览原图 <Open24Regular aria-hidden="true" /></a>
-                    <Field label="图片标题"><Input value={item.title ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, title: data.value } : current) })}/></Field>
-                    <Field label="图片说明"><Textarea rows={3} value={item.description ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, description: data.value } : current) })}/></Field>
-                    <div className="template-inline-fields"><Field label="时间"><Input value={item.timeLabel ?? ""} placeholder="2026.08" onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, timeLabel: data.value } : current) })}/></Field><Field label="阶段"><Input value={item.periodLabel ?? ""} placeholder="项目交付期" onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, periodLabel: data.value } : current) })}/></Field></div>
-                    <Field label="右下角角标"><Select value={item.badgeMode} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, badgeMode: data.value as typeof item.badgeMode } : current) })}><option value="title">图片标题</option><option value="time">时间</option><option value="period">阶段</option><option value="custom">自定义</option><option value="none">不显示</option></Select></Field>
-                    {item.badgeMode === "custom" ? <Field label="自定义角标"><Input value={item.badgeText ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, badgeText: data.value } : current) })}/></Field> : null}
-                    <Field label="无障碍说明"><Input value={item.altText ?? ""} onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, altText: data.value } : current) })}/></Field>
-                    <Field label="可选跳转网址"><Input value={item.linkUrl ?? ""} placeholder="https://" onChange={(_, data) => onUpdate({ galleryItems: galleryItems.map((current) => current.id === item.id ? { ...current, linkUrl: data.value } : current) })}/></Field>
-                    <Button appearance="subtle" icon={<Delete24Regular />} disabled={busy} onClick={() => { const next = galleryItems.filter((current) => current.id !== item.id); onUpdate({ galleryItems: next, imageUrls: next.map((current) => current.imageUrl) }); }}>移除图片</Button>
+                    <Field label="图片标题"><Input value={item.title ?? ""} onChange={(_, data) => updateGalleryItem(item.id, { title: data.value })}/></Field>
+                    <Field label="图片说明"><Textarea rows={3} value={item.description ?? ""} onChange={(_, data) => updateGalleryItem(item.id, { description: data.value })}/></Field>
+                    <div className="template-inline-fields"><Field label="时间"><Input value={item.timeLabel ?? ""} placeholder="2026.08" onChange={(_, data) => updateGalleryItem(item.id, { timeLabel: data.value })}/></Field><Field label="阶段"><Input value={item.periodLabel ?? ""} placeholder="项目交付期" onChange={(_, data) => updateGalleryItem(item.id, { periodLabel: data.value })}/></Field></div>
+                    <Field label="右下角角标"><Select value={item.badgeMode} onChange={(_, data) => updateGalleryItem(item.id, { badgeMode: data.value as typeof item.badgeMode })}><option value="title">图片标题</option><option value="time">时间</option><option value="period">阶段</option><option value="custom">自定义</option><option value="none">不显示</option></Select></Field>
+                    {item.badgeMode === "custom" ? <Field label="自定义角标"><Input value={item.badgeText ?? ""} onChange={(_, data) => updateGalleryItem(item.id, { badgeText: data.value })}/></Field> : null}
+                    <Field label="无障碍说明"><Input value={item.altText ?? ""} onChange={(_, data) => updateGalleryItem(item.id, { altText: data.value })}/></Field>
+                    <Field label="可选跳转网址"><Input value={item.linkUrl ?? ""} placeholder="https://" onChange={(_, data) => updateGalleryItem(item.id, { linkUrl: data.value })}/></Field>
+                    <Button appearance="subtle" icon={<Delete24Regular />} disabled={busy} onClick={() => onUpdate((currentBlock) => { const currentItems = currentBlock.galleryItems ?? galleryItems; const next = currentItems.filter((current) => current.id !== item.id); return { galleryItems: next, imageUrls: next.map((current) => current.imageUrl) }; })}>移除图片</Button>
                   </div>
                 </details>
               ))}
@@ -901,7 +1000,7 @@ export function TemplateBlockInspector({
               size="small"
               icon={<Add24Regular />}
               disabled={busy || (block.actionItems?.length ?? 0) >= 12}
-              onClick={() => onUpdate({ actionItems: [...(block.actionItems ?? []), nextActionItem()] })}
+              onClick={() => onUpdate((currentBlock) => ({ actionItems: [...(currentBlock.actionItems ?? []), nextActionItem()] }))}
             >添加入口</Button>
           </div>
 
@@ -924,11 +1023,11 @@ export function TemplateBlockInspector({
           {(block.actionItems ?? []).length ? (
             <ol className="template-action-item-list">
               {(block.actionItems ?? []).map((item, itemIndex) => {
-                const updateItem = (patch: Partial<EnterpriseTemplateActionItem>) => onUpdate({
-                  actionItems: block.actionItems?.map((current) => (
+                const updateItem = (patch: Partial<EnterpriseTemplateActionItem>) => onUpdate((currentBlock) => ({
+                  actionItems: currentBlock.actionItems?.map((current) => (
                     current.id === item.id ? { ...current, ...patch } : current
                   )),
-                });
+                }));
                 const testHref = actionTestHref(item);
                 const actionUploading = uploadingKey === `${block.id}:action:${item.id}`;
                 return (
@@ -941,7 +1040,7 @@ export function TemplateBlockInspector({
                         icon={<Delete24Regular />}
                         aria-label={`删除行动入口：${item.title || itemIndex + 1}`}
                         disabled={busy}
-                        onClick={() => onUpdate({ actionItems: block.actionItems?.filter((current) => current.id !== item.id) })}
+                        onClick={() => onUpdate((currentBlock) => ({ actionItems: currentBlock.actionItems?.filter((current) => current.id !== item.id) }))}
                       />
                     </header>
                     <div className="template-inspector-fields">
@@ -984,8 +1083,8 @@ export function TemplateBlockInspector({
                       <Field
                         label="目标地址"
                         required
-                        validationState={item.targetValue && !testHref ? "error" : "none"}
-                        validationMessage={item.targetValue && !testHref ? "当前目标格式无效。" : undefined}
+                        validationState={item.targetValue.trim() && !testHref ? "error" : "none"}
+                        validationMessage={item.targetValue.trim() && !testHref ? "当前目标格式无效。" : undefined}
                       >
                         <Input
                           value={item.targetValue}
@@ -994,20 +1093,18 @@ export function TemplateBlockInspector({
                           onChange={(_, data) => updateItem({ targetValue: data.value })}
                         />
                       </Field>
+                      <Field label="预设图标" hint="选择后会同步显示在名片入口中。">
+                        <ActionIconPresetPicker
+                          value={item.icon}
+                          disabled={busy}
+                          onChange={(icon) => updateItem({ icon })}
+                        />
+                      </Field>
                     </div>
 
                     <details className="advanced-details">
                       <summary>活动、文章或视频信息</summary>
                       <div className="template-control-grid">
-                        <Field label="入口图标">
-                          <Select value={item.icon ?? "external"} disabled={busy} onChange={(event) => updateItem({ icon: event.target.value as NonNullable<EnterpriseTemplateActionItem["icon"]> })}>
-                            <option value="external">外部链接</option>
-                            <option value="building">企业 / 大会</option>
-                            <option value="calendar">活动日历</option>
-                            <option value="file">资料文件</option>
-                            <option value="play">视频播放</option>
-                          </Select>
-                        </Field>
                         <Field label="日期或时长">
                           <Input value={item.date ?? item.duration ?? ""} placeholder="2026.08.18 或 02:36" disabled={busy} onChange={(_, data) => updateItem(block.actionTemplate === "video" ? { duration: data.value } : { date: data.value })} />
                         </Field>
@@ -1168,6 +1265,13 @@ export function TemplateBlockInspector({
               value={block.ctaUrl ?? ""}
               disabled={busy}
               onChange={(_, data) => onUpdate({ ctaUrl: data.value })}
+            />
+          </Field>
+          <Field label="预设图标" hint="用于按钮左侧，帮助访客快速识别行动类型。">
+            <ActionIconPresetPicker
+              value={block.ctaIcon}
+              disabled={busy}
+              onChange={(ctaIcon) => onUpdate({ ctaIcon })}
             />
           </Field>
         </div>

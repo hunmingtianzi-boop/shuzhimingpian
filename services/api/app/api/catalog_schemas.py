@@ -508,7 +508,9 @@ class EnterpriseTemplateActionItem(CatalogStrictModel):
     summary: str | None = Field(default=None, max_length=500)
     label: str | None = Field(default=None, max_length=80)
     tag: str | None = Field(default=None, max_length=80)
-    icon: Literal["external", "building", "calendar", "file", "play"] | None = None
+    icon: Literal[
+        "external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"
+    ] | None = None
     date: str | None = Field(default=None, max_length=80)
     location: str | None = Field(default=None, max_length=160)
     source: str | None = Field(default=None, max_length=120)
@@ -664,6 +666,9 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
     faq_document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
     cta_label: str | None = Field(default=None, max_length=80)
     cta_url: str | None = Field(default=None, max_length=2_048)
+    cta_icon: Literal[
+        "external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"
+    ] | None = None
     action_items: list[EnterpriseTemplateActionItem] = Field(default_factory=list, max_length=12)
 
     _validate_images = field_validator("image_urls")(

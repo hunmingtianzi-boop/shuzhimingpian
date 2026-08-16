@@ -269,7 +269,7 @@ class PlatformLlmProfileFields(PlatformModel):
     timeout_seconds: float = Field(default=30, ge=2, le=120)
     max_retries: int = Field(default=2, ge=0, le=5)
     max_concurrency: int = Field(default=20, ge=1, le=500)
-    max_output_tokens: int = Field(default=1000, ge=128, le=8192)
+    max_output_tokens: int = Field(default=32768, ge=128, le=65536)
     temperature: float = Field(default=0.1, ge=0, le=2)
     daily_budget_cny: float = Field(default=100, ge=0)
     input_price_cny_per_million: float = Field(default=0, ge=0)
@@ -308,7 +308,7 @@ class UpdatePlatformLlmProfileRequest(PlatformModel):
     timeout_seconds: float | None = Field(default=None, ge=2, le=120)
     max_retries: int | None = Field(default=None, ge=0, le=5)
     max_concurrency: int | None = Field(default=None, ge=1, le=500)
-    max_output_tokens: int | None = Field(default=None, ge=128, le=8192)
+    max_output_tokens: int | None = Field(default=None, ge=128, le=65536)
     temperature: float | None = Field(default=None, ge=0, le=2)
     daily_budget_cny: float | None = Field(default=None, ge=0)
     input_price_cny_per_million: float | None = Field(default=None, ge=0)
@@ -349,7 +349,7 @@ class PlatformLlmProfileRecord(PlatformModel):
     timeout_seconds: float = 30
     max_retries: int = 2
     max_concurrency: int = 20
-    max_output_tokens: int = 1000
+    max_output_tokens: int = 32768
     temperature: float = 0.1
     daily_budget_cny: float = 100
     input_price_cny_per_million: float = 0

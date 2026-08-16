@@ -56,7 +56,7 @@ class CreateProfileInput:
     timeout_seconds: float = 30
     max_retries: int = 2
     max_concurrency: int = 20
-    max_output_tokens: int = 1_000
+    max_output_tokens: int = 32_768
     temperature: float = 0.1
     daily_budget_cny: float = 100
     input_price_cny_per_million: float = 0
@@ -80,7 +80,7 @@ class UpdateProfileInput:
     timeout_seconds: float = 30
     max_retries: int = 2
     max_concurrency: int = 20
-    max_output_tokens: int = 1_000
+    max_output_tokens: int = 32_768
     temperature: float = 0.1
     daily_budget_cny: float = 100
     input_price_cny_per_million: float = 0
@@ -505,11 +505,13 @@ class PlatformLLMProfileService:
                 profile_count = int(
                     await session.scalar(select(func.count(PlatformLLMProfile.id))) or 0
                 )
-                if profile_count and await session.scalar(
-                    select(PlatformLLMProfile.id).where(
-                        PlatformLLMProfile.is_active.is_(True)
+                if (
+                    profile_count
+                    and await session.scalar(
+                        select(PlatformLLMProfile.id).where(PlatformLLMProfile.is_active.is_(True))
                     )
-                ) is None:
+                    is None
+                ):
                     raise ApiError(
                         409,
                         "LLM_ACTIVE_PROFILE_MISSING",
@@ -724,8 +726,8 @@ class PlatformLLMProfileService:
             raise ApiError(422, "LLM_RETRIES_INVALID", "重试次数必须在 0 到 5 之间")
         if not 1 <= body.max_concurrency <= 500:
             raise ApiError(422, "LLM_CONCURRENCY_INVALID", "并发数必须在 1 到 500 之间")
-        if not 128 <= body.max_output_tokens <= 8_192:
-            raise ApiError(422, "LLM_OUTPUT_TOKENS_INVALID", "最大输出必须在 128 到 8192 之间")
+        if not 128 <= body.max_output_tokens <= 65_536:
+            raise ApiError(422, "LLM_OUTPUT_TOKENS_INVALID", "最大输出必须在 128 到 65536 之间")
         if not 0 <= body.temperature <= 2:
             raise ApiError(422, "LLM_TEMPERATURE_INVALID", "Temperature 必须在 0 到 2 之间")
         if body.thinking == "enabled" and body.temperature != 0.1:
@@ -752,12 +754,8 @@ class PlatformLLMProfileService:
             "max_output_tokens": body.max_output_tokens,
             "temperature": Decimal(str(body.temperature)),
             "daily_budget_cny": Decimal(str(body.daily_budget_cny)),
-            "input_price_cny_per_million": Decimal(
-                str(body.input_price_cny_per_million)
-            ),
-            "output_price_cny_per_million": Decimal(
-                str(body.output_price_cny_per_million)
-            ),
+            "input_price_cny_per_million": Decimal(str(body.input_price_cny_per_million)),
+            "output_price_cny_per_million": Decimal(str(body.output_price_cny_per_million)),
             "allow_general_answers": body.allow_general_answers,
             "faq_fast_path_enabled": body.faq_fast_path_enabled,
             "enabled": body.enabled,
@@ -859,9 +857,7 @@ class PlatformLLMProfileService:
             version=row.version,
             key_configured=row.api_key_ciphertext is not None,
             key_hint=row.api_key_hint,
-            last_test_status=cast(
-                Literal["untested", "succeeded", "failed"], row.last_test_status
-            ),
+            last_test_status=cast(Literal["untested", "succeeded", "failed"], row.last_test_status),
             last_test_latency_ms=row.last_test_latency_ms,
             last_tested_at=row.last_tested_at,
             created_at=row.created_at,

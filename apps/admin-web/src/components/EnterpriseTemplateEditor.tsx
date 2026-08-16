@@ -426,7 +426,6 @@ export function EnterpriseTemplateEditor({
 }: EnterpriseTemplateEditorProps) {
   const [blocks, setBlocks] = useState<EnterpriseTemplateBlock[]>([]);
   const blocksRef = useRef<EnterpriseTemplateBlock[]>([]);
-  const [canvasBlocks, setCanvasBlocks] = useState<EnterpriseTemplateBlock[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [cases, setCases] = useState<CaseStudy[]>([]);
   const [selectableFaqs, setSelectableFaqs] = useState<SelectableFaqDocument[]>([]);
@@ -469,9 +468,9 @@ export function EnterpriseTemplateEditor({
   // typing. Reloading on object identity would replace every controlled input,
   // making clicks and keystrokes appear to flash and disappear.
   const editorSourceKey = card
-    ? `card:${card.id}:${card.version}:${card.updatedAt ?? ""}:${JSON.stringify(card.identityTitles ?? [])}:${JSON.stringify(card.contactFields ?? [])}`
+    ? `card:${card.id}`
     : creationDraft
-      ? `draft:${creationDraft.cardKind}:${creationDraft.sourceCardId ?? ""}:${JSON.stringify(creationDraft.identityPreview)}`
+      ? `draft:${creationDraft.cardKind}:${creationDraft.sourceCardId ?? "new"}`
       : `default:${defaultKind ?? ""}`;
 
   useEffect(() => {
@@ -511,7 +510,6 @@ export function EnterpriseTemplateEditor({
         ));
         const removedLegacyAiBlock = editableBlocks.length !== document.blocks.length;
         replaceBlocks(editableBlocks);
-        setCanvasBlocks(editableBlocks);
         setUndoStack([]);
         setRedoStack([]);
         setVersion(template.version);
@@ -552,14 +550,6 @@ export function EnterpriseTemplateEditor({
       active = false;
     };
   }, [dataSource, editorSourceKey, open]);
-
-  // Keep controlled fields responsive while a large, draggable public-page
-  // preview is present. Rapid edits are coalesced into one near-real-time
-  // canvas refresh instead of rebuilding the entire card for every keypress.
-  useEffect(() => {
-    const timer = window.setTimeout(() => setCanvasBlocks(blocks), 100);
-    return () => window.clearTimeout(timer);
-  }, [blocks]);
 
   const mutateBlocks = (
     updater: (current: EnterpriseTemplateBlock[]) => EnterpriseTemplateBlock[],
@@ -611,10 +601,15 @@ export function EnterpriseTemplateEditor({
     setSavedNotice("已重做修改；保存后才会写入草稿。");
   };
 
-  const updateBlock = (index: number, patch: Partial<EnterpriseTemplateBlock>) => {
+  const updateBlock = (
+    index: number,
+    patch: Partial<EnterpriseTemplateBlock> | ((current: EnterpriseTemplateBlock) => Partial<EnterpriseTemplateBlock>),
+  ) => {
     mutateBlocks((current) =>
       current.map((block, position) =>
-        position === index ? { ...block, ...patch } : block,
+        position === index
+          ? { ...block, ...(typeof patch === "function" ? patch(block) : patch) }
+          : block,
       ),
     );
   };
@@ -945,7 +940,7 @@ export function EnterpriseTemplateEditor({
     }
   };
 
-  const addLibraryBlock = async (type: EnterpriseTemplateBlockType) => {
+  const addLibraryBlock = (type: EnterpriseTemplateBlockType) => {
     if (busy || blocks.length >= 24) return;
     const nextBlock = createEnterpriseTemplateBlock(type);
     const nextBlocks = normalizeEnterpriseTemplateBlockOrder([...blocks, nextBlock]);
@@ -958,14 +953,9 @@ export function EnterpriseTemplateEditor({
     setSavedNotice(undefined);
     setError(undefined);
     const label = enterpriseTemplateBlockLabels[type];
-    if (creationDraft) {
-      setSavedNotice(`${label}已加入本次名片设计；确认创建前不会写入后台。`);
-      return;
-    }
-    await persistDraft(
-      nextBlocks,
-      `${label}已加入草稿。请补齐内容后再发布。`,
-    );
+    setSavedNotice(creationDraft
+      ? `${label}已加入本次名片设计；确认创建前不会写入后台。`
+      : `${label}已加入当前草稿；请先补齐内容，再保存草稿。`);
   };
 
   const requestPublish = async () => {
@@ -1041,10 +1031,10 @@ export function EnterpriseTemplateEditor({
   // only to the structure list and preview; feeding them into controlled
   // inputs makes an intentionally empty value impossible to keep.
   const selectedInspectorBlock = selectedBlock;
-  const previewBlocks = useMemo(() => canvasBlocks.map((block) => ({
+  const previewBlocks = useMemo(() => blocks.map((block) => ({
     ...block,
     title: templateBlockDisplayTitle(block, effectiveKind),
-  })), [canvasBlocks, effectiveKind]);
+  })), [blocks, effectiveKind]);
   const selectedIssue = selectedIndex >= 0 ? blockIssues[selectedIndex] : blockIssues[0];
 
   const selectStructureBlock = (blockId: string) => {
@@ -1317,6 +1307,7 @@ export function EnterpriseTemplateEditor({
                     {selectedInspectorBlock ? (
                       <TemplateBlockInspector
                         block={selectedInspectorBlock}
+                        cardKind={effectiveKind}
                         index={selectedIndex >= 0 ? selectedIndex : 0}
                         blockCount={blocks.length}
                         busy={busy}

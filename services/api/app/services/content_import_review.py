@@ -48,7 +48,7 @@ from app.services.content_classification import (
     ContentClassification,
     classify_content_with_hard_gates,
 )
-from app.services.platform_llm_profiles import resolve_effective_chat_config
+from app.services.platform_llm_profiles import LLMRuntimeUnavailable, resolve_effective_chat_config
 
 
 class ContentImportReviewService:
@@ -69,7 +69,15 @@ class ContentImportReviewService:
         trace_id: str | None,
     ) -> ContentImportRunRecord:
         documents = await self._documents(scope=scope, batch_id=batch_id)
-        config = await resolve_effective_chat_config(self._sessions, self._settings)
+        try:
+            config = await resolve_effective_chat_config(self._sessions, self._settings)
+        except LLMRuntimeUnavailable as exc:
+            raise ApiError(
+                503,
+                "LLM_RUNTIME_UNAVAILABLE",
+                "智能整理服务尚未配置，请联系平台管理员检查模型设置",
+                details={"reason": exc.code},
+            ) from exc
         run_id, should_execute = await self._prepare_run(
             scope=scope,
             batch_id=batch_id,
@@ -96,7 +104,7 @@ class ContentImportReviewService:
                 provider=provider,
                 credentials=ProviderCredentials(api_key=config.api_key.get_secret_value()),
                 documents=documents,
-                max_tokens=min(config.max_output_tokens, 4_000),
+                max_tokens=min(config.max_output_tokens, 32_768),
                 trace_id=trace_id,
             )
         except Exception:
@@ -167,10 +175,7 @@ class ContentImportReviewService:
                     and bool(run.failure_code)
                     and run.failure_code.startswith("classification_partial:")
                 )
-                if (
-                    run.status != "manual_required"
-                    and not retryable_partial
-                ) or not retry:
+                if (run.status != "manual_required" and not retryable_partial) or not retry:
                     return run.id, False
                 reviewed_candidate_id = await session.scalar(
                     select(ContentImportCandidate.id)
@@ -245,9 +250,7 @@ class ContentImportReviewService:
             await session.flush()
             return [await self._run_record(session, run) for run in runs]
 
-    async def get_run(
-        self, *, scope: AdminScope, run_id: uuid.UUID
-    ) -> ContentImportRunRecord:
+    async def get_run(self, *, scope: AdminScope, run_id: uuid.UUID) -> ContentImportRunRecord:
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
             run = await self._run(session, scope=scope, run_id=run_id)
@@ -490,7 +493,7 @@ class ContentImportReviewService:
                 ClassificationDocument(
                     source_id=str(item.id),
                     file_name=item.file_name,
-                    content=str(raw_text)[:45_000],
+                    content=str(raw_text),
                 )
                 for item, raw_text in rows
                 if str(raw_text).strip()
@@ -581,10 +584,10 @@ class ContentImportReviewService:
         lock: bool = False,
     ) -> ContentImportRun:
         statement = select(ContentImportRun).where(
-                ContentImportRun.id == run_id,
-                ContentImportRun.tenant_id == scope.tenant_id,
-                ContentImportRun.company_id == scope.company_id,
-            )
+            ContentImportRun.id == run_id,
+            ContentImportRun.tenant_id == scope.tenant_id,
+            ContentImportRun.company_id == scope.company_id,
+        )
         if lock:
             statement = statement.with_for_update()
         run = await session.scalar(statement)

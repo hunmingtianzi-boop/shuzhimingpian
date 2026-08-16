@@ -21,7 +21,8 @@ export type CardPageIdentityPresentation = {
   };
 };
 export type CardPageActionTemplate = "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
-export type CardPageActionItem = { id: string; title: string; summary?: string; label?: string; tag?: string; icon?: "external" | "building" | "calendar" | "file" | "play"; date?: string; location?: string; source?: string; status?: string; duration?: string; imageUrl?: string; targetType: "external_url" | "internal_path" | "phone" | "map"; targetValue: string; openMode?: "self" | "new_tab" };
+export type CardPageActionIcon = "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
+export type CardPageActionItem = { id: string; title: string; summary?: string; label?: string; tag?: string; icon?: CardPageActionIcon; date?: string; location?: string; source?: string; status?: string; duration?: string; imageUrl?: string; targetType: "external_url" | "internal_path" | "phone" | "map"; targetValue: string; openMode?: "self" | "new_tab" };
 export type CardPageGalleryItem = { id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string };
 export type CardPageIdentity = { kind: "enterprise" | "employee"; name: string; headline?: string; titles?: string[]; summary?: string; imageUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
 export type CardPageProduct = { id: string; slug?: string; name: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string };
@@ -31,7 +32,7 @@ export type CardPageBlock = {
   id: string; type: CardPageBlockType; title?: string; body?: string; visible?: boolean; showTitle?: boolean; directoryEnabled?: boolean; sortOrder?: number;
   layoutVariant?: CardPageLayoutVariant; itemLimit?: number; presentation?: CardPageIdentityPresentation; imageUrls?: string[]; galleryItems?: CardPageGalleryItem[]; videoUrl?: string; videoCoverUrl?: string;
   productIds?: string[]; productItems?: CardPageProduct[]; productOverrides?: Array<Partial<CardPageProduct> & { id: string; title?: string }>; caseIds?: string[]; caseItems?: CardPageCase[]; caseOverrides?: Array<Partial<CardPageCase> & { id: string }>; faqMode?: "all_published" | "selected"; faqDocumentIds?: string[];
-  ctaLabel?: string; ctaUrl?: string; actionTemplate?: CardPageActionTemplate; actionItems?: CardPageActionItem[];
+  ctaLabel?: string; ctaUrl?: string; ctaIcon?: CardPageActionIcon; actionTemplate?: CardPageActionTemplate; actionItems?: CardPageActionItem[];
 };
 export type CardPageResolvedData = { identity?: CardPageIdentity; products?: CardPageProduct[]; cases?: CardPageCase[]; faqItems?: CardPageFaqItem[] };
 export type CardPageExperienceActions = { onOpenProduct?: (item: CardPageProduct) => void; onOpenCase?: (item: CardPageCase) => void; onAction?: (item: CardPageActionItem) => void; onAssistant?: (question?: string) => void };
@@ -125,7 +126,7 @@ export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceU
       base.items = limited(resolveCardPageFaqItems(block, data.faqItems || []), block.itemLimit).map((item) => ({ ...item }));
     } else if (block.type === "action_collection") {
       base.items = limited(block.actionItems || [], block.itemLimit).flatMap((item) => { const href = safeCardPageActionHref(item); return href ? [{ ...item, href, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }] : []; });
-    } else if (block.type === "cta") { base.ctaLabel = block.ctaLabel; base.ctaUrl = safeCardPageExternalUrl(block.ctaUrl); }
+    } else if (block.type === "cta") { base.ctaLabel = block.ctaLabel; base.ctaUrl = safeCardPageExternalUrl(block.ctaUrl); base.ctaIcon = block.ctaIcon; }
     return base;
   });
 }

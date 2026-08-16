@@ -126,6 +126,82 @@ describe("adminApi real contract", () => {
     expect((request?.headers as Headers).has("Content-Type")).toBe(false);
   });
 
+  it("serializes preset icons for action entries and a single action button", async () => {
+    const responseTemplate = {
+      card_id: "card-enterprise",
+      version: 2,
+      draft: {
+        schema_version: 1,
+        theme_key: "brand",
+        blocks: [
+          { id: "identity", type: "identity", visible: true, sort_order: 0 },
+          {
+            id: "actions",
+            type: "action_collection",
+            visible: true,
+            sort_order: 1,
+            action_items: [{
+              id: "phone-entry",
+              title: "电话咨询",
+              icon: "phone",
+              target_type: "phone",
+              target_value: "13800000000",
+              open_mode: "self",
+            }],
+          },
+          {
+            id: "cta",
+            type: "cta",
+            visible: true,
+            sort_order: 2,
+            cta_label: "微信咨询",
+            cta_url: "https://example.test/contact",
+            cta_icon: "message",
+          },
+        ],
+      },
+      published: null,
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(jsonResponse({ data: responseTemplate }));
+    const api = await authenticatedApi(fetcher);
+
+    const updated = await api.updateEnterpriseTemplate("card-enterprise", 1, "brand", [
+      { id: "identity", type: "identity", visible: true, sortOrder: 0 },
+      {
+        id: "actions",
+        type: "action_collection",
+        visible: true,
+        sortOrder: 1,
+        actionItems: [{
+          id: "phone-entry",
+          title: "电话咨询",
+          icon: "phone",
+          targetType: "phone",
+          targetValue: "13800000000",
+          openMode: "self",
+        }],
+      },
+      {
+        id: "cta",
+        type: "cta",
+        visible: true,
+        sortOrder: 2,
+        ctaLabel: "微信咨询",
+        ctaUrl: "https://example.test/contact",
+        ctaIcon: "message",
+      },
+    ]);
+
+    const body = JSON.parse(String(fetcher.mock.calls[1][1]?.body));
+    expect(body.blocks[1].action_items[0]).toMatchObject({ icon: "phone" });
+    expect(body.blocks[2]).toMatchObject({ cta_icon: "message" });
+    expect(updated.draft.blocks[1].actionItems?.[0].icon).toBe("phone");
+    expect(updated.draft.blocks[2].ctaIcon).toBe("message");
+  });
+
   it("uploads a card video through the dedicated media endpoint", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

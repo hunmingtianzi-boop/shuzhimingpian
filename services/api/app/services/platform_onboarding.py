@@ -841,7 +841,7 @@ class PlatformOnboardingService:
             ],
             credentials=ProviderCredentials(api_key=config.api_key.get_secret_value()),
             temperature=0.1,
-            max_tokens=min(config.max_output_tokens, 4_000),
+            max_tokens=min(config.max_output_tokens, 8_192),
             trace_id=trace_id,
         )
         payload = json.loads(completion.output.answer)

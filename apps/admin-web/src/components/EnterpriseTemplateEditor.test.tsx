@@ -254,15 +254,18 @@ describe("EnterpriseTemplateEditor", () => {
 
     function RecreatingParent() {
       const [, setTick] = useState(0);
+      const [currentCard, setCurrentCard] = useState(card);
       return <FluentProvider theme={adminLightTheme}>
         <button type="button" onClick={() => setTick((current) => current + 1)}>父层刷新</button>
         <EnterpriseTemplateEditor
-          card={{ ...card, identityTitles: [...(card.identityTitles ?? [])] }}
+          card={{ ...currentCard, identityTitles: [...(currentCard.identityTitles ?? [])] }}
           open
           onClose={vi.fn()}
           onEditBasicSettings={vi.fn()}
           onRequestPublish={vi.fn()}
-          onSaved={vi.fn()}
+          onSaved={(updatedCard) => {
+            if (updatedCard) setCurrentCard(updatedCard);
+          }}
         />
       </FluentProvider>;
     }
@@ -288,9 +291,77 @@ describe("EnterpriseTemplateEditor", () => {
 
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(bodyInput).toHaveValue("连续输入不会闪回");
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "rich-new", title: "", body: "连续输入不会闪回", showTitle: false }),
     ]));
+  }, 15_000);
+
+  it("keeps a newly added action module editable while its draft has not been saved", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate");
+    renderEditor();
+
+    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
+    await user.click(screen.getByRole("button", { name: /^行动按钮/ }));
+
+    const labelInput = await screen.findByRole("textbox", { name: "按钮文案", hidden: true });
+    expect(labelInput).toBeEnabled();
+    await user.type(labelInput, "预约交流");
+    expect(labelInput).toHaveValue("预约交流");
+    expect(update).not.toHaveBeenCalled();
+
+  }, 15_000);
+
+  it("keeps every action-entry field stable while the live preview refreshes", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+
+    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
+    await user.click(screen.getByRole("button", { name: /^行动入口/ }));
+    await user.click(await screen.findByRole("button", { name: "添加入口", hidden: true }));
+
+    const title = screen.getByRole("textbox", { name: "入口标题", hidden: true });
+    const summary = screen.getByRole("textbox", { name: "摘要", hidden: true });
+    const label = screen.getByRole("textbox", { name: "行动文字", hidden: true });
+    const target = screen.getByRole("textbox", { name: "目标地址", hidden: true });
+    expect(target).toHaveValue("");
+    fireEvent.change(title, { target: { value: "世界会展大会" } });
+    fireEvent.change(summary, { target: { value: "查看大会时间与报名信息" } });
+    fireEvent.change(label, { target: { value: "查看详情" } });
+    fireEvent.change(target, { target: { value: "https://example.com/conference" } });
+    await user.click(screen.getByRole("button", { name: "使用活动图标", hidden: true }));
+
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+    expect(screen.getByRole("textbox", { name: "入口标题", hidden: true })).toBe(title);
+    expect(title).toHaveValue("世界会展大会");
+    expect(summary).toHaveValue("查看大会时间与报名信息");
+    expect(label).toHaveValue("查看详情");
+    expect(target).toHaveValue("https://example.com/conference");
+    expect(screen.getByRole("button", { name: "使用活动图标", hidden: true })).toHaveAttribute("aria-pressed", "true");
+  }, 15_000);
+
+  it("offers visual icon presets for a single action button", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+
+    await user.click(await screen.findByRole("tab", { name: "添加模块" }));
+    await user.click(screen.getByRole("button", { name: /^行动按钮/ }));
+    const messagePreset = await screen.findByRole("button", { name: "使用咨询图标", hidden: true });
+    await user.click(messagePreset);
+
+    expect(messagePreset).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("group", { name: "预设图标", hidden: true })).toBeInTheDocument();
   }, 15_000);
 
   it("reorders blocks, preserves the original mobile shell and saves the draft", async () => {
@@ -498,6 +569,8 @@ describe("EnterpriseTemplateEditor", () => {
     renderEditor();
 
     await screen.findByRole("radio", { name: "横向" });
+    expect(screen.getByText("企业标签与资质")).toBeInTheDocument();
+    expect(screen.getByText(/高新技术企业、专精特新企业、优秀企业/)).toBeInTheDocument();
     expect(document.querySelectorAll("[data-editor-pane]")).toHaveLength(3);
     await user.click(screen.getByRole("radio", { name: "竖向" }));
     const background = new File(["background"], "identity.png", { type: "image/png" });
@@ -579,7 +652,7 @@ describe("EnterpriseTemplateEditor", () => {
     const handlers = renderEditor();
 
     await user.click(await screen.findByRole("button", { name: /02\s*客户案例/ }));
-    const picker = screen.getByRole("group", { name: "选择并调整已发布案例" });
+    const picker = screen.getByRole("group", { name: "选择并调整已发布案例", hidden: true });
     await user.click(within(picker).getByRole("checkbox", { name: /零售增长案例/ }));
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     const publishButton = screen.getByRole("button", { name: "进入发布确认", hidden: true });
@@ -592,7 +665,7 @@ describe("EnterpriseTemplateEditor", () => {
     }));
   }, 15_000);
 
-  it("adds a free module from the library and persists it immediately as a draft", async () => {
+  it("adds a free module from the library without blocking its form on an immediate save", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
@@ -609,11 +682,9 @@ describe("EnterpriseTemplateEditor", () => {
     await screen.findByRole("button", { name: /^图片画廊/ });
     await user.click(screen.getByRole("button", { name: /^图片画廊/ }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
-    expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "image_gallery" }),
-    ]));
-    expect(await screen.findByText("图片画廊已加入草稿。请补齐内容后再发布。")).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+    expect(await screen.findByText("图片画廊已加入当前草稿；请先补齐内容，再保存草稿。")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "模块标题" })).toBeEnabled();
   }, 15_000);
 
   it("binds FAQ blocks to selectable published knowledge instead of a free-text answer", async () => {

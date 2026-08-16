@@ -777,7 +777,7 @@ export type EnterpriseTemplateActionItem = {
   summary?: string;
   label?: string;
   tag?: string;
-  icon?: "external" | "building" | "calendar" | "file" | "play";
+  icon?: "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
   date?: string;
   location?: string;
   source?: string;
@@ -856,6 +856,7 @@ export type EnterpriseTemplateBlock = {
   faqDocumentIds?: string[];
   ctaLabel?: string;
   ctaUrl?: string;
+  ctaIcon?: "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
 };
 
 export type EnterpriseTemplate = {

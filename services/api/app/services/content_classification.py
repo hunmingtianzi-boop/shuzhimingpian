@@ -34,9 +34,20 @@ answer 字段里的 JSON 字符串。必须严格使用下面的双层格式：
   "needs_human_review": true
 }
 answer 内层的顶层五个数组必须全部存在。answer 不得包含 Markdown 围栏或解释文字。
-为控制输出长度，每个输入分片中每一类最多返回 2 条候选；同一事实不得拆成多条重复候选。
+完整识别输入中的独立事实，不得因为固定条数限制而遗漏明显的企业资料、核心业务、案例或常见问题；
+同一事实不得拆成多条重复候选。字段内容保持精炼，优先提取可直接进入企业工作台的事实，
+不要为了填满字段重复粘贴大段原文。
 source_text 只截取支持该候选的最短连续原文，建议 40 到 600 字，不要复制整个文档。
 候选字段优先逐字复制 source_text 中的原句；不要改写、扩写或把多处文字拼接成新事实。
+先通读整份资料再分类，不要按标题或段落机械地逐段输出。分类语义如下：
+- enterprise_profile：企业/组织的定位、使命、整体能力、行业、地区、官网与发展概况；
+- products：可以反复提供的产品、平台、服务、解决方案、培养项目或活动品牌；
+- case_studies：已经实施或正在实施的具体客户项目、行业实践与深挖案例；
+- faqs：资料已经明确回答、适合客户在名片中查看的高价值问题；
+- unclassified：只有确实无法进入前四类、且仍值得人工核对的内容才放入。战略目标、组织定位、
+  服务方法、平台能力和具体项目不得仅因字段不完整就直接丢入 unclassified。
+优先保证产品、案例和 FAQ 的名称/标题/问题清楚可读；缺少可证实的可选字段时留空即可，
+不要因为部分字段缺失放弃整条候选。
 字段合同：
 - enterprise_profile: company_name, summary, industry, region, website, meta
 - products: name, category, summary, detail, audience, price_boundary, meta
@@ -178,8 +189,14 @@ _EXACT_FIELDS: Mapping[str, frozenset[str]] = {
 _FACT_TOKEN_PATTERN = re.compile(
     r"https?://[^\s，。；、]+|(?:\d+(?:\.\d+)?%?)|(?:￥|¥)\s*\d+(?:\.\d+)?"
 )
-_MIN_CHUNK_CHARS = 320
-_MAX_CHUNKS = 64
+_MIN_CHUNK_CHARS = 2_000
+# The model supports a much larger context window than a typical enterprise
+# document needs. Keep ordinary files intact and only split genuinely long or
+# output-dense documents. This budget is deliberately independent from the
+# completion-token budget: input context and output size are different limits.
+_INITIAL_CHUNK_CHARS = 80_000
+_CHUNK_OVERLAP_CHARS = 1_200
+_MAX_CHUNKS = 128
 
 
 class ClassificationProvider(Protocol):
@@ -232,9 +249,7 @@ def validate_content_classification(
             if exact_source_text is None:
                 raise ValueError(f"classification_excerpt_not_found:{category}:{index}")
             evidence.source_text = exact_source_text
-            _require_candidate_fields_are_grounded(
-                category, candidate, exact_source_text, index
-            )
+            _require_candidate_fields_are_grounded(category, candidate, exact_source_text, index)
             if category == "faqs":
                 candidate.question = _normalize_faq_question(candidate.question)
     return classification
@@ -283,20 +298,21 @@ async def classify_content_with_hard_gates(
             failure_code=_summarize_failures(failures),
         )
 
-    warnings = [
-        outcome.failure_code
-        for outcome in successful
-        if outcome.failure_code
+    warnings = [outcome.failure_code for outcome in successful if outcome.failure_code]
+    degraded = [
+        warning
+        for warning in warnings
+        if not warning.startswith("classification_recovered:")
     ]
     return ContentClassificationOutcome(
         status="review",
-        classification=_merge_classifications(
-            [outcome.classification for outcome in successful]
-        ),
+        classification=_merge_classifications([outcome.classification for outcome in successful]),
         attempts=max(outcome.attempts for outcome in outcomes),
         failure_code=(
             f"classification_partial:{_summarize_failures([*failures, *warnings])}"
-            if failures or warnings
+            if failures or degraded
+            else _summarize_failures(warnings)
+            if warnings
             else None
         ),
     )
@@ -341,9 +357,7 @@ async def _classify_chunk_with_truncation_recovery(
                 )
             )
         return recovered
-    if outcome.status == "manual_required" and _can_fall_back_to_review(
-        outcome.failure_code
-    ):
+    if outcome.status == "manual_required" and _can_fall_back_to_review(outcome.failure_code):
         return [_unclassified_fallback(document, outcome)]
     return [outcome]
 
@@ -390,12 +404,8 @@ async def _classify_documents_once(
                 failure_code=f"classification_{exc.code}",
             )
         try:
-            decoded_payload = json.loads(
-                _classification_answer(completion.output.answer)
-            )
-            classification = validate_content_classification(
-                decoded_payload, documents=documents
-            )
+            decoded_payload = json.loads(_classification_answer(completion.output.answer))
+            classification = validate_content_classification(decoded_payload, documents=documents)
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             failure_code = str(exc) or "classification_invalid"
             if attempt == 1:
@@ -405,15 +415,12 @@ async def _classify_documents_once(
                     ChatMessage(
                         role="user",
                         content=(
-                            f"{CONTENT_CLASSIFICATION_REPAIR_PROMPT}\n"
-                            f"服务端失败码：{failure_code}"
+                            f"{CONTENT_CLASSIFICATION_REPAIR_PROMPT}\n服务端失败码：{failure_code}"
                         ),
                     ),
                 ]
                 continue
-            salvaged = _salvage_grounded_candidates(
-                decoded_payload, documents=documents
-            )
+            salvaged = _salvage_grounded_candidates(decoded_payload, documents=documents)
             if salvaged is not None:
                 return ContentClassificationOutcome(
                     status="review",
@@ -439,15 +446,14 @@ async def _classify_documents_once(
 def _chunk_documents(
     documents: Sequence[ClassificationDocument], *, max_tokens: int
 ) -> list[ClassificationDocument]:
-    # Keep each request small enough that a compact JSON result fits even when
-    # the active profile intentionally caps output at 1,000 tokens.
-    # Keep a short narrative in one semantic window whenever possible. The
-    # provider-output truncation recovery below still bisects oversized or
-    # unusually dense chunks, so this does not weaken the response-size gate.
-    max_chars = max(1_200, min(2_000, max_tokens * 2))
+    del max_tokens  # Input capacity must not be derived from the output budget.
     chunks: list[ClassificationDocument] = []
     for document in documents:
-        for content in _split_text(document.content, max_chars=max_chars):
+        for content in _split_text(
+            document.content,
+            max_chars=_INITIAL_CHUNK_CHARS,
+            overlap_chars=_CHUNK_OVERLAP_CHARS,
+        ):
             chunks.append(
                 ClassificationDocument(
                     source_id=document.source_id,
@@ -460,10 +466,11 @@ def _chunk_documents(
     return chunks
 
 
-def _split_text(content: str, *, max_chars: int) -> list[str]:
+def _split_text(content: str, *, max_chars: int, overlap_chars: int = 0) -> list[str]:
     normalized = content.strip()
     if len(normalized) <= max_chars:
         return [normalized]
+    overlap_chars = max(0, min(overlap_chars, max_chars // 4))
     chunks: list[str] = []
     start = 0
     while start < len(normalized):
@@ -480,7 +487,21 @@ def _split_text(content: str, *, max_chars: int) -> list[str]:
         chunk = normalized[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = end
+        if end >= len(normalized):
+            break
+        next_start = max(start + 1, end - overlap_chars)
+        if overlap_chars:
+            # Prefer starting at a nearby semantic boundary instead of in the
+            # middle of a word or sentence while retaining enough context to
+            # reconnect facts that cross the previous boundary.
+            boundary_start = max(start + 1, next_start - overlap_chars // 2)
+            boundary = max(
+                normalized.find(separator, boundary_start, end)
+                for separator in ("\n\n", "\n", "。", "；")
+            )
+            if boundary >= boundary_start:
+                next_start = boundary + 1
+        start = next_start
     return chunks
 
 
@@ -488,21 +509,62 @@ def _merge_classifications(
     classifications: Sequence[ContentClassification],
 ) -> ContentClassification:
     merged: dict[str, list[object]] = {category: [] for category in _CATEGORY_LIMITS}
-    seen: dict[str, set[str]] = {category: set() for category in _CATEGORY_LIMITS}
+    identities: dict[str, dict[str, int]] = {category: {} for category in _CATEGORY_LIMITS}
     for classification in classifications:
         for category, candidates in _candidate_groups(classification):
             for candidate in candidates:
-                payload = candidate.model_dump(exclude={"meta"})
-                fingerprint = json.dumps(
-                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-                )
-                if fingerprint in seen[category]:
+                identity = _candidate_identity(category, candidate)
+                existing_index = identities[category].get(identity)
+                if existing_index is not None:
+                    existing = merged[category][existing_index]
+                    if _candidate_quality(candidate) > _candidate_quality(existing):
+                        merged[category][existing_index] = candidate
                     continue
-                seen[category].add(fingerprint)
+                identities[category][identity] = len(merged[category])
                 merged[category].append(candidate)
                 if len(merged[category]) >= _CATEGORY_LIMITS[category]:
                     break
     return ContentClassification.model_validate(merged)
+
+
+_IDENTITY_FIELDS: Mapping[str, tuple[str, ...]] = {
+    "enterprise_profile": ("company_name",),
+    "products": ("name",),
+    "case_studies": ("title",),
+    "faqs": ("question",),
+    "unclassified": ("text",),
+}
+
+
+def _candidate_identity(category: str, candidate: object) -> str:
+    meta = candidate.meta
+    # A model/schema failure should create one review item per source instead
+    # of dozens of nearly identical unnamed fragments.
+    if category == "unclassified" and float(getattr(meta, "confidence", 0)) == 0:
+        return f"fallback:{getattr(meta, 'source_id', '')}"
+    values = [
+        str(getattr(candidate, field_name, "") or "") for field_name in _IDENTITY_FIELDS[category]
+    ]
+    normalized = "".join(
+        character.casefold() for character in "|".join(values) if character.isalnum()
+    )
+    if normalized:
+        return f"named:{normalized}"
+    payload = candidate.model_dump(exclude={"meta"})
+    return "payload:" + json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+
+
+def _candidate_quality(candidate: object) -> tuple[int, float, int]:
+    payload = candidate.model_dump(exclude={"meta"})
+    populated = sum(bool(str(value or "").strip()) for value in payload.values())
+    meta = candidate.meta
+    return (
+        populated,
+        float(getattr(meta, "confidence", 0)),
+        len(str(getattr(meta, "source_text", ""))),
+    )
 
 
 def _normalize_faq_question(value: str) -> str:
@@ -559,9 +621,7 @@ def _unclassified_fallback(
         status="review",
         classification=classification,
         attempts=failed.attempts,
-        failure_code=(
-            f"classification_fallback:{failed.failure_code or 'classification_invalid'}"
-        ),
+        failure_code=(f"classification_fallback:{failed.failure_code or 'classification_invalid'}"),
     )
 
 
@@ -585,9 +645,7 @@ def _salvage_grounded_candidates(
         return None
 
     source_map = {document.source_id: document.content for document in documents}
-    recovered: dict[str, list[object]] = {
-        category: [] for category in _CATEGORY_LIMITS
-    }
+    recovered: dict[str, list[object]] = {category: [] for category in _CATEGORY_LIMITS}
     for category, candidates in _candidate_groups(classification):
         for candidate in candidates:
             evidence = candidate.meta
@@ -605,12 +663,8 @@ def _salvage_grounded_candidates(
                 if not value:
                     continue
                 exact_required = field_name in _EXACT_FIELDS[category]
-                if (
-                    (exact_required and _text_is_grounded(value, exact_source_text))
-                    or (
-                        not exact_required
-                        and _fact_tokens_are_grounded(value, exact_source_text)
-                    )
+                if (exact_required and _text_is_grounded(value, exact_source_text)) or (
+                    not exact_required and _fact_tokens_are_grounded(value, exact_source_text)
                 ):
                     continue
                 if category == "unclassified" and field_name == "text":
@@ -629,14 +683,31 @@ def _salvage_grounded_candidates(
                 candidate_data["question"] = _normalize_faq_question(
                     str(candidate_data.get("question") or "")
                 )
-            recovered[category].append(
-                candidate.__class__.model_validate(candidate_data)
-            )
+            if category == "products" and not str(candidate_data.get("name") or "").strip():
+                candidate_data["name"] = _recover_product_name(exact_source_text)
+            recovered[category].append(candidate.__class__.model_validate(candidate_data))
 
     result = ContentClassification.model_validate(recovered)
     if not any(candidates for _, candidates in _candidate_groups(result)):
         return None
     return result
+
+
+def _recover_product_name(excerpt: str) -> str:
+    """Recover an explicit leading subject without inventing a product name.
+
+    Classification repair may correctly clear a model-generated suffix such as
+    ``浙客松系列`` when the source only says ``浙客松``.  The source sentence's
+    leading subject is still a safe, verbatim name and keeps the review card
+    usable instead of presenting an anonymous candidate.
+    """
+
+    first_sentence = re.split(r"[。！？；\n]", excerpt.strip(), maxsplit=1)[0].strip()
+    match = re.match(r"^(.{1,80}?)(?:是|定位为|作为)", first_sentence)
+    if match is None:
+        return ""
+    candidate = match.group(1).strip(" ：:，,、")
+    return candidate if candidate and _text_is_grounded(candidate, excerpt) else ""
 
 
 def _candidate_groups(

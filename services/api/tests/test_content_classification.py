@@ -80,6 +80,23 @@ class FailingProvider:
         )
 
 
+class EmptyRecordingProvider:
+    def __init__(self) -> None:
+        self.calls: list[object] = []
+
+    async def complete(self, messages: object, **kwargs: object) -> ChatCompletion:
+        self.calls.append((messages, kwargs))
+        return _completion(
+            {
+                "enterprise_profile": [],
+                "products": [],
+                "case_studies": [],
+                "faqs": [],
+                "unclassified": [],
+            }
+        )
+
+
 def test_accepts_strict_five_category_payload_with_exact_evidence() -> None:
     parsed = validate_content_classification(_payload(), documents=[DOCUMENT])
 
@@ -97,9 +114,7 @@ def test_accepts_pdf_line_wraps_and_restores_exact_source_span() -> None:
 
     parsed = validate_content_classification(payload, documents=[document])
 
-    assert parsed.enterprise_profile[0].meta.source_text == (
-        "星澜智造科技有限公司位于浙江\n杭州。"
-    )
+    assert parsed.enterprise_profile[0].meta.source_text == ("星澜智造科技有限公司位于浙江\n杭州。")
 
 
 def test_allows_reviewable_faq_rewording_when_evidence_is_exact() -> None:
@@ -249,7 +264,50 @@ async def test_repairs_ungrounded_optional_field_by_clearing_it() -> None:
     assert result.status == "review"
     assert result.classification.enterprise_profile[0].company_name == "星澜智造科技有限公司"
     assert result.classification.enterprise_profile[0].industry == ""
-    assert result.failure_code and "classification_recovered" in result.failure_code
+    assert result.failure_code and result.failure_code.startswith("classification_recovered:")
+    assert not result.failure_code.startswith("classification_partial:")
+
+
+@pytest.mark.asyncio
+async def test_recovered_product_uses_verbatim_leading_subject_as_name() -> None:
+    source_text = "浙客松是生态面向校内外打造的 AI 实战赛事品牌，也是人才发现的重要场景。"
+    document = ClassificationDocument(
+        source_id="doc-product",
+        file_name="企业资料.txt",
+        content=source_text,
+    )
+    invalid = {
+        "enterprise_profile": [],
+        "products": [
+            {
+                "name": "浙客松系列",
+                "category": "赛事品牌",
+                "summary": "面向校内外打造的 AI 实战赛事品牌",
+                "detail": "",
+                "audience": "校内外",
+                "price_boundary": "",
+                "meta": {
+                    "source_id": "doc-product",
+                    "source_text": source_text,
+                    "confidence": 0.95,
+                },
+            }
+        ],
+        "case_studies": [],
+        "faqs": [],
+        "unclassified": [],
+    }
+    provider = FakeProvider(_completion(invalid), _completion(invalid))
+
+    result = await classify_content_with_hard_gates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+    )
+
+    assert result.status == "review"
+    assert result.classification.products[0].name == "浙客松"
+    assert result.failure_code and result.failure_code.startswith("classification_recovered:")
 
 
 @pytest.mark.asyncio
@@ -269,13 +327,10 @@ async def test_missing_documents_never_calls_model() -> None:
 
 
 @pytest.mark.asyncio
-async def test_large_document_is_chunked_and_duplicate_candidates_are_merged() -> None:
-    repeated = "星澜智造科技有限公司位于浙江杭州。\n" * 180
-    document = ClassificationDocument(
-        source_id="doc-1", file_name="长资料.txt", content=repeated
-    )
-    candidate = _payload(source_text="星澜智造科技有限公司位于浙江杭州。")
-    provider = FakeProvider(*[_completion(candidate) for _ in range(5)])
+async def test_normal_enterprise_document_is_sent_with_full_context_once() -> None:
+    provider = EmptyRecordingProvider()
+    content = "企业资料开始。" + ("这里是连续的企业介绍与业务说明。" * 1_800) + "企业资料结束。"
+    document = ClassificationDocument(source_id="doc-1", file_name="企业资料.txt", content=content)
 
     result = await classify_content_with_hard_gates(
         provider=provider,
@@ -285,8 +340,76 @@ async def test_large_document_is_chunked_and_duplicate_candidates_are_merged() -
     )
 
     assert result.status == "review"
-    assert len(provider.calls) > 1
+    assert len(provider.calls) == 1
+    user_payload = json.loads(provider.calls[0][0][1].content)
+    assert user_payload["documents"][0]["content"] == content
+
+
+@pytest.mark.asyncio
+async def test_genuinely_long_document_uses_large_overlapping_semantic_chunks() -> None:
+    provider = EmptyRecordingProvider()
+    content = "企业资料开始。\n" + ("这是完整业务段落。\n" * 10_000) + "企业资料结束。"
+    document = ClassificationDocument(source_id="doc-1", file_name="超长资料.txt", content=content)
+
+    result = await classify_content_with_hard_gates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+        max_tokens=1_000,
+    )
+
+    assert result.status == "review"
+    assert 1 < len(provider.calls) < 10
+    chunks = [json.loads(call[0][1].content)["documents"][0]["content"] for call in provider.calls]
+    assert chunks[0].startswith("企业资料开始")
+    assert chunks[-1].endswith("企业资料结束。")
+    assert all(len(chunk) <= 80_000 for chunk in chunks)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_named_candidates_keep_the_more_complete_result() -> None:
+    excerpt = "星澜智造科技有限公司位于浙江杭州。"
+    repeated = (excerpt + "\n") * 5_000
+    document = ClassificationDocument(source_id="doc-1", file_name="长资料.txt", content=repeated)
+    first = _payload(source_text=excerpt)
+    second = _payload(source_text=excerpt)
+    second_profile = second["enterprise_profile"][0]
+    assert isinstance(second_profile, dict)
+    second_profile["summary"] = "位于浙江杭州"
+    second_profile["meta"]["confidence"] = 0.95
+    provider = FakeProvider(_completion(first), _completion(second))
+
+    result = await classify_content_with_hard_gates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+        max_tokens=1_000,
+    )
+
+    assert result.status == "review"
+    assert len(provider.calls) == 2
     assert len(result.classification.enterprise_profile) == 1
+    assert result.classification.enterprise_profile[0].summary == "位于浙江杭州"
+
+
+@pytest.mark.asyncio
+async def test_repeated_truncation_creates_one_review_fallback_per_source() -> None:
+    document = ClassificationDocument(
+        source_id="doc-1",
+        file_name="输出密集资料.txt",
+        content="需要人工复核的连续资料。" * 500,
+    )
+
+    result = await classify_content_with_hard_gates(
+        provider=FailingProvider(),
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+        max_tokens=1_000,
+    )
+
+    assert result.status == "review"
+    assert len(result.classification.unclassified) == 1
+    assert result.classification.unclassified[0].meta.source_id == "doc-1"
 
 
 @pytest.mark.asyncio

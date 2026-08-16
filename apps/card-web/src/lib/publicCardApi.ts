@@ -59,13 +59,14 @@ export type PublicEnterpriseTemplateBlock = {
   faq_document_ids?: string[];
   cta_label?: string;
   cta_url?: string;
+  cta_icon?: "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
   action_items?: Array<{
     id: string;
     title: string;
     summary?: string;
     label?: string;
     tag?: string;
-    icon?: "external" | "building" | "calendar" | "file" | "play";
+    icon?: "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
     date?: string;
     location?: string;
     source?: string;
@@ -236,7 +237,7 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
             summary: optionalString(item, "summary"),
             label: optionalString(item, "label"),
             tag: optionalString(item, "tag"),
-            icon: ["external", "building", "calendar", "file", "play"].includes(optionalString(item, "icon") || "")
+            icon: ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(optionalString(item, "icon") || "")
               ? optionalString(item, "icon") as NonNullable<PublicEnterpriseTemplateBlock["action_items"]>[number]["icon"]
               : undefined,
             date: optionalString(item, "date"),
@@ -280,6 +281,9 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
       faq_document_ids: strings(raw.faq_document_ids),
       cta_label: optionalString(raw, "cta_label"),
       cta_url: optionalString(raw, "cta_url"),
+      cta_icon: ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(optionalString(raw, "cta_icon") || "")
+        ? optionalString(raw, "cta_icon") as PublicEnterpriseTemplateBlock["cta_icon"]
+        : undefined,
       action_items: actionItems,
     }];
   });

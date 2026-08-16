@@ -119,6 +119,7 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
     faqDocumentIds: block.faq_document_ids,
     ctaLabel: block.cta_label,
     ctaUrl: block.cta_url,
+    ctaIcon: block.cta_icon,
     actionItems: block.action_items?.map((item) => ({
       id: item.id,
       title: item.title,

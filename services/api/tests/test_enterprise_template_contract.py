@@ -56,7 +56,6 @@ def test_template_requires_one_visible_identity_block() -> None:
         EnterpriseTemplateDocument.model_validate(
             {"blocks": [{"id": "intro", "type": "rich_text", "sort_order": 0}]}
         )
-
     with pytest.raises(ValidationError, match="identity block must remain visible"):
         EnterpriseTemplateDocument.model_validate(
             {
@@ -71,6 +70,57 @@ def test_template_requires_one_visible_identity_block() -> None:
             }
         )
 
+
+def test_template_accepts_action_icon_presets_and_rejects_unknown_icons() -> None:
+    document = EnterpriseTemplateDocument.model_validate(
+        {
+            "blocks": [
+                {"id": "identity", "type": "identity", "sort_order": 0},
+                {
+                    "id": "actions",
+                    "type": "action_collection",
+                    "sort_order": 1,
+                    "action_items": [
+                        {
+                            "id": "phone-entry",
+                            "title": "电话咨询",
+                            "icon": "phone",
+                            "target_type": "phone",
+                            "target_value": "13800000000",
+                        }
+                    ],
+                },
+                {
+                    "id": "cta",
+                    "type": "cta",
+                    "sort_order": 2,
+                    "cta_label": "在线咨询",
+                    "cta_url": "https://example.com/contact",
+                    "cta_icon": "message",
+                },
+            ]
+        }
+    )
+
+    assert document.blocks[1].action_items[0].icon == "phone"
+    assert document.blocks[2].cta_icon == "message"
+
+    with pytest.raises(ValidationError, match="Input should be"):
+        EnterpriseTemplateDocument.model_validate(
+            {
+                "blocks": [
+                    {"id": "identity", "type": "identity", "sort_order": 0},
+                    {
+                        "id": "cta",
+                        "type": "cta",
+                        "sort_order": 1,
+                        "cta_label": "在线咨询",
+                        "cta_url": "https://example.com/contact",
+                        "cta_icon": "sparkles",
+                    },
+                ]
+            }
+        )
 
 def test_business_collection_keeps_product_references_without_client_snapshots() -> None:
     product_id = uuid.uuid4()
@@ -343,10 +393,19 @@ async def test_public_projection_omits_hidden_blocks() -> None:
                     "body": "公开内容",
                 },
                 {
+                    "id": "contact",
+                    "type": "cta",
+                    "visible": True,
+                    "sort_order": 2,
+                    "cta_label": "在线咨询",
+                    "cta_url": "https://example.com/contact",
+                    "cta_icon": "message",
+                },
+                {
                     "id": "spoofed-asset",
                     "type": "image_gallery",
                     "visible": True,
-                    "sort_order": 2,
+                    "sort_order": 3,
                     "image_urls": [
                         "https://attacker.example/api/v1/public/card-assets/"
                         f"{company_id}/{uuid.uuid4()}.webp"
@@ -357,5 +416,10 @@ async def test_public_projection_omits_hidden_blocks() -> None:
     )
 
     assert projection is not None
-    assert [block["id"] for block in projection["blocks"]] == ["identity", "public"]
+    assert [block["id"] for block in projection["blocks"]] == [
+        "identity",
+        "public",
+        "contact",
+    ]
+    assert projection["blocks"][2]["cta_icon"] == "message"
     assert projection["blocks"][0]["directory_enabled"] is False

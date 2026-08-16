@@ -260,6 +260,7 @@ describe("EnterpriseTemplateBlocks", () => {
               title: "世界会展大会",
               summary: "查看大会日程与报名方式",
               label: "查看详情",
+              icon: "calendar",
               image_url: "/api/v1/public/assets/company/event.webp",
               target_type: "external_url",
               target_value: "https://events.example.test/conference",
@@ -303,6 +304,7 @@ describe("EnterpriseTemplateBlocks", () => {
       action_items: [{
         id: "official-site",
         title: "企业官网",
+        icon: "phone",
         image_url: "/api/v1/public/assets/company/site.webp",
         target_type: "internal_path",
         target_value: "/company",
@@ -314,6 +316,7 @@ describe("EnterpriseTemplateBlocks", () => {
       actionItems: [{
         id: "official-site",
         imageUrl: "/api/v1/public/assets/company/site.webp",
+        icon: "phone",
         targetType: "internal_path",
         targetValue: "/company",
       }],
@@ -378,12 +381,14 @@ describe("EnterpriseTemplateBlocks", () => {
   it("plays uploaded video URLs in place and does not show a false empty CTA", () => {
     const { container } = render(<CardPageExperience blocks={[
       { id: "video", type: "video_link", title: "介绍视频", videoUrl: "/api/v1/public/assets/video.mp4", videoCoverUrl: "/cover.jpg" },
-      { id: "cta", type: "cta", title: "立即预约", ctaLabel: "预约咨询", ctaUrl: "https://example.test/contact" },
+      { id: "cta", type: "cta", title: "立即预约", ctaLabel: "预约咨询", ctaUrl: "https://example.test/contact", ctaIcon: "message" },
     ]}/>);
 
     fireEvent.click(screen.getByRole("button", { name: "播放介绍视频" }));
     expect(container.querySelector("video")).toHaveAttribute("src", "/api/v1/public/assets/video.mp4");
-    expect(screen.getByRole("link", { name: "预约咨询 →" })).toBeInTheDocument();
+    const cta = screen.getByRole("link", { name: "预约咨询" });
+    expect(cta).toBeInTheDocument();
+    expect(cta.querySelector("svg.icon")).toBeInTheDocument();
     expect(screen.queryByText("内容待补充")).not.toBeInTheDocument();
   });
 });

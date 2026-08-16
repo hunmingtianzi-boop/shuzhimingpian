@@ -30,7 +30,7 @@ const iconPaths: Record<StudioIconName, ReactNode> = {
 };
 
 export function StudioIcon({ name, label }: { name: StudioIconName; label?: string }) {
-  return <svg className="icon" viewBox="0 0 24 24" aria-hidden={label ? undefined : true}>{label ? <title>{label}</title> : null}{iconPaths[name]}</svg>;
+  return <svg className="icon" data-icon={name} viewBox="0 0 24 24" aria-hidden={label ? undefined : true}>{label ? <title>{label}</title> : null}{iconPaths[name]}</svg>;
 }
 
 export type StudioIdentity = {
@@ -68,6 +68,7 @@ export type StudioModule = {
   videoCoverUrl?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  ctaIcon?: "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
 };
 
 export type StudioCardPageProps = {
@@ -146,7 +147,7 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
         <div className="identity-kicker">{identity.kind === "employee" ? "员工名片 · 资料已同步" : "企业官方名片"}</div>
         <div className="identity-name-row"><h1 className="identity-name">{identity.name}</h1>{identity.verificationLabel ? <span className="verified"><StudioIcon name="check"/>{identity.verificationLabel}</span> : null}</div>
         {identity.headline ? <p className="identity-role">{identity.headline}</p> : null}
-        {identity.titles?.length ? <div className="identity-titles" aria-label="身份头衔">{identity.titles.slice(0, 8).map((title) => <span key={title}>{title}</span>)}</div> : null}
+        {identity.titles?.length ? <div className="identity-titles" aria-label={identity.kind === "enterprise" ? "企业标签与资质" : "身份头衔"}>{identity.titles.slice(0, 8).map((title) => <span key={title}>{title}</span>)}</div> : null}
         {identity.companyName ? <p className="identity-company">{identity.companyName}</p> : null}
         {identity.kind === "employee" && identity.summary ? <p className="identity-summary">{identity.summary}</p> : null}
         {identity.meta?.length ? <small className="identity-meta">{identity.meta.join(" · ")}</small> : null}
@@ -157,7 +158,7 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
   </section>;
 }
 
-function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onAssistant }: { module: StudioModule; editor?: boolean; onOpenItem?: StudioCardPageProps["onOpenItem"]; onAction?: StudioCardPageProps["onAction"]; onAssistant?: StudioCardPageProps["onAssistant"] }) {
+function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onAssistant, onSelectModule }: { module: StudioModule; editor?: boolean; onOpenItem?: StudioCardPageProps["onOpenItem"]; onAction?: StudioCardPageProps["onAction"]; onAssistant?: StudioCardPageProps["onAssistant"]; onSelectModule?: StudioCardPageProps["onSelectModule"] }) {
   const items = module.items || [];
   if (module.type === "identity") return StudioIdentityBlock({ identity: module.identity });
   if (module.type === "overview") return <section className="content-module"><div className="overview-panel"><small>我能帮助你</small><p>{module.body || "把企业的业务经验变成可复用的 AI 能力，让销售更懂客户，让服务更快抵达。"}</p></div></section>;
@@ -167,27 +168,32 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
   }
   if (module.type === "cases") return <section className="content-module"><ModuleHeading module={module} more/><StudioCaseCollection items={items} layout={module.layout} onOpenItem={(item) => onOpenItem?.(module, item)}/></section>;
   if (module.type === "gallery") return <section className="content-module"><ModuleHeading module={module} more/><StudioGallery items={module.galleryItems || (module.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index}`, imageUrl }))} layout={module.layout} title={module.title} interactive={!editor}/></section>;
-  if (module.type === "video") return <VideoModule module={module} editor={editor}/>;
+  if (module.type === "video") return <VideoModule module={module} editor={editor} onModuleSelect={() => onSelectModule?.(module.id)}/>;
   if (module.type === "faq") return <FaqModule module={module}/>;
   if (module.type === "actions") {
     const template = module.actionTemplate || (items.some((item) => item.imageUrl) ? "media" : "shortcuts");
-    const actionIcon = (item: Record<string, unknown>): StudioIconName => ["external", "building", "calendar", "file", "play"].includes(String(item.icon)) ? String(item.icon) as StudioIconName : "external";
+    const actionIcon = (item: Record<string, unknown>): StudioIconName => ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(String(item.icon)) ? String(item.icon) as StudioIconName : "external";
     return <section className="content-module action-module"><ModuleHeading module={module}/><div className={`action-collection template-${template} layout-${module.layout || "grid"}`}>{items.length ? items.map((item, index) => <a className={`action-entry ${item.imageUrl ? "has-image" : "no-image"}`} href={String(item.href || "#")} target={!editor && item.openMode === "new_tab" ? "_blank" : undefined} rel="noreferrer" key={String(item.id || index)} onClick={(event) => { if (editor || !item.href || item.href === "#") event.preventDefault(); onAction?.(item); }}><div className="action-visual">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : null}<span className="action-icon"><StudioIcon name={actionIcon(item)}/></span>{template === "video" ? <><span className="action-play"><StudioIcon name="play"/></span><span className="action-duration">{String(item.duration || "02:36")}</span></> : null}</div><div className="action-copy"><div className="action-topline"><span className="action-number">{String(index + 1).padStart(2, "0")}</span>{item.tag ? <span className="action-tag">{String(item.tag)}</span> : null}{template === "event" ? <span className="action-status">{String(item.status || "进行中")}</span> : null}</div><h3>{String(item.title || "未命名入口")}</h3>{template === "event" ? <div className="action-meta">{item.date ? <span><StudioIcon name="calendar"/>{String(item.date)}</span> : null}{item.location ? <span><StudioIcon name="map"/>{String(item.location)}</span> : null}</div> : template === "articles" ? <div className="action-meta">{item.source ? <span>{String(item.source)}</span> : null}{item.date ? <span>{String(item.date)}</span> : null}</div> : null}{item.summary ? <p>{String(item.summary)}</p> : null}<span className="action-cta">{String(item.label || "查看详情")} <StudioIcon name="external"/></span></div></a>) : <div className="empty-state"><strong>行动入口待配置</strong><p>添加官网、电话、地图或站内入口。</p></div>}</div></section>;
   }
   if (module.type === "contact") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel">{items.map((item, index) => <div className="contact-row" key={String(item.id || index)}><span className="contact-icon"><StudioIcon name={contactIcon(String(item.kind || "other"))}/></span><div><small>{String(item.label || "联系方式")}</small><strong>{String(item.value || "")}</strong></div><button type="button">{String(item.action || "使用")}</button></div>)}</div></section>;
   if (module.type === "trust") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel"><div className="contact-row"><span className="contact-icon"><StudioIcon name="check"/></span><div><small>资料状态</small><strong>{module.body || "企业公开资料已确认"}</strong></div></div></div></section>;
   if (module.type === "ai") return <section className="content-module"><ModuleHeading module={module}/><div className="overview-panel"><small>AI 接待</small><p>{module.body || "基于企业已审核资料，为访客介绍业务并整理合作需求。"}</p>{onAssistant ? <button type="button" className="module-more" onClick={() => onAssistant()}>开始咨询</button> : null}</div></section>;
-  if (module.type === "cta") return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy">{module.body?.trim() ? <p>{module.body}</p> : null}{module.ctaUrl ? <a className="module-more" href={module.ctaUrl}>{module.ctaLabel || "了解更多"} →</a> : module.ctaLabel ? <span className="module-more" aria-disabled="true">{module.ctaLabel}</span> : <p>行动按钮待配置</p>}</div></section>;
+  if (module.type === "cta") return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy">{module.body?.trim() ? <p>{module.body}</p> : null}{module.ctaUrl ? <a className="module-more cta-button-with-icon" href={module.ctaUrl}><StudioIcon name={module.ctaIcon || "external"}/><span>{module.ctaLabel || "了解更多"}</span></a> : module.ctaLabel ? <span className="module-more cta-button-with-icon" aria-disabled="true"><StudioIcon name={module.ctaIcon || "external"}/><span>{module.ctaLabel}</span></span> : <p>行动按钮待配置</p>}</div></section>;
   return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy"><p>{module.body || "内容待补充"}</p>{module.ctaUrl ? <a className="module-more" href={module.ctaUrl}>{module.ctaLabel || "了解更多"} →</a> : null}</div></section>;
 }
 
 function VideoModule({
   module,
   editor,
+  onModuleSelect,
   className,
   children,
   ...sectionProps
-}: { module: StudioModule; editor: boolean } & HTMLAttributes<HTMLElement>) {
+}: {
+  module: StudioModule;
+  editor: boolean;
+  onModuleSelect?: () => void;
+} & HTMLAttributes<HTMLElement>) {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
@@ -199,7 +205,7 @@ function VideoModule({
   if (!module.videoUrl) return <section {...sectionProps} className={sectionClassName}>{children}<ModuleHeading module={module}/><div className="empty-state"><strong>视频待配置</strong><p>请上传视频或添加安全的视频地址。</p></div></section>;
   return <section {...sectionProps} className={sectionClassName}>{children}<ModuleHeading module={module}/>{playing && !editor
     ? <div className="video-card is-playing"><video ref={videoRef} src={module.videoUrl} poster={module.videoCoverUrl} controls playsInline preload="metadata">当前浏览器无法播放该视频。</video><a className="video-fallback-link" href={module.videoUrl} target="_blank" rel="noreferrer">在新窗口打开视频</a></div>
-    : <button className="video-card video-card-trigger" type="button" aria-label={editor ? `选中${module.title}模块` : `播放${module.title}`} onClick={() => { if (!editor) setPlaying(true); }}>{module.videoCoverUrl ? <img src={module.videoCoverUrl} alt={`${module.title}封面`}/> : null}<span className="video-play"><StudioIcon name="play"/></span><span className="video-caption"><strong>{module.title}</strong><span>{editor ? "在右侧测试播放" : "点击播放"}</span></span></button>}</section>;
+    : <button className="video-card video-card-trigger" type="button" aria-label={editor ? `选中${module.title}模块` : `播放${module.title}`} onClick={(event) => { if (editor) { event.stopPropagation(); onModuleSelect?.(); } else setPlaying(true); }}>{module.videoCoverUrl ? <img src={module.videoCoverUrl} alt={`${module.title}封面`}/> : null}<span className="video-play"><StudioIcon name="play"/></span><span className="video-caption"><strong>{module.title}</strong><span>{editor ? "在右侧测试播放" : "点击播放"}</span></span></button>}</section>;
 }
 
 function FaqModule({ module, className, ...sectionProps }: { module: StudioModule } & HTMLAttributes<HTMLElement>) {
@@ -269,7 +275,7 @@ export function StudioCardPage({ modules, title, editor = false, className, sele
   const directoryNode = directory.length ? <nav ref={directoryRef} className="card-directory" aria-label={directoryAriaLabel}>{directory.map((module) => <button className={`directory-link ${activeId === module.id ? "active" : ""}`} type="button" key={module.id} onClick={() => { setActiveId(module.id); const target = hostRef.current?.querySelector<HTMLElement>(`[data-module-id="${CSS.escape(module.id)}"]`); if (target) { if (editor) scrollEditorTarget(target); else { const directoryHeight = directoryRef.current?.getBoundingClientRect().height || 50; window.scrollTo({ top: Math.max(0, window.scrollY + target.getBoundingClientRect().top - directoryHeight - 8), behavior: "smooth" }); } } onSelectModule?.(module.id); }}>{module.title.replace("个人", "")}</button>)}</nav> : null;
   let directoryRendered = false;
   const content = visible.map((module) => {
-    const inner = StudioModuleContent({ module, editor, onOpenItem, onAction, onAssistant });
+    const inner = StudioModuleContent({ module, editor, onOpenItem, onAction, onAssistant, onSelectModule });
     const element = inner as ReactElement<{ className?: string; children?: ReactNode }>;
     const exactModule = isValidElement(element) ? cloneElement(element, {
       id: `bp-template-block-${module.id}`,

@@ -164,7 +164,7 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
           summary: optionalString(rawItem.summary) || undefined,
           label: optionalString(rawItem.label) || undefined,
           tag: optionalString(rawItem.tag) || undefined,
-          icon: ["external", "building", "calendar", "file", "play"].includes(optionalString(rawItem.icon))
+          icon: ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(optionalString(rawItem.icon))
             ? optionalString(rawItem.icon) as NonNullable<EnterpriseTemplateBlock["actionItems"]>[number]["icon"]
             : undefined,
           date: optionalString(rawItem.date) || undefined,
@@ -283,6 +283,9 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
     faqDocumentIds: type === "faq" ? strings(value.faq_document_ids) : undefined,
     ctaLabel: optionalString(value.cta_label) || undefined,
     ctaUrl: optionalString(value.cta_url) || undefined,
+    ctaIcon: ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(optionalString(value.cta_icon))
+      ? optionalString(value.cta_icon) as EnterpriseTemplateBlock["ctaIcon"]
+      : undefined,
   };
 }
 
@@ -436,6 +439,7 @@ function enterpriseTemplatePayload(
       } : {}),
       ...(block.ctaLabel?.trim() ? { cta_label: block.ctaLabel.trim() } : {}),
       ...(block.ctaUrl?.trim() ? { cta_url: block.ctaUrl.trim() } : {}),
+      ...(block.ctaIcon ? { cta_icon: block.ctaIcon } : {}),
     })),
   };
 }
