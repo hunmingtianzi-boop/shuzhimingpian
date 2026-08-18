@@ -260,6 +260,7 @@ class EventHandlerRegistry:
             "wechat": "微信",
             "wecom": "企业微信",
         }.get(snapshot.visitor_channel, "网页")
+        admin_base_url = self._repository.admin_base_url()
         if report:
             level_label = {"low": "较低", "medium": "中等", "high": "较高"}.get(
                 snapshot.engagement_level,
@@ -289,6 +290,7 @@ class EventHandlerRegistry:
                     ("编号", str(visit_id)[:8]),
                 ),
                 action_text="查看完整访问报告",
+                cover_url=_wecom_visit_cover_url(admin_base_url),
             )
         else:
             title = "有人正在查看名片"
@@ -310,6 +312,7 @@ class EventHandlerRegistry:
                     ("编号", str(visit_id)[:8]),
                 ),
                 action_text="查看实时访问",
+                cover_url=None,
             )
 
         notifications = (
@@ -327,7 +330,6 @@ class EventHandlerRegistry:
             if snapshot.in_app_enabled
             else ()
         )
-        admin_base_url = self._repository.admin_base_url()
         report_entry_url = _wecom_visit_report_entry_url(admin_base_url, visit_id)
         wecom_delivered = (
             await self._repository.send_wecom_visit_notification(
@@ -397,6 +399,24 @@ def _wecom_visit_report_entry_url(
             parsed.netloc,
             f"{base_path}/wecom/entry",
             urlencode({"return_to": report_path}),
+            "",
+        )
+    )
+
+
+def _wecom_visit_cover_url(admin_base_url: str | None) -> str | None:
+    if not admin_base_url:
+        return None
+    parsed = urlsplit(admin_base_url.strip())
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return None
+    base_path = parsed.path.rstrip("/")
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"{base_path}/assets/wecom/visitor-insight-cover.png",
+            "",
             "",
         )
     )

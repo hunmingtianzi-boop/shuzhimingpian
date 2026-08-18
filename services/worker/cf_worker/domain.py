@@ -76,6 +76,7 @@ class WeComVisitCard:
     emphasis_description: str
     details: tuple[tuple[str, str], ...]
     action_text: str
+    cover_url: str | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -235,6 +235,7 @@ class PostgresOutboxRepository:
                     details=card.details,
                     url=report_url,
                     action_text=card.action_text,
+                    cover_url=card.cover_url,
                 )
                 return
             await WeComClient(
@@ -250,6 +251,7 @@ class PostgresOutboxRepository:
                 details=card.details,
                 url=report_url,
                 action_text=card.action_text,
+                cover_url=card.cover_url,
             )
 
     async def purge_expired_visitor_profiles(self) -> int:

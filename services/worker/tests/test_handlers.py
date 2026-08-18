@@ -249,6 +249,9 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
     assert card.action_text in {"查看实时访问", "查看完整访问报告"}
     if event_type == "visit.report.ready.v1":
         assert card.emphasis_title == "中等"
+        assert card.cover_url == (
+            "https://example.test/c/admin/assets/wecom/visitor-insight-cover.png"
+        )
         assert dict(card.details) == {
             "停留": "2 分 6 秒",
             "页面": "4 个",
@@ -259,12 +262,11 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
         }
     else:
         assert card.emphasis_title == "实时"
+        assert card.cover_url is None
         assert dict(card.details)["状态"] == "正在浏览"
     report_url = urlsplit(message["report_url"])
     assert report_url.path == "/c/admin/wecom/entry"
-    assert parse_qs(report_url.query)["return_to"] == [
-        f"/c/admin/visits?visitId={visit_id}"
-    ]
+    assert parse_qs(report_url.query)["return_to"] == [f"/c/admin/visits?visitId={visit_id}"]
 
 
 @pytest.mark.asyncio

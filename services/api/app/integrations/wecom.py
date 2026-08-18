@@ -46,6 +46,7 @@ def build_wecom_template_card_payload(
     details: tuple[tuple[str, str], ...],
     url: str,
     action_text: str = "查看访问报告",
+    cover_url: str | None = None,
 ) -> dict[str, object]:
     """Build a native WeCom text-notice template card for a visit report."""
 
@@ -55,6 +56,7 @@ def build_wecom_template_card_payload(
     normalized_emphasis_title = emphasis_title.strip()
     normalized_emphasis_description = emphasis_description.strip()
     normalized_url = url.strip()
+    normalized_cover_url = cover_url.strip() if cover_url else None
     normalized_action = action_text.strip() or "查看访问报告"
     normalized_details = tuple(
         (key.strip(), value.strip()) for key, value in details if key.strip() and value.strip()
@@ -69,46 +71,74 @@ def build_wecom_template_card_payload(
         or not normalized_details
         or len(normalized_details) > 6
         or not normalized_url.startswith(("https://", "http://"))
+        or (
+            normalized_cover_url is not None
+            and not normalized_cover_url.startswith(("https://", "http://"))
+        )
     ):
         raise WeComConfigurationError("wecom_template_card_invalid")
+    template_card: dict[str, object] = {
+        "source": {
+            "desc": "数智名片 · 访客洞察",
+            "desc_color": 3,
+        },
+        "main_title": {
+            "title": normalized_title[:26],
+            "desc": normalized_subtitle[:30],
+        },
+        "horizontal_content_list": [
+            {
+                "keyname": key[:5],
+                "value": value[:26],
+            }
+            for key, value in normalized_details
+        ],
+        "jump_list": [
+            {
+                "type": 1,
+                "title": normalized_action[:13],
+                "url": normalized_url[:2_048],
+            }
+        ],
+        "card_action": {
+            "type": 1,
+            "url": normalized_url[:2_048],
+        },
+    }
+    if normalized_cover_url is not None:
+        template_card.update(
+            {
+                "card_type": "news_notice",
+                "card_image": {
+                    "url": normalized_cover_url[:2_048],
+                    "aspect_ratio": 2.25,
+                },
+                "vertical_content_list": [
+                    {
+                        "title": f"{normalized_emphasis_description}：{normalized_emphasis_title}"[
+                            :26
+                        ],
+                        "desc": normalized_summary[:112],
+                    }
+                ],
+            }
+        )
+    else:
+        template_card.update(
+            {
+                "card_type": "text_notice",
+                "emphasis_content": {
+                    "title": normalized_emphasis_title[:10],
+                    "desc": normalized_emphasis_description[:15],
+                },
+                "sub_title_text": normalized_summary[:112],
+            }
+        )
     return {
         "touser": user_id,
         "msgtype": "template_card",
         "agentid": agent_id,
-        "template_card": {
-            "card_type": "text_notice",
-            "source": {
-                "desc": "数智名片 · 访客洞察",
-                "desc_color": 3,
-            },
-            "main_title": {
-                "title": normalized_title[:36],
-                "desc": normalized_subtitle[:44],
-            },
-            "emphasis_content": {
-                "title": normalized_emphasis_title[:14],
-                "desc": normalized_emphasis_description[:22],
-            },
-            "sub_title_text": normalized_summary[:112],
-            "horizontal_content_list": [
-                {
-                    "keyname": key[:5],
-                    "value": value[:30],
-                }
-                for key, value in normalized_details
-            ],
-            "jump_list": [
-                {
-                    "type": 1,
-                    "title": normalized_action[:18],
-                    "url": normalized_url[:2_048],
-                }
-            ],
-            "card_action": {
-                "type": 1,
-                "url": normalized_url[:2_048],
-            },
-        },
+        "template_card": template_card,
         "safe": 0,
         "enable_id_trans": 0,
         "enable_duplicate_check": 1,
@@ -275,6 +305,7 @@ class WeComClient:
         details: tuple[tuple[str, str], ...],
         url: str,
         action_text: str = "查看访问报告",
+        cover_url: str | None = None,
     ) -> WeComMessageResult:
         _corp_id, agent_id, _secret = self._credentials()
         token = await self.access_token()
@@ -293,6 +324,7 @@ class WeComClient:
                 details=details,
                 url=url,
                 action_text=action_text,
+                cover_url=cover_url,
             ),
         )
         return parse_wecom_message_result(payload)

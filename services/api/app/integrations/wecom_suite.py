@@ -105,9 +105,7 @@ class WeComSuiteClient:
                 "pre_auth_code": pre_auth_code,
                 "session_info": {
                     "appid": [],
-                    "auth_type": (
-                        1 if self._settings.wecom_suite_auth_type == "test" else 0
-                    ),
+                    "auth_type": (1 if self._settings.wecom_suite_auth_type == "test" else 0),
                 },
             },
         )
@@ -157,9 +155,7 @@ class WeComSuiteClient:
         await self._redis.set(token_key, token, ex=max(60, int(expires_in or 7_200) - 300))
         return token
 
-    async def exchange_permanent_code(
-        self, *, auth_code: str
-    ) -> WeComSuiteAuthorizationGrant:
+    async def exchange_permanent_code(self, *, auth_code: str) -> WeComSuiteAuthorizationGrant:
         suite_token = await self.suite_access_token()
         payload = await self._request_json(
             "POST",
@@ -336,6 +332,7 @@ class WeComSuiteClient:
         details: tuple[tuple[str, str], ...],
         url: str,
         action_text: str = "查看访问报告",
+        cover_url: str | None = None,
     ) -> WeComMessageResult:
         if agent_id <= 0:
             raise WeComConfigurationError("wecom_suite_agent_not_configured")
@@ -358,6 +355,7 @@ class WeComSuiteClient:
                 details=details,
                 url=url,
                 action_text=action_text,
+                cover_url=cover_url,
             ),
         )
         return parse_wecom_message_result(payload)

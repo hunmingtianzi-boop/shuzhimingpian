@@ -35,9 +35,7 @@ class MemoryRedis:
     async def get(self, key: str) -> str | None:
         return self.values.get(key)
 
-    async def set(
-        self, key: str, value: str, *, ex: int, nx: bool = False
-    ) -> bool:
+    async def set(self, key: str, value: str, *, ex: int, nx: bool = False) -> bool:
         if nx and key in self.values:
             return False
         self.values[key] = value
@@ -179,9 +177,7 @@ async def test_wecom_suite_install_and_per_corp_tokens_are_separately_cached() -
     assert "state=" + "a" * 64 in install_url
     assert expires_in == 1200
     assert first == second == "corp-token"
-    assert [request.url.path for request in requests].count(
-        "/cgi-bin/service/get_corp_token"
-    ) == 1
+    assert [request.url.path for request in requests].count("/cgi-bin/service/get_corp_token") == 1
 
 
 @pytest.mark.asyncio
@@ -207,9 +203,7 @@ async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> Non
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[
-        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
-    ] = "corp-token"
+    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         result = await WeComSuiteClient(
             settings=settings,
@@ -235,14 +229,11 @@ async def test_wecom_suite_template_card_opens_the_application_report() -> None:
             "msgtype": "template_card",
             "agentid": 1000002,
             "template_card": {
-                "card_type": "text_notice",
                 "source": {"desc": "数智名片 · 访客洞察", "desc_color": 3},
                 "main_title": {
                     "title": "新访问报告已生成",
                     "desc": "拓浙 AI 生态",
                 },
-                "emphasis_content": {"title": "中等", "desc": "综合意向"},
-                "sub_title_text": "访客浏览了企业名片。",
                 "horizontal_content_list": [
                     {"keyname": "停留", "value": "2 分 6 秒"},
                     {"keyname": "AI提问", "value": "2 次"},
@@ -258,6 +249,17 @@ async def test_wecom_suite_template_card_opens_the_application_report() -> None:
                     "type": 1,
                     "url": "https://card.example.test/c/admin/wecom/entry?return_to=report",
                 },
+                "card_type": "news_notice",
+                "card_image": {
+                    "url": "https://card.example.test/c/admin/assets/wecom/visitor-insight-cover.png",
+                    "aspect_ratio": 2.25,
+                },
+                "vertical_content_list": [
+                    {
+                        "title": "综合意向：中等",
+                        "desc": "访客浏览了企业名片。",
+                    }
+                ],
             },
             "safe": 0,
             "enable_id_trans": 0,
@@ -278,9 +280,7 @@ async def test_wecom_suite_template_card_opens_the_application_report() -> None:
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[
-        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
-    ] = "corp-token"
+    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         result = await WeComSuiteClient(
             settings=settings,
@@ -298,6 +298,7 @@ async def test_wecom_suite_template_card_opens_the_application_report() -> None:
             emphasis_description="综合意向",
             details=(("停留", "2 分 6 秒"), ("AI提问", "2 次")),
             url="https://card.example.test/c/admin/wecom/entry?return_to=report",
+            cover_url=("https://card.example.test/c/admin/assets/wecom/visitor-insight-cover.png"),
         )
 
     assert result.message_id == "message-card-1"
@@ -327,9 +328,7 @@ async def test_wecom_suite_message_rejects_false_delivery_acknowledgements(
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[
-        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
-    ] = "corp-token"
+    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
         with pytest.raises(
@@ -365,9 +364,7 @@ async def test_wecom_probe_validates_token_and_agent_and_caches_token() -> None:
 
     redis = MemoryRedis()
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
-        result = await WeComClient(
-            settings=_settings(), http_client=client, redis=redis
-        ).probe()
+        result = await WeComClient(settings=_settings(), http_client=client, redis=redis).probe()
 
     assert result.agent_name == "数智名片"
     assert len(requests) == 2
@@ -549,9 +546,7 @@ async def test_wecom_member_and_department_reads_use_visible_scope() -> None:
             json={
                 "errcode": 0,
                 "errmsg": "ok",
-                "department": [
-                    {"id": 1, "name": "夜霜曦雪", "parentid": 0, "order": 1}
-                ],
+                "department": [{"id": 1, "name": "夜霜曦雪", "parentid": 0, "order": 1}],
             },
         )
 
@@ -610,12 +605,15 @@ def test_wecom_callback_crypto_verifies_decrypts_and_rejects_entities() -> None:
 
 
 def test_wecom_enterprise_name_prefers_root_department() -> None:
-    assert _enterprise_name(
-        (
-            WeComDepartment(2, "销售部", 1, 1),
-            WeComDepartment(1, "夜霜曦雪", 0, 1),
+    assert (
+        _enterprise_name(
+            (
+                WeComDepartment(2, "销售部", 1, 1),
+                WeComDepartment(1, "夜霜曦雪", 0, 1),
+            )
         )
-    ) == "夜霜曦雪"
+        == "夜霜曦雪"
+    )
 
 
 @pytest.mark.asyncio
