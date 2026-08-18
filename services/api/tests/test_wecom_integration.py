@@ -184,6 +184,48 @@ async def test_wecom_suite_install_and_per_corp_tokens_are_separately_cached() -
 
 
 @pytest.mark.asyncio
+async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> None:
+    async def provider(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/cgi-bin/message/send"
+        assert request.url.params["access_token"] == "corp-token"  # noqa: S105
+        assert request.content
+        payload = request.content.decode("utf-8")
+        assert "suite-user-id" in payload
+        assert "1000002" in payload
+        return httpx.Response(
+            200,
+            json={"errcode": 0, "errmsg": "ok", "msgid": "message-1"},
+        )
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+    )
+    redis = MemoryRedis()
+    suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
+    corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
+    ] = "corp-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result = await WeComSuiteClient(
+            settings=settings,
+            http_client=client,
+            redis=redis,
+        ).send_text(
+            auth_corpid="wwcorp123456",
+            permanent_code="permanent-code",
+            agent_id=1000002,
+            user_id="suite-user-id",
+            content="有人正在查看名片",
+        )
+
+    assert result.message_id == "message-1"
+
+
+@pytest.mark.asyncio
 async def test_wecom_probe_validates_token_and_agent_and_caches_token() -> None:
     requests: list[httpx.Request] = []
 

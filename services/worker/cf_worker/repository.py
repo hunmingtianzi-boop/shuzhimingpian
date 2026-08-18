@@ -15,8 +15,10 @@ from app.integrations.wecom import (
     WeComConfigurationError,
     WeComProviderError,
 )
+from app.integrations.wecom_suite import WeComSuiteClient
 from app.services.admin_store import AdminScope, AdminStore
 from app.services.audit import append_audit
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -62,7 +64,7 @@ _SET_SCOPE_SQL = text(
     """
 )
 
-_INVALID_WECOM_RECIPIENT_PROVIDER_CODES = frozenset({40003, 81013})
+_INVALID_WECOM_RECIPIENT_PROVIDER_CODES = frozenset({40003, 60111, 81013})
 
 
 def is_invalid_wecom_recipient_error(error: WeComProviderError) -> bool:
@@ -73,10 +75,29 @@ def is_invalid_wecom_recipient_error(error: WeComProviderError) -> bool:
     )
 
 
+def wecom_http_client_kwargs(
+    settings: WorkerSettings, *, use_proxy: bool = False
+) -> dict[str, Any]:
+    """Build one consistent WeCom transport for every worker notification."""
+    options: dict[str, Any] = {
+        "timeout": httpx.Timeout(settings.wecom_timeout_seconds, connect=5.0),
+        "follow_redirects": False,
+        "trust_env": False,
+    }
+    if use_proxy and settings.wecom_proxy_url:
+        options["proxy"] = settings.wecom_proxy_url
+    return options
+
+
 class PostgresOutboxRepository:
     def __init__(self, settings: WorkerSettings) -> None:
         self._settings = settings
         self._cipher = PiiCipher.from_settings(settings)
+        self._redis = Redis.from_url(
+            settings.redis_connection_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
         self._engine: AsyncEngine = create_async_engine(
             settings.database_url,
             pool_pre_ping=True,
@@ -91,6 +112,7 @@ class PostgresOutboxRepository:
         )
 
     async def close(self) -> None:
+        await self._redis.aclose()
         await self._engine.dispose()
 
     @property
@@ -99,6 +121,84 @@ class PostgresOutboxRepository:
 
     def admin_base_url(self) -> str | None:
         return self._settings.admin_base_url
+
+    async def _wecom_suite_delivery_context(
+        self,
+        connection: AsyncConnection,
+        event: OutboxRecord,
+    ) -> tuple[str, str, int] | None:
+        suite_secret = self._settings.wecom_suite_secret
+        if not self._settings.wecom_suite_id or suite_secret is None:
+            return None
+        row = (
+            (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT auth_corpid_ciphertext,
+                               permanent_code_ciphertext,
+                               agent_id
+                        FROM app.get_wecom_suite_authorization_for_scope(
+                          :suite_id_hmac,
+                          :tenant_id,
+                          :company_id
+                        )
+                        """
+                    ),
+                    {
+                        "suite_id_hmac": self._cipher.hmac(
+                            f"wecom-suite:{self._settings.wecom_suite_id}"
+                        ),
+                        "tenant_id": event.tenant_id,
+                        "company_id": event.company_id,
+                    },
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if row is None or not isinstance(row["agent_id"], int):
+            return None
+        try:
+            return (
+                self._cipher.decrypt(bytes(row["auth_corpid_ciphertext"])),
+                self._cipher.decrypt(bytes(row["permanent_code_ciphertext"])),
+                row["agent_id"],
+            )
+        except PiiCipherError as exc:
+            raise RuntimeError("wecom_suite_authorization_decryption_failed") from exc
+
+    async def _send_wecom_text(
+        self,
+        *,
+        user_id: str,
+        content: str,
+        suite_context: tuple[str, str, int] | None,
+    ) -> None:
+        async with httpx.AsyncClient(
+            **wecom_http_client_kwargs(
+                self._settings,
+                use_proxy=suite_context is not None,
+            )
+        ) as client:
+            if suite_context is not None:
+                auth_corpid, permanent_code, agent_id = suite_context
+                await WeComSuiteClient(
+                    settings=self._settings,  # type: ignore[arg-type]
+                    http_client=client,
+                    redis=self._redis,
+                ).send_text(
+                    auth_corpid=auth_corpid,
+                    permanent_code=permanent_code,
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    content=content,
+                )
+                return
+            await WeComClient(
+                settings=self._settings,  # type: ignore[arg-type]
+                http_client=client,
+            ).send_text(user_id=user_id, content=content)
 
     async def purge_expired_visitor_profiles(self) -> int:
         """Physically remove expired derived profile evidence without loading PII."""
@@ -764,14 +864,17 @@ class PostgresOutboxRepository:
 
         if event.aggregate_type != "lead" or event.aggregate_id != lead_id:
             raise RuntimeError("wecom_lead_event_mismatch")
-        if not (
+        self_built_configured = bool(
             self._settings.wecom_corp_id
             and self._settings.wecom_agent_id
             and self._settings.wecom_app_secret
-        ):
+        )
+        suite_configured = bool(self._settings.wecom_suite_id and self._settings.wecom_suite_secret)
+        if not self_built_configured and not suite_configured:
             return False
         async with self._engine.begin() as connection:
             await self._set_scope(connection, event.tenant_id, event.company_id)
+            suite_context = await self._wecom_suite_delivery_context(connection, event)
             encrypted_user_id = await connection.scalar(
                 text(
                     """
@@ -791,6 +894,8 @@ class PostgresOutboxRepository:
                     "owner_user_id": owner_user_id,
                 },
             )
+        if suite_context is None and not self_built_configured:
+            return False
         if encrypted_user_id is None:
             return False
         try:
@@ -799,17 +904,11 @@ class PostgresOutboxRepository:
             raise RuntimeError("wecom_binding_decryption_failed") from exc
 
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self._settings.wecom_timeout_seconds, connect=5.0),
-                follow_redirects=False,
-            ) as client:
-                await WeComClient(
-                    settings=self._settings,  # type: ignore[arg-type]
-                    http_client=client,
-                ).send_text(
-                    user_id=wecom_user_id,
-                    content=("数智名片收到一位新客户，请进入后台线索中心及时跟进。"),
-                )
+            await self._send_wecom_text(
+                user_id=wecom_user_id,
+                content="数智名片收到一位新客户，请进入后台线索中心及时跟进。",
+                suite_context=suite_context,
+            )
         except WeComConfigurationError:
             return False
         except WeComProviderError as exc:
@@ -1011,14 +1110,17 @@ class PostgresOutboxRepository:
         recipient_user_ids: tuple[uuid.UUID, ...],
         content: str,
     ) -> int:
-        if not recipient_user_ids or not (
+        self_built_configured = bool(
             self._settings.wecom_corp_id
             and self._settings.wecom_agent_id
             and self._settings.wecom_app_secret
-        ):
+        )
+        suite_configured = bool(self._settings.wecom_suite_id and self._settings.wecom_suite_secret)
+        if not recipient_user_ids or (not self_built_configured and not suite_configured):
             return 0
         async with self._engine.begin() as connection:
             await self._set_scope(connection, event.tenant_id, event.company_id)
+            suite_context = await self._wecom_suite_delivery_context(connection, event)
             rows = (
                 (
                     await connection.execute(
@@ -1044,28 +1146,26 @@ class PostgresOutboxRepository:
                 .mappings()
                 .all()
             )
+        if suite_context is None and not self_built_configured:
+            return 0
         delivered = 0
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(self._settings.wecom_timeout_seconds, connect=5.0),
-            follow_redirects=False,
-        ) as client:
-            wecom = WeComClient(
-                settings=self._settings,  # type: ignore[arg-type]
-                http_client=client,
-            )
-            for row in rows:
-                try:
-                    user_id = self._cipher.decrypt(bytes(row["wecom_user_id_ciphertext"]))
-                    await wecom.send_text(user_id=user_id, content=content[:2_000])
-                except PiiCipherError as exc:
-                    raise RuntimeError("wecom_binding_decryption_failed") from exc
-                except WeComConfigurationError:
-                    return delivered
-                except WeComProviderError as exc:
-                    if is_invalid_wecom_recipient_error(exc):
-                        continue
-                    raise RuntimeError(exc.code) from exc
-                delivered += 1
+        for row in rows:
+            try:
+                user_id = self._cipher.decrypt(bytes(row["wecom_user_id_ciphertext"]))
+                await self._send_wecom_text(
+                    user_id=user_id,
+                    content=content[:2_000],
+                    suite_context=suite_context,
+                )
+            except PiiCipherError as exc:
+                raise RuntimeError("wecom_binding_decryption_failed") from exc
+            except WeComConfigurationError:
+                return delivered
+            except WeComProviderError as exc:
+                if is_invalid_wecom_recipient_error(exc):
+                    continue
+                raise RuntimeError(exc.code) from exc
+            delivered += 1
         return delivered
 
     async def build_export(

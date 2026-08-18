@@ -203,6 +203,9 @@ services:
       WECOM_AGENT_ID: ${WECOM_AGENT_ID:-}
       WECOM_APP_SECRET: ${WECOM_APP_SECRET:-}
       WECOM_API_BASE_URL: ${WECOM_API_BASE_URL:-https://qyapi.weixin.qq.com}
+      WECOM_PROXY_URL: ${WECOM_PROXY_URL:-}
+      WECOM_SUITE_ID: ${WECOM_SUITE_ID:-}
+      WECOM_SUITE_SECRET: ${WECOM_SUITE_SECRET:-}
       WECOM_TIMEOUT_SECONDS: ${WECOM_TIMEOUT_SECONDS:-8}
     depends_on:
       embedding:

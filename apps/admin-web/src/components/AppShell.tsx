@@ -39,6 +39,7 @@ import type { AdminUser } from "../api/types";
 import {
   APP_PATHS,
   appHref,
+  navigate,
   onInternalLinkClick,
   type AppPath,
   usePathname,
@@ -264,7 +265,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Tooltip content="通知中心" relationship="label">
                 <span className="notification-button-shell">
                   <Button
-                    as="a"
                     appearance="subtle"
                     icon={<Alert24Regular />}
                     aria-label={
@@ -272,10 +272,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         ? `通知中心，${unreadNotifications} 条未读`
                         : "通知中心"
                     }
-                    href={appHref(APP_PATHS.notifications)}
-                    onClick={(event) =>
-                      onInternalLinkClick(event, APP_PATHS.notifications)
-                    }
+                    onClick={() => navigate(APP_PATHS.notifications)}
                   />
                   {unreadNotifications > 0 && (
                     <span className="notification-unread-badge" aria-hidden>

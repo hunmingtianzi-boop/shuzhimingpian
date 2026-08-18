@@ -12,6 +12,7 @@ from app.integrations.wecom import (
     WeComConfigurationError,
     WeComDepartment,
     WeComMember,
+    WeComMessageResult,
     WeComProviderError,
 )
 
@@ -285,6 +286,42 @@ class WeComSuiteClient:
             avatar_url=self._optional_text(payload.get("avatar")),
             status=payload.get("status") if isinstance(payload.get("status"), int) else None,
         )
+
+    async def send_text(
+        self,
+        *,
+        auth_corpid: str,
+        permanent_code: str,
+        agent_id: int,
+        user_id: str,
+        content: str,
+    ) -> WeComMessageResult:
+        if agent_id <= 0:
+            raise WeComConfigurationError("wecom_suite_agent_not_configured")
+        token = await self.corp_access_token(
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+        )
+        payload = await self._request_json(
+            "POST",
+            "/cgi-bin/message/send",
+            params={"access_token": token},
+            json={
+                "touser": user_id,
+                "msgtype": "text",
+                "agentid": agent_id,
+                "text": {"content": content},
+                "safe": 0,
+                "enable_id_trans": 0,
+                "enable_duplicate_check": 1,
+                "duplicate_check_interval": 1800,
+            },
+        )
+        invalid_user = payload.get("invaliduser")
+        if isinstance(invalid_user, str) and invalid_user:
+            raise WeComProviderError("WECOM_INVALID_RECIPIENT")
+        message_id = payload.get("msgid")
+        return WeComMessageResult(message_id=message_id if isinstance(message_id, str) else None)
 
     async def list_departments(
         self,

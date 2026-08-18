@@ -9,6 +9,8 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_DEFAULT_TIMEOUT=120
 RUN python -c "import onnxruntime" \
     || python -m pip install --no-deps "onnxruntime==1.27.0"
+RUN python -c "import socksio" \
+    || python -m pip install --no-deps "socksio==1.0.0"
 RUN python -m pip uninstall --yes opencv-python \
     && python -m pip install --no-deps "opencv-python-headless==5.0.0.93"
 RUN python -c "from rapidocr import RapidOCR; RapidOCR()"

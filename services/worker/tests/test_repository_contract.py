@@ -4,10 +4,12 @@ from pathlib import Path
 
 from app.integrations.wecom import WeComProviderError
 
+from cf_worker.config import WorkerSettings
 from cf_worker.repository import (
     calculate_backoff_seconds,
     is_invalid_wecom_recipient_error,
     should_dead_letter,
+    wecom_http_client_kwargs,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -22,6 +24,9 @@ VISIT_NOTIFICATION_MIGRATION = (
 )
 VISIT_ROLLOUT_GUARD_MIGRATION = (
     ROOT / "services/api/migrations/versions/20260818_0042_visit_notification_rollout_guard.py"
+)
+WECOM_SUITE_DELIVERY_MIGRATION = (
+    ROOT / "services/api/migrations/versions/20260819_0043_worker_wecom_suite_delivery.py"
 )
 
 
@@ -42,9 +47,33 @@ def test_wecom_invalid_or_out_of_scope_members_do_not_fail_in_app_delivery() -> 
     assert is_invalid_wecom_recipient_error(
         WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=81013)
     )
+    assert is_invalid_wecom_recipient_error(
+        WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=60111)
+    )
     assert not is_invalid_wecom_recipient_error(
         WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=60020)
     )
+
+
+def test_wecom_notifications_use_the_dedicated_egress_proxy() -> None:
+    direct_options = wecom_http_client_kwargs(
+        WorkerSettings(
+            _env_file=None,
+            wecom_proxy_url="socks5://172.21.0.1:10809",
+        )
+    )
+    suite_options = wecom_http_client_kwargs(
+        WorkerSettings(
+            _env_file=None,
+            wecom_proxy_url="socks5://172.21.0.1:10809",
+        ),
+        use_proxy=True,
+    )
+
+    assert "proxy" not in direct_options
+    assert suite_options["proxy"] == "socks5://172.21.0.1:10809"
+    assert suite_options["follow_redirects"] is False
+    assert suite_options["trust_env"] is False
 
 
 def test_migration_enforces_skip_locked_leases_rls_and_worker_identity() -> None:
@@ -113,3 +142,15 @@ def test_visit_report_rollout_does_not_notify_for_historical_visits() -> None:
     assert "visit-report-legacy-suppressed-v1" in sql
     assert "on conflict (event_id, handler_name) do nothing" in sql
     assert "status = 'published'" in sql
+
+
+def test_wecom_suite_authorization_is_exposed_only_for_the_claimed_scope() -> None:
+    sql = WECOM_SUITE_DELIVERY_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "security definer" in sql
+    assert "set search_path = pg_catalog, public, app" in sql
+    assert "scope.tenant_id = p_tenant_id" in sql
+    assert "scope.company_id = p_company_id" in sql
+    assert "authorization.status = 'active'" in sql
+    assert "grant execute on function" in sql
+    assert "cf_ai_card_worker" in sql
+    assert "bypassrls" not in sql

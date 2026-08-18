@@ -68,6 +68,9 @@ class WorkerSettings(BaseSettings):
     wecom_agent_id: int | None = Field(default=None, ge=1)
     wecom_app_secret: SecretStr | None = None
     wecom_api_base_url: str = "https://qyapi.weixin.qq.com"
+    wecom_proxy_url: str | None = None
+    wecom_suite_id: str | None = None
+    wecom_suite_secret: SecretStr | None = None
     wecom_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
     admin_base_url: str | None = None
 
@@ -90,6 +93,9 @@ class WorkerSettings(BaseSettings):
         "wecom_corp_id",
         "wecom_agent_id",
         "wecom_app_secret",
+        "wecom_proxy_url",
+        "wecom_suite_id",
+        "wecom_suite_secret",
         "admin_base_url",
         mode="before",
     )
@@ -116,6 +122,13 @@ class WorkerSettings(BaseSettings):
             raise ValueError(
                 "WECOM_CORP_ID, WECOM_AGENT_ID and WECOM_APP_SECRET must be configured together"
             )
+        suite_configured = (
+            bool(self.wecom_suite_id),
+            self.wecom_suite_secret is not None
+            and bool(self.wecom_suite_secret.get_secret_value()),
+        )
+        if any(suite_configured) and not all(suite_configured):
+            raise ValueError("WECOM_SUITE_ID and WECOM_SUITE_SECRET must be configured together")
         if self.app_env in {"staging", "production"}:
             url = self.worker_database_url.get_secret_value()
             if "change-me" in url or "cf_ai_card_worker" not in url:

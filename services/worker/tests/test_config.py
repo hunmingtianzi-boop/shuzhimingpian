@@ -27,6 +27,27 @@ def test_local_default_database_uses_explicit_ipv4_loopback(
     assert "@127.0.0.1:5432/" in settings.database_url
 
 
+def test_wecom_proxy_url_is_available_to_notification_workers() -> None:
+    settings = WorkerSettings(
+        _env_file=None,
+        wecom_proxy_url="socks5://127.0.0.1:10809",
+    )
+
+    assert settings.wecom_proxy_url == "socks5://127.0.0.1:10809"
+
+
+def test_wecom_suite_credentials_are_all_or_none() -> None:
+    with pytest.raises(ValidationError, match="must be configured together"):
+        WorkerSettings(_env_file=None, wecom_suite_id="wwsuite123")
+
+    settings = WorkerSettings(
+        _env_file=None,
+        wecom_suite_id="wwsuite123",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+    )
+    assert settings.wecom_suite_secret is not None
+
+
 def test_heartbeat_must_fit_inside_lease() -> None:
     with pytest.raises(ValidationError):
         WorkerSettings(outbox_lease_seconds=60, outbox_heartbeat_seconds=30)
