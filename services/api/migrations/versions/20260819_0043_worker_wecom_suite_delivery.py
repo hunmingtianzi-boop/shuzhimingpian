@@ -33,12 +33,12 @@ def upgrade() -> None:
         SET search_path = pg_catalog, public, app
         AS $$
           SELECT
-            authorization.auth_corpid_ciphertext,
-            authorization.permanent_code_ciphertext,
-            authorization.agent_id
+            authz.auth_corpid_ciphertext,
+            authz.permanent_code_ciphertext,
+            authz.agent_id
           FROM public.wecom_enterprise_scopes AS scope
-          JOIN public.wecom_enterprise_authorizations AS authorization
-            ON authorization.auth_corpid_hmac = scope.corp_id_hmac
+          JOIN public.wecom_enterprise_authorizations AS authz
+            ON authz.auth_corpid_hmac = scope.corp_id_hmac
           JOIN public.tenants AS tenant
             ON tenant.id = scope.tenant_id
           JOIN public.companies AS company
@@ -47,8 +47,8 @@ def upgrade() -> None:
           WHERE length(p_suite_id_hmac) = 64
             AND scope.tenant_id = p_tenant_id
             AND scope.company_id = p_company_id
-            AND authorization.suite_id_hmac = p_suite_id_hmac
-            AND authorization.status = 'active'
+            AND authz.suite_id_hmac = p_suite_id_hmac
+            AND authz.status = 'active'
             AND tenant.status = 'active'
             AND tenant.deleted_at IS NULL
             AND company.status = 'active'
