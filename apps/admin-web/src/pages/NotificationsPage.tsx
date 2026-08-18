@@ -32,6 +32,7 @@ export function NotificationsPage() {
   const resource = useResource(
     () => workflowApi.listNotifications({ limit: 100, unreadOnly }),
     unreadOnly,
+    { refreshIntervalMs: 15_000, refreshOnVisible: true },
   );
 
   const markRead = async (id: string) => {

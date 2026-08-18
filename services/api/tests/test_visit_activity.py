@@ -9,9 +9,10 @@ from app.api.workflow_schemas import (
     VisitPageDuration,
     VisitQuestion,
 )
-from app.db.models import Visit, VisitEvent
+from app.db.models import Notification, Visit, VisitEvent
 from app.services.workflow_store import (
     _behavior_analysis,
+    _notification_view,
     _page_timeline,
     _visit_presentation,
     _visit_started_deduplication_key,
@@ -114,6 +115,31 @@ def test_missing_leave_falls_back_after_heartbeat_grace_period() -> None:
 
     assert result.activity_status == "estimated"
     assert result.duration_estimated is True
+
+
+def test_started_notification_uses_current_visit_state() -> None:
+    now = datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
+    notification = Notification(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        company_id=uuid.uuid4(),
+        recipient_user_id=uuid.uuid4(),
+        notification_type="visit_started",
+        title="有访客打开名片",
+        body="微信访客刚刚打开“拓浙AI生态”，来源：微信。",
+        resource_type="visit",
+        resource_id=uuid.uuid4(),
+        created_at=now,
+    )
+
+    active = _notification_view(notification, visit_activity_status="active")
+    background = _notification_view(notification, visit_activity_status="estimated")
+
+    assert active.title == "有访客打开名片"
+    assert "刚刚打开" in active.body
+    assert background.title == "访客已离开名片"
+    assert "已离开" in background.body
+    assert "报告正在汇总" in background.body
 
 
 def test_explicit_leave_is_not_estimated() -> None:

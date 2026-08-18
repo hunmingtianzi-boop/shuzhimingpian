@@ -212,7 +212,7 @@ async def test_payload_with_pii_marker_or_extra_field_is_rejected() -> None:
 @pytest.mark.parametrize(
     ("event_type", "expected_handler", "expected_copy"),
     [
-        ("visit.started.v1", "visit-started-notification-v1", "正在查看"),
+        ("visit.started.v1", "visit-started-notification-v1", "刚刚打开"),
         ("visit.report.ready.v1", "visit-report-notification-v1", "2 分 6 秒"),
     ],
 )
@@ -243,10 +243,10 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
     assert repository.wecom_messages
     message = repository.wecom_messages[0]
     card = message["card"]
-    assert card.title in {"有人正在查看名片", "新访问报告已生成"}
+    assert card.title in {"有访客打开名片", "新访问报告已生成"}
     assert card.subtitle == "拓浙AI生态"
     assert str(visit_id)[:8] in dict(card.details)["编号"]
-    assert card.action_text in {"查看实时访问", "查看完整访问报告"}
+    assert card.action_text in {"查看访问动态", "查看完整访问报告"}
     if event_type == "visit.report.ready.v1":
         assert card.emphasis_title == "中等"
         assert card.cover_url == (
@@ -261,9 +261,9 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
             "编号": str(visit_id)[:8],
         }
     else:
-        assert card.emphasis_title == "实时"
+        assert card.emphasis_title == "新访客"
         assert card.cover_url is None
-        assert dict(card.details)["状态"] == "正在浏览"
+        assert dict(card.details)["状态"] == "已记录访问"
     report_url = urlsplit(message["report_url"])
     assert report_url.path == "/c/admin/wecom/entry"
     assert parse_qs(report_url.query)["return_to"] == [f"/c/admin/visits?visitId={visit_id}"]

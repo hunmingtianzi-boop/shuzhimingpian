@@ -231,6 +231,34 @@ def _visit_presentation(
     )
 
 
+def _notification_view(
+    notification: Notification,
+    *,
+    visit_activity_status: str | None = None,
+) -> NotificationView:
+    title = notification.title
+    body = notification.body
+    if notification.notification_type == "visit_started" and visit_activity_status not in {
+        None,
+        "active",
+    }:
+        title = "访客已离开名片"
+        body = (
+            notification.body.replace("正在查看", "已离开").replace("刚刚打开", "已离开")
+            + " 本次访问报告正在汇总。"
+        )
+    return NotificationView(
+        id=notification.id,
+        notification_type=notification.notification_type,
+        title=title,
+        body=body,
+        resource_type=notification.resource_type,
+        resource_id=notification.resource_id,
+        read_at=notification.read_at,
+        created_at=notification.created_at,
+    )
+
+
 def _event_page_fields(event: VisitEvent) -> tuple[str, str, dict[str, object]]:
     metadata = event.metadata_json if isinstance(event.metadata_json, dict) else {}
     page_key = str(metadata.get("page_key") or event.object_id or event.object_type or "card")[:160]
@@ -1897,7 +1925,65 @@ class WorkflowStore:
                     ).limit(limit)
                 )
             ).all()
-            return [self._notification_view(item) for item in rows], total, unread
+            visit_ids = {
+                item.resource_id
+                for item in rows
+                if item.notification_type == "visit_started"
+                and item.resource_type == "visit"
+                and item.resource_id is not None
+            }
+            visit_statuses: dict[uuid.UUID, str] = {}
+            if visit_ids:
+                visit_event_count = (
+                    select(func.count(VisitEvent.id))
+                    .where(
+                        VisitEvent.tenant_id == Visit.tenant_id,
+                        VisitEvent.company_id == Visit.company_id,
+                        VisitEvent.visit_id == Visit.id,
+                    )
+                    .correlate(Visit)
+                    .scalar_subquery()
+                )
+                last_event_at = (
+                    select(func.max(VisitEvent.occurred_at))
+                    .where(
+                        VisitEvent.tenant_id == Visit.tenant_id,
+                        VisitEvent.company_id == Visit.company_id,
+                        VisitEvent.visit_id == Visit.id,
+                    )
+                    .correlate(Visit)
+                    .scalar_subquery()
+                )
+                visit_rows = (
+                    await session.execute(
+                        select(Visit, visit_event_count, last_event_at).where(
+                            Visit.id.in_(visit_ids),
+                            Visit.tenant_id == scope.tenant_id,
+                            Visit.company_id == scope.company_id,
+                        )
+                    )
+                ).all()
+                now = datetime.now(UTC)
+                visit_statuses = {
+                    visit.id: _visit_presentation(
+                        visit,
+                        last_event_at=latest_event_at,
+                        event_count=int(event_count or 0),
+                        now=now,
+                    ).activity_status
+                    for visit, event_count, latest_event_at in visit_rows
+                }
+            return [
+                _notification_view(
+                    item,
+                    visit_activity_status=(
+                        visit_statuses.get(item.resource_id)
+                        if item.resource_id is not None
+                        else None
+                    ),
+                )
+                for item in rows
+            ], total, unread
 
     async def mark_notification_read(
         self,
@@ -1922,7 +2008,7 @@ class WorkflowStore:
             if notification.read_at is None:
                 notification.read_at = datetime.now(UTC)
                 await session.flush()
-            return self._notification_view(notification)
+            return _notification_view(notification)
 
     async def record_visit_event(
         self,
@@ -2630,20 +2716,6 @@ class WorkflowStore:
             created_at=gap.created_at,
             updated_at=gap.updated_at,
         )
-
-    @staticmethod
-    def _notification_view(notification: Notification) -> NotificationView:
-        return NotificationView(
-            id=notification.id,
-            notification_type=notification.notification_type,
-            title=notification.title,
-            body=notification.body,
-            resource_type=notification.resource_type,
-            resource_id=notification.resource_id,
-            read_at=notification.read_at,
-            created_at=notification.created_at,
-        )
-
 
 def _opportunity_score(question: str) -> float:
     normalized = question.casefold()

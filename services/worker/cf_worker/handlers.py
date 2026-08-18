@@ -293,25 +293,25 @@ class EventHandlerRegistry:
                 cover_url=_wecom_visit_cover_url(admin_base_url),
             )
         else:
-            title = "有人正在查看名片"
+            title = "有访客打开名片"
             body = (
-                f"{snapshot.visitor_label}正在查看“{snapshot.card_display_name}”，"
+                f"{snapshot.visitor_label}刚刚打开“{snapshot.card_display_name}”，"
                 f"来源：{channel_label}。"
             )
             notification_type = "visit_started"
             wecom_card = WeComVisitCard(
                 title=title,
                 subtitle=snapshot.card_display_name,
-                summary=f"{snapshot.visitor_label}通过{channel_label}进入，建议及时关注。",
-                emphasis_title="实时",
-                emphasis_description="正在访问",
+                summary=f"{snapshot.visitor_label}通过{channel_label}进入，访问行为已开始记录。",
+                emphasis_title="新访客",
+                emphasis_description="刚刚打开",
                 details=(
                     ("名片", snapshot.card_display_name),
                     ("来源", channel_label),
-                    ("状态", "正在浏览"),
+                    ("状态", "已记录访问"),
                     ("编号", str(visit_id)[:8]),
                 ),
-                action_text="查看实时访问",
+                action_text="查看访问动态",
                 cover_url=None,
             )
 
