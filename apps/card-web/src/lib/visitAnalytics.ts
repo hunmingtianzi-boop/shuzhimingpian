@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import {
+  createAssistantIdempotencyKey,
   ensureVisitSession,
   recordVisitEvent,
   type PublicPolicyVersions,
@@ -30,6 +31,16 @@ export function useVisitAnalytics({
   const sessionRef = useRef<VisitorSession | undefined>(undefined);
   const activePageRef = useRef<ActivePage | undefined>(undefined);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const entryRef = useRef<
+    { cardSlug: string; id: string; acknowledged: boolean } | undefined
+  >(undefined);
+  if (!entryRef.current || entryRef.current.cardSlug !== cardSlug) {
+    entryRef.current = {
+      cardSlug,
+      id: createAssistantIdempotencyKey(),
+      acknowledged: false,
+    };
+  }
 
   const enqueue = useCallback((operation: () => Promise<void>) => {
     queueRef.current = queueRef.current
@@ -41,14 +52,27 @@ export function useVisitAnalytics({
   const sendPageView = useCallback((page: ActivePage) => {
     const session = sessionRef.current;
     if (!session) return;
-    enqueue(() => recordVisitEvent({
-      cardSlug,
-      session,
-      eventType: "page_view",
-      objectType: page.objectType,
-      objectId: page.objectId,
-      metadata: { page_key: page.key, page_title: page.title },
-    }));
+    const entry = entryRef.current;
+    const visitEntryId = entry?.cardSlug === cardSlug && !entry.acknowledged
+      ? entry.id
+      : undefined;
+    enqueue(async () => {
+      await recordVisitEvent({
+        cardSlug,
+        session,
+        eventType: "page_view",
+        objectType: page.objectType,
+        objectId: page.objectId,
+        metadata: {
+          page_key: page.key,
+          page_title: page.title,
+          ...(visitEntryId ? { visit_entry_id: visitEntryId } : {}),
+        },
+      });
+      if (visitEntryId && entryRef.current?.id === visitEntryId) {
+        entryRef.current.acknowledged = true;
+      }
+    });
   }, [cardSlug, enqueue]);
 
   const flushDuration = useCallback((eventType: "heartbeat" | "leave", keepalive = false) => {

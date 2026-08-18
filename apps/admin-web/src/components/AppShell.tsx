@@ -29,9 +29,10 @@ import {
   SignOut24Regular,
   Sparkle24Regular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
+import { workflowApi } from "../api/workflowApi";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
 import type { AdminUser } from "../api/types";
@@ -209,7 +210,33 @@ function Brand({ platform }: { platform?: boolean }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const isPlatform = auth.user?.role === "platform_admin";
+
+  useEffect(() => {
+    if (isPlatform) return undefined;
+    let disposed = false;
+    const poll = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const result = await workflowApi.listNotifications({ limit: 1, unreadOnly: true });
+        if (!disposed) setUnreadNotifications(result.unread);
+      } catch {
+        // The notification center remains available even if background polling fails.
+      }
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), 10_000);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+    };
+  }, [auth.user?.id, isPlatform]);
 
   return (
     <div className={isPlatform ? "app-shell platform-shell" : "app-shell"}>
@@ -235,16 +262,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="topbar-user">
             {!isPlatform && (
               <Tooltip content="通知中心" relationship="label">
-                <Button
-                  as="a"
-                  appearance="subtle"
-                  icon={<Alert24Regular />}
-                  aria-label="通知中心"
-                  href={appHref(APP_PATHS.notifications)}
-                  onClick={(event) =>
-                    onInternalLinkClick(event, APP_PATHS.notifications)
-                  }
-                />
+                <span className="notification-button-shell">
+                  <Button
+                    as="a"
+                    appearance="subtle"
+                    icon={<Alert24Regular />}
+                    aria-label={
+                      unreadNotifications > 0
+                        ? `通知中心，${unreadNotifications} 条未读`
+                        : "通知中心"
+                    }
+                    href={appHref(APP_PATHS.notifications)}
+                    onClick={(event) =>
+                      onInternalLinkClick(event, APP_PATHS.notifications)
+                    }
+                  />
+                  {unreadNotifications > 0 && (
+                    <span className="notification-unread-badge" aria-hidden>
+                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                    </span>
+                  )}
+                </span>
               </Tooltip>
             )}
             <Avatar

@@ -3,12 +3,18 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from app.api.workflow_schemas import VisitAction, VisitPageDuration, VisitQuestion
+from app.api.workflow_schemas import (
+    VisitAction,
+    VisitEventRequest,
+    VisitPageDuration,
+    VisitQuestion,
+)
 from app.db.models import Visit, VisitEvent
 from app.services.workflow_store import (
     _behavior_analysis,
     _page_timeline,
     _visit_presentation,
+    _visit_started_deduplication_key,
 )
 
 
@@ -94,6 +100,39 @@ def test_explicit_leave_is_not_estimated() -> None:
     assert result.activity_status == "ended"
     assert result.duration_seconds == 90
     assert result.duration_estimated is False
+
+
+def test_each_browser_entry_can_notify_for_an_existing_visit() -> None:
+    visit_id = uuid.uuid4()
+    entry_id = uuid.uuid4()
+    request = VisitEventRequest(
+        event_id=uuid.uuid4(),
+        event_type="page_view",
+        metadata={"visit_entry_id": str(entry_id)},
+    )
+
+    assert _visit_started_deduplication_key(
+        visit_id=visit_id,
+        request=request,
+        first_page_view=False,
+    ) == f"visit-started:{visit_id}:{entry_id}"
+
+
+def test_navigation_without_a_new_browser_entry_does_not_repeat_notification() -> None:
+    request = VisitEventRequest(
+        event_id=uuid.uuid4(),
+        event_type="page_view",
+        metadata={"page_key": "product:a"},
+    )
+
+    assert (
+        _visit_started_deduplication_key(
+            visit_id=uuid.uuid4(),
+            request=request,
+            first_page_view=False,
+        )
+        is None
+    )
 
 
 def test_page_timeline_preserves_each_navigation_segment() -> None:

@@ -465,6 +465,27 @@ def _behavior_analysis(
     )
 
 
+def _visit_started_deduplication_key(
+    *,
+    visit_id: uuid.UUID,
+    request: VisitEventRequest,
+    first_page_view: bool,
+) -> str | None:
+    """Notify once per browser entry, including returning visits in the same tab."""
+    if request.event_type != "page_view":
+        return None
+    if first_page_view:
+        return f"visit-started:{visit_id}"
+    raw_entry_id = request.metadata.get("visit_entry_id")
+    if not isinstance(raw_entry_id, str):
+        return None
+    try:
+        entry_id = uuid.UUID(raw_entry_id)
+    except ValueError:
+        return None
+    return f"visit-started:{visit_id}:{entry_id}"
+
+
 class WorkflowStore:
     def __init__(
         self,
@@ -1955,6 +1976,11 @@ class WorkflowStore:
                     )
                 )
             first_page_view = request.event_type == "page_view" and not has_page_view
+            visit_started_key = _visit_started_deduplication_key(
+                visit_id=visit.id,
+                request=request,
+                first_page_view=first_page_view,
+            )
             event = VisitEvent(
                 id=request.event_id,
                 tenant_id=principal_tenant_id,
@@ -1966,7 +1992,21 @@ class WorkflowStore:
                 metadata_json=request.metadata,
             )
             session.add(event)
-            if first_page_view:
+            if visit_started_key:
+                visit_started_already_queued = bool(
+                    await session.scalar(
+                        select(
+                            exists().where(
+                                OutboxEvent.tenant_id == principal_tenant_id,
+                                OutboxEvent.company_id == principal_company_id,
+                                OutboxEvent.deduplication_key == visit_started_key,
+                            )
+                        )
+                    )
+                )
+            else:
+                visit_started_already_queued = False
+            if visit_started_key and not visit_started_already_queued:
                 session.add(
                     OutboxEvent(
                         id=uuid.uuid4(),
@@ -1981,7 +2021,7 @@ class WorkflowStore:
                             "card_id": str(visit.card_id),
                         },
                         headers={"contains_pii": False},
-                        deduplication_key=f"visit-started:{visit.id}",
+                        deduplication_key=visit_started_key,
                         status=OutboxStatus.PENDING,
                     )
                 )
