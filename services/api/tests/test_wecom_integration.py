@@ -226,6 +226,48 @@ async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider_payload",
+    [
+        {"errcode": 0, "errmsg": "ok", "unlicenseduser": "suite-user-id"},
+        {"errcode": 0, "errmsg": "ok", "invaliduser": ["suite-user-id"]},
+        {"errcode": 0, "errmsg": "ok"},
+    ],
+)
+async def test_wecom_suite_message_rejects_false_delivery_acknowledgements(
+    provider_payload: dict[str, object],
+) -> None:
+    async def provider(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=provider_payload)
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+    )
+    redis = MemoryRedis()
+    suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
+    corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
+    ] = "corp-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
+        with pytest.raises(
+            WeComProviderError,
+            match="WECOM_INVALID_RECIPIENT|WECOM_INVALID_RESPONSE",
+        ):
+            await connector.send_text(
+                auth_corpid="wwcorp123456",
+                permanent_code="permanent-code",
+                agent_id=1000002,
+                user_id="suite-user-id",
+                content="有人正在查看名片",
+            )
+
+
+@pytest.mark.asyncio
 async def test_wecom_probe_validates_token_and_agent_and_caches_token() -> None:
     requests: list[httpx.Request] = []
 

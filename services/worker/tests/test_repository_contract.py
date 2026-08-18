@@ -150,7 +150,7 @@ def test_wecom_suite_authorization_is_exposed_only_for_the_claimed_scope() -> No
     assert "set search_path = pg_catalog, public, app" in sql
     assert "scope.tenant_id = p_tenant_id" in sql
     assert "scope.company_id = p_company_id" in sql
-    assert "authorization.status = 'active'" in sql
+    assert "authz.status = 'active'" in sql
     assert "grant execute on function" in sql
     assert "cf_ai_card_worker" in sql
     assert "bypassrls" not in sql

@@ -14,6 +14,7 @@ from app.integrations.wecom import (
     WeComMember,
     WeComMessageResult,
     WeComProviderError,
+    parse_wecom_message_result,
 )
 
 
@@ -317,11 +318,7 @@ class WeComSuiteClient:
                 "duplicate_check_interval": 1800,
             },
         )
-        invalid_user = payload.get("invaliduser")
-        if isinstance(invalid_user, str) and invalid_user:
-            raise WeComProviderError("WECOM_INVALID_RECIPIENT")
-        message_id = payload.get("msgid")
-        return WeComMessageResult(message_id=message_id if isinstance(message_id, str) else None)
+        return parse_wecom_message_result(payload)
 
     async def list_departments(
         self,

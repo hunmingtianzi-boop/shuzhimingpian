@@ -481,9 +481,26 @@ a:hover {
   gap: 10px;
 }
 
-.notification-button-shell {
+.notification-icon-link {
   position: relative;
   display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.notification-icon-link:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.notification-icon-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .notification-unread-badge {

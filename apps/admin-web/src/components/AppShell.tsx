@@ -39,7 +39,6 @@ import type { AdminUser } from "../api/types";
 import {
   APP_PATHS,
   appHref,
-  navigate,
   onInternalLinkClick,
   type AppPath,
   usePathname,
@@ -59,6 +58,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     label: "工作台",
     items: [
       { path: APP_PATHS.overview, label: "业务概览", icon: Home24Regular },
+      { path: APP_PATHS.notifications, label: "消息中心", icon: Alert24Regular },
       { path: APP_PATHS.setup, label: "开通向导", icon: Sparkle24Regular, permission: "company.write" },
     ],
   },
@@ -262,25 +262,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mobile-brand">{isPlatform ? "平台运营" : "企业管理"}</div>
           <div className="topbar-user">
             {!isPlatform && (
-              <Tooltip content="通知中心" relationship="label">
-                <span className="notification-button-shell">
-                  <Button
-                    appearance="subtle"
-                    icon={<Alert24Regular />}
-                    aria-label={
-                      unreadNotifications > 0
-                        ? `通知中心，${unreadNotifications} 条未读`
-                        : "通知中心"
-                    }
-                    onClick={() => navigate(APP_PATHS.notifications)}
-                  />
-                  {unreadNotifications > 0 && (
-                    <span className="notification-unread-badge" aria-hidden>
-                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
-                    </span>
-                  )}
-                </span>
-              </Tooltip>
+              <a
+                className="notification-icon-link"
+                href={appHref(APP_PATHS.notifications)}
+                aria-label={
+                  unreadNotifications > 0
+                    ? `通知中心，${unreadNotifications} 条未读`
+                    : "通知中心"
+                }
+                title="消息中心"
+                onClick={(event) => onInternalLinkClick(event, APP_PATHS.notifications)}
+              >
+                <Alert24Regular />
+                {unreadNotifications > 0 && (
+                  <span className="notification-unread-badge" aria-hidden>
+                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                  </span>
+                )}
+              </a>
             )}
             <Avatar
               name={auth.user?.displayName || "管理员"}

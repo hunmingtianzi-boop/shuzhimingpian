@@ -34,6 +34,22 @@ class WeComMessageResult:
     message_id: str | None
 
 
+def parse_wecom_message_result(payload: dict[str, object]) -> WeComMessageResult:
+    """Reject provider acknowledgements that did not accept the target member."""
+
+    rejected_fields = ("invaliduser", "unlicenseduser")
+    for field in rejected_fields:
+        value = payload.get(field)
+        if (isinstance(value, str) and value.strip()) or (
+            isinstance(value, list) and len(value) > 0
+        ):
+            raise WeComProviderError("WECOM_INVALID_RECIPIENT")
+    message_id = payload.get("msgid")
+    if not isinstance(message_id, str) or not message_id.strip():
+        raise WeComProviderError("WECOM_INVALID_RESPONSE")
+    return WeComMessageResult(message_id=message_id)
+
+
 @dataclass(frozen=True, slots=True)
 class WeComUserIdentity:
     user_id: str
@@ -163,13 +179,7 @@ class WeComClient:
                 "duplicate_check_interval": 1800,
             },
         )
-        invalid_user = payload.get("invaliduser")
-        if isinstance(invalid_user, str) and invalid_user:
-            raise WeComProviderError("WECOM_INVALID_RECIPIENT")
-        message_id = payload.get("msgid")
-        return WeComMessageResult(
-            message_id=message_id if isinstance(message_id, str) else None
-        )
+        return parse_wecom_message_result(payload)
 
     async def get_user_identity(self, *, code: str) -> WeComUserIdentity:
         token = await self.access_token()

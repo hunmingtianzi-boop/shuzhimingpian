@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("AppShell notification center", () => {
-  it("opens the notification route from the top-bar button", async () => {
+  it("exposes a dedicated navigation entry and opens the route from the stable top-bar link", async () => {
     vi.spyOn(workflowApi, "listNotifications").mockResolvedValue({
       items: [],
       total: 0,
@@ -49,7 +49,14 @@ describe("AppShell notification center", () => {
       </FluentProvider>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "通知中心" }));
+    expect(screen.getByRole("link", { name: "消息中心" })).toHaveAttribute(
+      "href",
+      appHref(APP_PATHS.notifications),
+    );
+
+    const topbarLink = screen.getByRole("link", { name: "通知中心" });
+    expect(topbarLink).toHaveAttribute("href", appHref(APP_PATHS.notifications));
+    await userEvent.click(topbarLink);
 
     await waitFor(() => {
       expect(window.location.pathname).toBe(appHref(APP_PATHS.notifications));
