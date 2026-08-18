@@ -1,0 +1,7 @@
+node_modules
+src
+public
+*.log
+tsconfig*.json
+vite.config.*
+vitest.config.*

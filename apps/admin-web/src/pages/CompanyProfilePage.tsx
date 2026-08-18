@@ -4,14 +4,15 @@ import {
   Input,
   Textarea,
 } from "@fluentui/react-components";
-import { Save24Regular } from "@fluentui/react-icons";
+import { Add24Regular, ArrowDown24Regular, ArrowUp24Regular, Delete24Regular, Save24Regular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
-import type { CompanyProfileInput } from "../api/types";
+import type { CompanyProfileInput, IdentityProfileFact } from "../api/types";
 import { FormFeedback } from "../components/FormFeedback";
+import { IdentityTitlesEditor } from "../components/IdentityTitlesEditor";
 import { ImportWorkbenchButton } from "../components/ImportWorkbenchButton";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
@@ -25,6 +26,9 @@ const emptyProfile: CompanyProfileInput = {
   region: "",
   website: "",
   logoUrl: "",
+  positioning: "",
+  profileFacts: [],
+  profileTags: [],
   profilePersonalizationPolicyVersion: "profile-personalization-v1",
   version: undefined,
 };
@@ -35,6 +39,14 @@ function toApiError(error: unknown): ApiError {
     : new ApiError("保存企业资料时发生未知错误。", {
         code: "UNKNOWN_ERROR",
       });
+}
+
+function moveFact(facts: IdentityProfileFact[], index: number, direction: -1 | 1) {
+  const target = index + direction;
+  if (target < 0 || target >= facts.length) return facts;
+  const next = [...facts];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
 }
 
 export function CompanyProfilePage() {
@@ -48,7 +60,12 @@ export function CompanyProfilePage() {
   useEffect(() => {
     if (resource.status !== "ready" || !resource.data) return;
     const { id: _id, updatedAt: _updatedAt, ...input } = resource.data;
-    setForm(input);
+    setForm({
+      ...input,
+      positioning: resource.data.positioning ?? "",
+      profileFacts: resource.data.profileFacts ?? [],
+      profileTags: resource.data.profileTags ?? [],
+    });
   }, [resource.data, resource.status]);
 
   const update = (field: keyof CompanyProfileInput, value: string) => {
@@ -165,6 +182,34 @@ export function CompanyProfilePage() {
               placeholder="https://"
               disabled={saving}
             />
+          </Field>
+
+          <Field label="企业定位" hint="显示在企业基础名片名称下方，建议控制在 24 个字内。">
+            <Input
+              value={form.positioning}
+              maxLength={240}
+              onChange={(_, data) => update("positioning", data.value)}
+              disabled={saving}
+            />
+          </Field>
+
+          <Field label="企业信息项" hint="小标题和内容均可自定义；基础名片最多展示 4 项。">
+            <div className="profile-fact-editor">
+              {form.profileFacts.map((fact, index) => <div className="profile-fact-row" key={fact.id}>
+                <div className="profile-fact-order">
+                  <Button type="button" appearance="subtle" size="small" icon={<ArrowUp24Regular />} aria-label={`上移企业信息项${index + 1}`} disabled={saving || index === 0} onClick={() => setForm((current) => ({ ...current, profileFacts: moveFact(current.profileFacts, index, -1) }))}/>
+                  <Button type="button" appearance="subtle" size="small" icon={<ArrowDown24Regular />} aria-label={`下移企业信息项${index + 1}`} disabled={saving || index === form.profileFacts.length - 1} onClick={() => setForm((current) => ({ ...current, profileFacts: moveFact(current.profileFacts, index, 1) }))}/>
+                </div>
+                <Input aria-label={`企业信息项${index + 1}小标题`} value={fact.label} maxLength={8} disabled={saving} onChange={(_, data) => setForm((current) => ({ ...current, profileFacts: current.profileFacts.map((value) => value.id === fact.id ? { ...value, label: data.value } : value) }))}/>
+                <Input aria-label={`企业信息项${index + 1}内容`} value={fact.value} maxLength={24} disabled={saving} onChange={(_, data) => setForm((current) => ({ ...current, profileFacts: current.profileFacts.map((value) => value.id === fact.id ? { ...value, value: data.value } : value) }))}/>
+                <Button type="button" appearance="subtle" icon={<Delete24Regular />} aria-label={`删除企业信息项${index + 1}`} disabled={saving} onClick={() => setForm((current) => ({ ...current, profileFacts: current.profileFacts.filter((value) => value.id !== fact.id) }))}/>
+              </div>)}
+              <Button type="button" appearance="secondary" icon={<Add24Regular />} disabled={saving || form.profileFacts.length >= 4} onClick={() => setForm((current) => ({ ...current, profileFacts: [...current.profileFacts, { id: `fact-${Date.now()}`, label: "新信息", value: "待填写" }] }))}>添加信息项</Button>
+            </div>
+          </Field>
+
+          <Field label="企业标签" hint="基础名片最多展示 3 个短标签。">
+            <IdentityTitlesEditor values={form.profileTags} kind="enterprise" maxItems={3} maxItemLength={40} disabled={saving} onChange={(profileTags) => setForm((current) => ({ ...current, profileTags }))}/>
           </Field>
 
           <Field label="企业简介">

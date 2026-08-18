@@ -421,6 +421,9 @@ class MemberStore:
                 "job_title": membership.job_title,
                 "avatar_url": membership.avatar_url,
                 "business_summary": membership.business_summary,
+                "public_positioning": membership.public_positioning,
+                "identity_titles": list(membership.identity_titles),
+                "professional_tags": list(membership.professional_tags),
                 "email_hmac": user.email_hmac,
                 "mobile_hmac": user.mobile_hmac,
                 "role": membership.role.value,
@@ -455,6 +458,12 @@ class MemberStore:
                 membership.avatar_url = body.avatar_url or None
             if "business_summary" in body.model_fields_set:
                 membership.business_summary = body.business_summary or None
+            if "public_positioning" in body.model_fields_set:
+                membership.public_positioning = body.public_positioning or None
+            if body.identity_titles is not None:
+                membership.identity_titles = list(body.identity_titles)
+            if body.professional_tags is not None:
+                membership.professional_tags = list(body.professional_tags)
             if "email" in body.model_fields_set:
                 user.email_hmac = self._cipher.hmac(body.email) if body.email else None
                 user.email_ciphertext = self._cipher.encrypt(body.email) if body.email else None
@@ -772,6 +781,9 @@ class MemberStore:
             job_title=row.job_title,
             avatar_url=row.avatar_url,
             business_summary=row.business_summary,
+            public_positioning=row.public_positioning,
+            identity_titles=list(row.identity_titles),
+            professional_tags=list(row.professional_tags),
             status=desired_status,
         )
         credential = StaffCredential(
@@ -854,6 +866,9 @@ class MemberStore:
             ("job_title", row.job_title),
             ("avatar_url", row.avatar_url),
             ("business_summary", row.business_summary),
+            ("public_positioning", row.public_positioning),
+            ("identity_titles", list(row.identity_titles)),
+            ("professional_tags", list(row.professional_tags)),
         )
         for field, desired in identity_updates:
             if field in row.model_fields_set:
@@ -1153,6 +1168,9 @@ def _member_record(
         job_title=membership.job_title,
         avatar_url=membership.avatar_url,
         business_summary=membership.business_summary,
+        public_positioning=membership.public_positioning,
+        identity_titles=list(membership.identity_titles),
+        professional_tags=list(membership.professional_tags),
         email=cipher.decrypt(user.email_ciphertext) if user.email_ciphertext else None,
         mobile=cipher.decrypt(user.mobile_ciphertext) if user.mobile_ciphertext else None,
         role=membership.role.value,

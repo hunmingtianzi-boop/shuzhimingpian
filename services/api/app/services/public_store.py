@@ -122,6 +122,9 @@ class PublicEmployeeIdentity:
     job_title: str | None
     avatar_url: str | None
     business_summary: str | None
+    public_positioning: str | None
+    identity_titles: tuple[str, ...]
+    professional_tags: tuple[str, ...]
     email: str | None
     mobile: str | None
 
@@ -132,6 +135,8 @@ class PublicEnterpriseIdentity:
     title: str
     avatar_url: str | None
     business_summary: str | None
+    profile_facts: tuple[dict[str, str], ...]
+    profile_tags: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,7 +277,21 @@ class PublicStore:
                     if employee_identity is not None
                     else enterprise_identity.business_summary
                 ),
-                identity_titles=_public_string_list(card_settings.get("identity_titles"), limit=8),
+                identity_titles=(
+                    list(employee_identity.identity_titles)
+                    if employee_identity is not None and employee_identity.identity_titles
+                    else _public_string_list(card_settings.get("identity_titles"), limit=8)
+                ),
+                identity_positioning=(
+                    employee_identity.public_positioning
+                    if employee_identity is not None
+                    else enterprise_identity.title
+                ),
+                identity_tags=(
+                    list(employee_identity.professional_tags)
+                    if employee_identity is not None
+                    else list(enterprise_identity.profile_tags)
+                ),
                 company=PublicCompany(
                     id=company.id,
                     name=company.name,
@@ -281,6 +300,12 @@ class PublicStore:
                     region=_optional_string(company_settings.get("region")),
                     website=_optional_string(company_settings.get("website")),
                     logo_url=_optional_string(company_settings.get("logo_url")),
+                    positioning=_optional_string(company_settings.get("business_positioning")),
+                    profile_facts=_public_dict_list(
+                        company_settings.get("profile_facts"),
+                        allowed_keys=("id", "label", "value"),
+                    )[:4],
+                    profile_tags=_public_string_list(company_settings.get("profile_tags"), limit=3),
                     official_card_slug=official_card_slug,
                 ),
                 contact_fields=(
@@ -1694,6 +1719,9 @@ async def _public_employee_identity(
                     Membership.job_title.label("job_title"),
                     Membership.avatar_url.label("avatar_url"),
                     Membership.business_summary.label("business_summary"),
+                    Membership.public_positioning.label("public_positioning"),
+                    Membership.identity_titles.label("identity_titles"),
+                    Membership.professional_tags.label("professional_tags"),
                 )
                 .join(Membership, Membership.user_id == User.id)
                 .where(
@@ -1718,6 +1746,9 @@ async def _public_employee_identity(
         job_title=_optional_string(row["job_title"]),
         avatar_url=_optional_string(row["avatar_url"]),
         business_summary=_optional_string(row["business_summary"]),
+        public_positioning=_optional_string(row["public_positioning"]),
+        identity_titles=tuple(row["identity_titles"] or ()),
+        professional_tags=tuple(row["professional_tags"] or ()),
         email=(
             cipher.decrypt(row["email_ciphertext"])
             if row.get("email_ciphertext") is not None
@@ -1748,6 +1779,13 @@ def _public_enterprise_identity(*, card: Card, company: Company) -> PublicEnterp
         or _optional_string(card_settings.get("avatar_url")),
         business_summary=_optional_string(company_settings.get("summary"))
         or _optional_string(card_settings.get("business_summary")),
+        profile_facts=tuple(
+            _public_dict_list(
+                company_settings.get("profile_facts"),
+                allowed_keys=("id", "label", "value"),
+            )[:4]
+        ),
+        profile_tags=tuple(_public_string_list(company_settings.get("profile_tags"), limit=3)),
     )
 
 

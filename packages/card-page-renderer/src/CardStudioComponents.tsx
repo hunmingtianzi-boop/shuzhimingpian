@@ -1,4 +1,4 @@
-import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode } from "react";
+import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { StudioCaseCollection, StudioGallery, StudioServiceCollection } from "./CardStudioCollections";
 
 export type StudioIconName = "arrowLeft" | "share" | "phone" | "mail" | "message" | "map" | "check" | "user" | "briefcase" | "image" | "play" | "help" | "grid" | "building" | "external" | "save" | "plus" | "eye" | "eyeOff" | "grip" | "settings" | "calendar" | "file";
@@ -35,6 +35,7 @@ export function StudioIcon({ name, label }: { name: StudioIconName; label?: stri
 
 export type StudioIdentity = {
   kind: "enterprise" | "employee";
+  variant?: "legacy" | "v2";
   name: string;
   headline?: string;
   titles?: string[];
@@ -43,6 +44,7 @@ export type StudioIdentity = {
   imageUrl?: string;
   verificationLabel?: string;
   meta?: string[];
+  facts?: Array<{ label: string; value: string }>;
   tags?: string[];
   contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }>;
   layout?: "horizontal" | "vertical";
@@ -58,7 +60,7 @@ export type StudioModule = {
   directoryEnabled?: boolean;
   showTitle?: boolean;
   layout?: string;
-  actionTemplate?: "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
+  actionTemplate?: "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons" | "quick";
   body?: string;
   identity?: StudioIdentity;
   items?: Array<Record<string, unknown>>;
@@ -139,6 +141,33 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
     ? { aspectRatio: background.aspectRatio.replace(":", " / ") }
     : {};
   const contacts = (identity.contacts || []).filter((item) => item.label.trim() && item.value.trim());
+  if (identity.variant === "v2") {
+    const visibleContacts = contacts.slice(0, 4);
+    const visibleTitles = (identity.titles || []).filter(Boolean).slice(0, 5);
+    const visibleFacts = (identity.facts || []).filter((item) => item.label.trim() && item.value.trim()).slice(0, 4);
+    return <section style={cardStyle} className={`identity-v2 identity-v2--${identity.kind} ${background?.imageUrl ? "identity-v2--has-background" : ""}`} aria-label={identity.kind === "employee" ? "员工基础名片" : "企业基础名片"}>
+      <div className="identity-background cpr-identity-background" style={style} aria-hidden="true"/>
+      <div className={`identity-wash cpr-identity-overlay cpr-identity-overlay--${background?.overlay || "light"} overlay-${background?.overlay || "light"}`} aria-hidden="true"/>
+      <div className="identity-v2-content">
+        <div className="identity-v2-main">
+          <div className="identity-v2-visual">
+            {identity.imageUrl ? <img src={identity.imageUrl} alt={`${identity.name}${identity.kind === "employee" ? "的职业头像" : "企业标识"}`}/> : <span>{initials(identity.name)}</span>}
+            {identity.kind === "employee" ? <i className="availability-dot" title="当前可联系"/> : null}
+          </div>
+          <div className="identity-v2-copy">
+            <div className="identity-v2-kicker">{identity.kind === "employee" ? "员工数字名片" : "企业官方名片"}</div>
+            <div className="identity-v2-name-row"><h1>{identity.name}</h1>{identity.verificationLabel ? <span className="verified"><StudioIcon name="check"/>{identity.verificationLabel}</span> : null}</div>
+            {identity.headline ? <p className="identity-v2-headline">{identity.headline}</p> : null}
+            {identity.kind === "employee" && visibleTitles.length ? <div className="identity-v2-title-lines" aria-label="身份头衔">{visibleTitles.map((title) => <span key={title}>{title}</span>)}</div> : null}
+            {identity.kind === "employee" && identity.companyName ? <p className="identity-v2-company"><StudioIcon name="building"/>{identity.companyName}</p> : null}
+            {identity.kind === "enterprise" && visibleFacts.length ? <dl className={`identity-v2-facts count-${visibleFacts.length}`}>{visibleFacts.map((fact) => <div key={`${fact.label}-${fact.value}`}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl> : null}
+            {identity.tags?.length ? <div className="identity-v2-tags">{identity.tags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
+          </div>
+        </div>
+        {visibleContacts.length ? <div className={`identity-v2-contacts count-${visibleContacts.length}`} aria-label="快捷联系方式">{visibleContacts.map((item, index) => { const content = <><StudioIcon name={contactIcon(item.kind)}/><span>{item.label}</span></>; return item.href ? <a href={item.href} key={item.id || index}>{content}</a> : <button type="button" key={item.id || index}>{content}</button>; })}</div> : null}
+      </div>
+    </section>;
+  }
   return <section style={cardStyle} className={`identity-block cpr-identity cpr-identity--${identity.kind} cpr-identity--${identity.layout || "horizontal"} ${background?.imageUrl ? "cpr-identity--has-background" : ""} layout-${identity.layout || "horizontal"}`} aria-label="基础名片">
     <div className="identity-background cpr-identity-background" style={style} aria-hidden="true"/><div className={`identity-wash cpr-identity-overlay cpr-identity-overlay--${background?.overlay || "light"} overlay-${background?.overlay || "light"}`} aria-hidden="true"/>
     <div className="identity-content"><div className="identity-main">
@@ -158,6 +187,52 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
   </section>;
 }
 
+function QuickEntryModule({
+  module,
+  editor,
+  onAction,
+  className,
+  children,
+  ...sectionProps
+}: {
+  module: StudioModule;
+  editor: boolean;
+  onAction?: StudioCardPageProps["onAction"];
+} & HTMLAttributes<HTMLElement>) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const items = (module.items || []).filter((item) => String(item.title || "").trim());
+  const overflow = items.length > 4;
+  const visibleItems = overflow ? items.slice(0, 3) : items.slice(0, 4);
+  const remainingItems = overflow ? items.slice(3) : [];
+  const activate = (event: MouseEvent<HTMLAnchorElement>, item: Record<string, unknown>) => {
+    if (editor || !item.href || item.href === "#") event.preventDefault();
+    onAction?.(item);
+  };
+  const entry = (item: Record<string, unknown>, index: number, compact = false) => <a
+    className={compact ? "quick-link-overflow-item" : "quick-link-item"}
+    href={String(item.href || "#")}
+    target={!editor && item.openMode === "new_tab" ? "_blank" : undefined}
+    rel="noreferrer"
+    key={String(item.id || index)}
+    onClick={(event) => activate(event, item)}
+  >
+    <span className="quick-link-icon">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : <StudioIcon name={contactIcon(String(item.icon || "website"))}/>}</span>
+    <span className="quick-link-copy"><strong>{String(item.title)}</strong>{item.subtitle ? <small>{String(item.subtitle)}</small> : null}</span>
+    <StudioIcon name="external"/>
+  </a>;
+  return <section {...sectionProps} className={["content-module quick-links-module", className].filter(Boolean).join(" ")}>
+    {children}
+    <ModuleHeading module={module}/>
+    {items.length ? <>
+      <div className={`quick-links ${items.length === 1 ? "is-single" : "is-multiple"} ${module.layout === "horizontal" ? "is-horizontal" : "is-adaptive"} count-${Math.min(4, visibleItems.length + (overflow ? 1 : 0))}`}>
+        {visibleItems.map((item, index) => entry(item, index))}
+        {overflow ? <button className="quick-link-item quick-link-more" type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((current) => !current)}><span className="quick-link-icon"><StudioIcon name="grid"/></span><span className="quick-link-copy"><strong>更多</strong><small>其余 {remainingItems.length} 个入口</small></span><StudioIcon name="external"/></button> : null}
+      </div>
+      {overflow && moreOpen ? <div className="quick-link-overflow" aria-label="更多快捷入口"><div className="quick-link-overflow-heading"><strong>更多快捷入口</strong><button type="button" onClick={() => setMoreOpen(false)} aria-label="收起更多快捷入口">×</button></div>{remainingItems.map((item, index) => entry(item, index + 3, true))}</div> : null}
+    </> : <div className="empty-state"><strong>快捷入口待添加</strong><p>添加名称、图标和跳转地址。</p></div>}
+  </section>;
+}
+
 function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onAssistant, onSelectModule }: { module: StudioModule; editor?: boolean; onOpenItem?: StudioCardPageProps["onOpenItem"]; onAction?: StudioCardPageProps["onAction"]; onAssistant?: StudioCardPageProps["onAssistant"]; onSelectModule?: StudioCardPageProps["onSelectModule"] }) {
   const items = module.items || [];
   if (module.type === "identity") return StudioIdentityBlock({ identity: module.identity });
@@ -170,6 +245,7 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
   if (module.type === "gallery") return <section className="content-module"><ModuleHeading module={module} more/><StudioGallery items={module.galleryItems || (module.imageUrls || []).map((imageUrl, index) => ({ id: `legacy-${index}`, imageUrl }))} layout={module.layout} title={module.title} interactive={!editor}/></section>;
   if (module.type === "video") return <VideoModule module={module} editor={editor} onModuleSelect={() => onSelectModule?.(module.id)}/>;
   if (module.type === "faq") return <FaqModule module={module}/>;
+  if (module.type === "actions" && module.actionTemplate === "quick") return <QuickEntryModule module={module} editor={editor} onAction={onAction}/>;
   if (module.type === "actions") {
     const template = module.actionTemplate || (items.some((item) => item.imageUrl) ? "media" : "shortcuts");
     const actionIcon = (item: Record<string, unknown>): StudioIconName => ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(String(item.icon)) ? String(item.icon) as StudioIconName : "external";

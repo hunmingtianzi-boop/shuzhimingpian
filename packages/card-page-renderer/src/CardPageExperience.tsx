@@ -20,11 +20,11 @@ export type CardPageIdentityPresentation = {
     overlay?: "none" | "light" | "dark" | "brand";
   };
 };
-export type CardPageActionTemplate = "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
+export type CardPageActionTemplate = "quick" | "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
 export type CardPageActionIcon = "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
 export type CardPageActionItem = { id: string; title: string; summary?: string; label?: string; tag?: string; icon?: CardPageActionIcon; date?: string; location?: string; source?: string; status?: string; duration?: string; imageUrl?: string; targetType: "external_url" | "internal_path" | "phone" | "map"; targetValue: string; openMode?: "self" | "new_tab" };
 export type CardPageGalleryItem = { id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string };
-export type CardPageIdentity = { kind: "enterprise" | "employee"; name: string; headline?: string; titles?: string[]; summary?: string; imageUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
+export type CardPageIdentity = { variant?: "legacy" | "v2"; kind: "enterprise" | "employee"; name: string; headline?: string; titles?: string[]; summary?: string; imageUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; facts?: Array<{ label: string; value: string }>; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
 export type CardPageProduct = { id: string; slug?: string; name: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string };
 export type CardPageCase = { id: string; slug?: string; title: string; industry?: string; clientName?: string; background?: string; solution?: string; summary?: string; result?: string; metrics?: Array<{ value: string; label: string }>; imageUrl?: string; ctaLabel?: string };
 export type CardPageFaqItem = { id: string; documentId?: string; question: string; answer: string; sourceLabel?: string };
@@ -98,11 +98,11 @@ function moduleTitle(block: CardPageBlock, identityKind?: CardPageIdentity["kind
   const configured = block.title?.trim();
   if (block.type === "rich_text" && identityKind === "employee" && configured === "企业介绍") return "个人介绍";
   if (block.type === "rich_text" && identityKind === "enterprise" && configured === "个人介绍") return "企业介绍";
-  return configured || ({ identity: "基础名片", rich_text: "介绍", business_collection: "核心业务", image_gallery: "工作相册", video_link: "视频介绍", case_collection: "业务案例", trust_panel: "企业资料", faq: "常见问题", cta: "联系", ai_assistant: "AI 助手", action_collection: "行动入口" } as Record<CardPageBlockType, string>)[block.type];
+  return configured || ({ identity: "基础名片", rich_text: "介绍", business_collection: "核心业务", image_gallery: "工作相册", video_link: "视频介绍", case_collection: "业务案例", trust_panel: "企业资料", faq: "常见问题", cta: "联系", ai_assistant: "AI 助手", action_collection: "快捷入口" } as Record<CardPageBlockType, string>)[block.type];
 }
 function moduleSource(block: CardPageBlock, identityKind?: CardPageIdentity["kind"]) {
   const profileSource = identityKind === "enterprise" ? "企业资料" : "员工信息";
-  return ({ identity: "企业员工", rich_text: profileSource, business_collection: "业务库", image_gallery: "素材库", video_link: "素材库", case_collection: "案例库", trust_panel: "企业资料", faq: "问答库", cta: "自定义内容", ai_assistant: "企业资料", action_collection: "自定义内容" } as Record<CardPageBlockType, string>)[block.type];
+  return ({ identity: "企业员工", rich_text: profileSource, business_collection: "业务库", image_gallery: "素材库", video_link: "素材库", case_collection: "案例库", trust_panel: "企业资料", faq: "问答库", cta: "自定义内容", ai_assistant: "企业资料", action_collection: "快捷入口" } as Record<CardPageBlockType, string>)[block.type];
 }
 function studioType(block: CardPageBlock): StudioModule["type"] { return isOverview(block) ? "overview" : ({ identity: "identity", rich_text: "intro", business_collection: "services", image_gallery: "gallery", video_link: "video", case_collection: "cases", trust_panel: "trust", faq: "faq", cta: "cta", ai_assistant: "ai", action_collection: "actions" } as Record<CardPageBlockType, StudioModule["type"]>)[block.type]; }
 function positionValue(value?: CardPageIdentityPresentation["background"] extends infer B ? B extends { position?: infer P } ? P : never : never) { return ({ top_left: "topLeft", top_right: "topRight", bottom_left: "bottomLeft", bottom_right: "bottomRight" } as Record<string, string>)[String(value || "")] || value; }

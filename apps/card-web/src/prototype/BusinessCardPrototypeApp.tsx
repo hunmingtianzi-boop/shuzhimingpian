@@ -1107,29 +1107,32 @@ export const BusinessCardPrototypeApp = forwardRef<
   ]);
   const composedIdentity: CardPageIdentity = isStandaloneEmployee
     ? {
+        variant: "v2",
         kind: "employee",
         name: displayName,
-        headline: title,
+        headline: card?.identity_positioning || title,
         titles: card?.identity_titles || [],
         summary: card?.business_summary || undefined,
         imageUrl: avatar,
         companyName,
         verificationLabel: isPublished ? "已发布" : "本地展示",
         positioning: card?.business_summary || companySummary,
-        tags,
+        tags: card?.identity_tags?.length ? card.identity_tags : tags,
         contacts: identityContacts,
       }
     : {
+        variant: "v2",
         kind: "enterprise",
         name: companyName,
-        headline: card?.company.industry || undefined,
-        titles: card?.identity_titles || [],
+        headline: card?.company.positioning || card?.company.industry || undefined,
+        titles: [],
         imageUrl: companyLogo,
         verificationLabel: isPublished ? "资料已发布" : "本地展示",
         positioning: tenant.hero.summary,
         meta: [card?.company.region]
           .filter((value): value is string => Boolean(value)),
-        tags,
+        facts: card?.company.profile_facts?.map((fact) => ({ label: fact.label, value: fact.value })) || [],
+        tags: card?.company.profile_tags?.length ? card.company.profile_tags : tags,
         contacts: identityContacts,
       };
 

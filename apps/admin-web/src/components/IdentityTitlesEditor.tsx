@@ -1,6 +1,6 @@
 import { Button, Input } from "@fluentui/react-components";
 import { Add24Regular, ArrowDown24Regular, ArrowUp24Regular, Delete24Regular } from "@fluentui/react-icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type IdentityTitlesEditorProps = {
   values: string[];
@@ -8,12 +8,59 @@ type IdentityTitlesEditorProps = {
   disabled?: boolean;
   maxItems?: number;
   kind?: "enterprise" | "employee";
+  itemLabel?: string;
+  addButtonLabel?: string;
+  emptyExample?: string;
+  maxItemLength?: number;
 };
 
-export function IdentityTitlesEditor({ values, onChange, disabled = false, maxItems = 8, kind = "employee" }: IdentityTitlesEditorProps) {
+function IdentityValueInput({
+  value,
+  label,
+  maxLength,
+  disabled,
+  onCommit,
+  onBlur,
+}: {
+  value: string;
+  label: string;
+  maxLength: number;
+  disabled: boolean;
+  onCommit: (value: string) => void;
+  onBlur: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const composing = useRef(false);
+
+  useEffect(() => {
+    if (!composing.current) setDraft(value);
+  }, [value]);
+
+  return <Input
+    value={draft}
+    maxLength={maxLength}
+    disabled={disabled}
+    aria-label={label}
+    onCompositionStart={() => { composing.current = true; }}
+    onCompositionEnd={(event) => {
+      composing.current = false;
+      const next = event.currentTarget.value;
+      setDraft(next);
+      onCommit(next);
+    }}
+    onChange={(_, data) => {
+      setDraft(data.value);
+      if (!composing.current) onCommit(data.value);
+    }}
+    onBlur={onBlur}
+  />;
+}
+
+export function IdentityTitlesEditor({ values, onChange, disabled = false, maxItems = 8, kind = "employee", itemLabel, addButtonLabel, emptyExample, maxItemLength = 80 }: IdentityTitlesEditorProps) {
   const [draft, setDraft] = useState("");
   const titles = values.slice(0, maxItems);
-  const itemName = kind === "enterprise" ? "企业标签" : "身份头衔";
+  const itemName = itemLabel ?? (kind === "enterprise" ? "企业标签" : "身份头衔");
+  const resolvedAddLabel = addButtonLabel ?? (kind === "enterprise" ? "添加标签" : "添加身份");
   const titlesRef = useRef(titles);
   titlesRef.current = titles;
   const commitTitles = (updater: (current: string[]) => string[]) => {
@@ -46,11 +93,11 @@ export function IdentityTitlesEditor({ values, onChange, disabled = false, maxIt
       <div className="identity-title-add-row">
         <Input
           value={draft}
-          maxLength={80}
+          maxLength={maxItemLength}
           disabled={disabled || titles.length >= maxItems}
           placeholder={titles.length
             ? `继续添加下一个${itemName}`
-            : kind === "enterprise" ? "例如：高新技术企业" : "例如：创始人 / 总经理"}
+            : emptyExample ?? (kind === "enterprise" ? "例如：高新技术企业" : "例如：创始人 / 总经理")}
           aria-label={`新增${itemName}`}
           onChange={(_, data) => setDraft(data.value)}
           onKeyDown={(event) => {
@@ -61,7 +108,7 @@ export function IdentityTitlesEditor({ values, onChange, disabled = false, maxIt
           }}
         />
         <Button type="button" appearance="secondary" icon={<Add24Regular />} disabled={disabled || !draft.trim() || titles.length >= maxItems} onClick={addTitle}>
-          {kind === "enterprise" ? "添加标签" : "添加身份"}
+          {resolvedAddLabel}
         </Button>
       </div>
       {titles.length ? (
@@ -69,12 +116,12 @@ export function IdentityTitlesEditor({ values, onChange, disabled = false, maxIt
           {titles.map((title, index) => (
             <li key={index} className="identity-title-row">
               <span className="identity-title-index">{String(index + 1).padStart(2, "0")}</span>
-              <Input
+              <IdentityValueInput
                 value={title}
-                maxLength={80}
+                maxLength={maxItemLength}
                 disabled={disabled}
-                aria-label={`第 ${index + 1} 个${itemName}`}
-                onChange={(_, data) => commitTitles((current) => current.map((value, currentIndex) => currentIndex === index ? data.value : value))}
+                label={`第 ${index + 1} 个${itemName}`}
+                onCommit={(nextValue) => commitTitles((current) => current.map((value, currentIndex) => currentIndex === index ? nextValue : value))}
                 onBlur={() => commitTitles((current) => current.map((value) => value.trim()).filter(Boolean))}
               />
               <div className="identity-title-actions">
@@ -85,7 +132,7 @@ export function IdentityTitlesEditor({ values, onChange, disabled = false, maxIt
             </li>
           ))}
         </ol>
-      ) : <p className="identity-title-empty">尚未添加{itemName}。输入一项后点击“{kind === "enterprise" ? "添加标签" : "添加身份"}”，每项会独立成行。</p>}
+      ) : <p className="identity-title-empty">尚未添加{itemName}。输入一项后点击“{resolvedAddLabel}”，每项会独立成行。</p>}
       <span className="identity-title-count">已添加 {titles.length}/{maxItems} 个{itemName}</span>
     </div>
   );

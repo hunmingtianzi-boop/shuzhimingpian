@@ -27,6 +27,9 @@ export type CompanyMember = {
   jobTitle?: string;
   avatarUrl?: string;
   businessSummary?: string;
+  publicPositioning?: string;
+  identityTitles?: string[];
+  professionalTags?: string[];
   email?: string;
   mobile?: string;
   role: MemberRole;
@@ -46,6 +49,9 @@ export type MemberCreateInput = {
   jobTitle?: string;
   avatarUrl?: string;
   businessSummary?: string;
+  publicPositioning?: string;
+  identityTitles?: string[];
+  professionalTags?: string[];
   role: MemberRole;
   permissions: string[];
   status: MemberStatus;
@@ -57,6 +63,9 @@ export type MemberAccessInput = {
   jobTitle?: string;
   avatarUrl?: string;
   businessSummary?: string;
+  publicPositioning?: string;
+  identityTitles?: string[];
+  professionalTags?: string[];
   email?: string;
   mobile?: string;
   role?: MemberRole;
@@ -110,6 +119,9 @@ export type CompanyProfile = {
   region: string;
   website: string;
   logoUrl: string;
+  positioning?: string;
+  profileFacts?: IdentityProfileFact[];
+  profileTags?: string[];
   profilePersonalizationPolicyVersion: string;
   onboardingStatus?: string;
   version?: number;
@@ -118,8 +130,18 @@ export type CompanyProfile = {
 
 export type CompanyProfileInput = Omit<
   CompanyProfile,
-  "id" | "updatedAt" | "onboardingStatus"
->;
+  "id" | "updatedAt" | "onboardingStatus" | "positioning" | "profileFacts" | "profileTags"
+> & {
+  positioning: string;
+  profileFacts: IdentityProfileFact[];
+  profileTags: string[];
+};
+
+export type IdentityProfileFact = {
+  id: string;
+  label: string;
+  value: string;
+};
 
 export type CardSettings = {
   id?: string;
@@ -683,6 +705,8 @@ export type ManagedCard = VersionedResource & {
     leadConsent: string;
   };
   identityTitles?: string[];
+  identityPositioning?: string;
+  identityTags?: string[];
   contactFields?: IdentityContactField[];
   employeeContactVisibility?: Array<"mobile" | "email">;
   shareUrl: string;
@@ -700,6 +724,8 @@ export type ManagedCardInput = {
   suggestedQuestions: string[];
   policyVersions: ManagedCard["policyVersions"];
   identityTitles: string[];
+  identityPositioning?: string;
+  identityTags?: string[];
   contactFields: IdentityContactField[];
   employeeContactVisibility: Array<"mobile" | "email">;
   /** Empty means use the company default configuration on create. */
@@ -763,6 +789,7 @@ export type EnterpriseTemplateActionTargetType =
 
 /** Matches the presentation families used by the card-studio simulator. */
 export type EnterpriseTemplateActionTemplate =
+  | "quick"
   | "shortcuts"
   | "media"
   | "event"

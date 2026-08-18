@@ -366,6 +366,9 @@ describe("adminApi real contract", () => {
       region: "杭州",
       website: "https://example.test",
       logoUrl: "",
+      positioning: "企业数字化服务",
+      profileFacts: [],
+      profileTags: [],
       profilePersonalizationPolicyVersion: "profile-personalization-v2",
       version: 7,
     });
@@ -397,6 +400,9 @@ describe("adminApi real contract", () => {
       region: "杭州",
       website: "https://example.test",
       logo_url: null,
+      positioning: "企业数字化服务",
+      profile_facts: [],
+      profile_tags: [],
       profile_personalization_policy_version: "profile-personalization-v2",
     });
 

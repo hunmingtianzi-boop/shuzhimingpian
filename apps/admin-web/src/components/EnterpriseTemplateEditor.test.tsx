@@ -92,7 +92,7 @@ const companyProfile = {
   industry: "企业服务",
   region: "杭州",
   website: "https://tuotu.example.test",
-  logoUrl: card.avatarUrl,
+  logoUrl: "/api/v1/public/card-assets/company-1/company-logo.webp",
   profilePersonalizationPolicyVersion: "profile-v1",
   version: 3,
 };
@@ -201,6 +201,10 @@ describe("EnterpriseTemplateEditor", () => {
     expect(shell?.querySelector(".studio-grid > .studio-panel.left .module-row")).toBeInTheDocument();
     expect(shell?.querySelector(".studio-grid > .studio-canvas .canvas-toolbar")).toBeInTheDocument();
     expect(shell?.querySelector(".studio-grid > .studio-panel.right .inspector-title")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "拓途商务企业标识" })).toHaveAttribute(
+      "src",
+      new URL(companyProfile.logoUrl, window.location.origin).href,
+    );
   });
 
   beforeEach(() => {
@@ -284,17 +288,24 @@ describe("EnterpriseTemplateEditor", () => {
     }
     await waitFor(() => expect(bodyInput).toHaveValue("连续输入不会闪回"));
 
+    fireEvent.compositionStart(bodyInput);
+    fireEvent.change(bodyInput, { target: { value: "中文输入法组词中" } });
+    expect(bodyInput).toHaveValue("中文输入法组词中");
+    fireEvent.compositionEnd(bodyInput, { data: "中" });
+    fireEvent.change(bodyInput, { target: { value: "中文输入法组词完成" } });
+    await waitFor(() => expect(bodyInput).toHaveValue("中文输入法组词完成"));
+
     await user.click(screen.getByRole("button", { name: "父层刷新" }));
     expect(titleInput).toHaveValue("");
-    expect(bodyInput).toHaveValue("连续输入不会闪回");
+    expect(bodyInput).toHaveValue("中文输入法组词完成");
     expect(load).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(load).toHaveBeenCalledTimes(1);
-    expect(bodyInput).toHaveValue("连续输入不会闪回");
+    expect(bodyInput).toHaveValue("中文输入法组词完成");
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "rich-new", title: "", body: "连续输入不会闪回", showTitle: false }),
+      expect.objectContaining({ id: "rich-new", title: "", body: "中文输入法组词完成", showTitle: false }),
     ]));
   }, 15_000);
 
@@ -325,25 +336,19 @@ describe("EnterpriseTemplateEditor", () => {
     renderEditor();
 
     await user.click(await screen.findByRole("tab", { name: "添加模块" }));
-    await user.click(screen.getByRole("button", { name: /^行动入口/ }));
+    await user.click(screen.getByRole("button", { name: /^快捷入口/ }));
     await user.click(await screen.findByRole("button", { name: "添加入口", hidden: true }));
 
-    const title = screen.getByRole("textbox", { name: "入口标题", hidden: true });
-    const summary = screen.getByRole("textbox", { name: "摘要", hidden: true });
-    const label = screen.getByRole("textbox", { name: "行动文字", hidden: true });
-    const target = screen.getByRole("textbox", { name: "目标地址", hidden: true });
+    const title = screen.getByRole("textbox", { name: "入口名称", hidden: true });
+    const target = screen.getByRole("textbox", { name: "跳转网址", hidden: true });
     expect(target).toHaveValue("");
     fireEvent.change(title, { target: { value: "世界会展大会" } });
-    fireEvent.change(summary, { target: { value: "查看大会时间与报名信息" } });
-    fireEvent.change(label, { target: { value: "查看详情" } });
     fireEvent.change(target, { target: { value: "https://example.com/conference" } });
     await user.click(screen.getByRole("button", { name: "使用活动图标", hidden: true }));
 
     await new Promise((resolve) => window.setTimeout(resolve, 180));
-    expect(screen.getByRole("textbox", { name: "入口标题", hidden: true })).toBe(title);
+    expect(screen.getByRole("textbox", { name: "入口名称", hidden: true })).toBe(title);
     expect(title).toHaveValue("世界会展大会");
-    expect(summary).toHaveValue("查看大会时间与报名信息");
-    expect(label).toHaveValue("查看详情");
     expect(target).toHaveValue("https://example.com/conference");
     expect(screen.getByRole("button", { name: "使用活动图标", hidden: true })).toHaveAttribute("aria-pressed", "true");
   }, 15_000);
@@ -519,7 +524,7 @@ describe("EnterpriseTemplateEditor", () => {
     })).toBeUndefined();
   }, 15_000);
 
-  it("persists identity layout and uploaded background with collection layout settings", async () => {
+  it("normalizes the identity layout and persists background with collection settings", async () => {
     const user = userEvent.setup();
     const layoutTemplate = template({
       draft: {
@@ -527,9 +532,9 @@ describe("EnterpriseTemplateEditor", () => {
         themeKey: "brand",
         blocks: [{
           ...identityBlock,
-          layoutVariant: "horizontal",
+          layoutVariant: "vertical",
           presentation: {
-            identityLayout: "horizontal",
+            identityLayout: "vertical",
             background: {
               fit: "cover",
               position: "center",
@@ -568,11 +573,12 @@ describe("EnterpriseTemplateEditor", () => {
     );
     renderEditor();
 
-    await screen.findByRole("radio", { name: "横向" });
-    expect(screen.getByText("企业标签与资质")).toBeInTheDocument();
-    expect(screen.getByText(/高新技术企业、专精特新企业、优秀企业/)).toBeInTheDocument();
+    await screen.findByText("基础名片背景");
+    expect(screen.queryByRole("radio", { name: "横向" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "竖向" })).not.toBeInTheDocument();
+    expect(screen.getByText("企业信息项")).toBeInTheDocument();
+    expect(screen.getByText(/最多 4 项，每项由小标题和内容组成/)).toBeInTheDocument();
     expect(document.querySelectorAll("[data-editor-pane]")).toHaveLength(3);
-    await user.click(screen.getByRole("radio", { name: "竖向" }));
     const background = new File(["background"], "identity.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("选择基础名片背景图片"), background);
     await waitFor(() => expect(upload).toHaveBeenCalledWith(background));
@@ -600,9 +606,9 @@ describe("EnterpriseTemplateEditor", () => {
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     const savedBlocks = update.mock.calls[0][3];
     expect(savedBlocks.find((block) => block.id === "identity")).toEqual(expect.objectContaining({
-      layoutVariant: "vertical",
+      layoutVariant: "horizontal",
       presentation: expect.objectContaining({
-        identityLayout: "vertical",
+        identityLayout: "horizontal",
         background: expect.objectContaining({
           assetUrl: "/api/v1/public/card-assets/company-1/identity-background.webp",
           scale: 1.18,
@@ -684,7 +690,7 @@ describe("EnterpriseTemplateEditor", () => {
 
     expect(update).not.toHaveBeenCalled();
     expect(await screen.findByText("图片画廊已加入当前草稿；请先补齐内容，再保存草稿。")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "模块标题" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "模块标题", hidden: true })).toBeEnabled();
   }, 15_000);
 
   it("binds FAQ blocks to selectable published knowledge instead of a free-text answer", async () => {

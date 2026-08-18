@@ -37,6 +37,9 @@ class PublicCompany(StrictModel):
     region: str | None = None
     website: str | None = None
     logo_url: str | None = None
+    positioning: str | None = None
+    profile_facts: list[dict[str, str]] = Field(default_factory=list, max_length=4)
+    profile_tags: list[str] = Field(default_factory=list, max_length=3)
     official_card_slug: str | None = None
 
 
@@ -78,6 +81,8 @@ class PublicCard(StrictModel):
     avatar_url: str | None = None
     business_summary: str | None = None
     identity_titles: list[str] = Field(default_factory=list, max_length=8)
+    identity_positioning: str | None = None
+    identity_tags: list[str] = Field(default_factory=list, max_length=3)
     contact_fields: list[dict[str, str]] = Field(default_factory=list)
     wecom_contact: PublicWeComContact | None = None
     company: PublicCompany

@@ -26,6 +26,12 @@ class EnterpriseReadinessEnvelope(AdminStrictModel):
     data: EnterpriseReadinessRecord
 
 
+class CompanyProfileFact(AdminStrictModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    label: str = Field(min_length=1, max_length=8)
+    value: str = Field(min_length=1, max_length=24)
+
+
 class CompanyProfile(AdminStrictModel):
     id: uuid.UUID
     name: str
@@ -34,6 +40,9 @@ class CompanyProfile(AdminStrictModel):
     region: str | None = None
     website: str | None = None
     logo_url: str | None = None
+    positioning: str | None = None
+    profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
+    profile_tags: list[str] = Field(default_factory=list, max_length=3)
     profile_personalization_policy_version: str
     status: str
     onboarding_status: str
@@ -52,9 +61,27 @@ class UpdateCompanyProfileRequest(AdminStrictModel):
     region: str | None = Field(default=None, max_length=100)
     website: HttpUrl | None = None
     logo_url: str | None = Field(default=None, max_length=2_048)
+    positioning: str | None = Field(default=None, max_length=240)
+    profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
+    profile_tags: list[str] = Field(default_factory=list, max_length=3)
     profile_personalization_policy_version: str = Field(min_length=1, max_length=64)
 
     _validate_logo_url = field_validator("logo_url")(validate_safe_asset_url)
+
+    @field_validator("profile_tags")
+    @classmethod
+    def validate_profile_tags(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            value = raw.strip()
+            key = value.casefold()
+            if not value or len(value) > 40:
+                raise ValueError("profile tags must contain 1-40 characters")
+            if key not in seen:
+                normalized.append(value)
+                seen.add(key)
+        return normalized
 
 
 class CardProfile(AdminStrictModel):

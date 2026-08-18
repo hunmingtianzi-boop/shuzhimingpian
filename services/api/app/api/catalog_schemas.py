@@ -356,6 +356,8 @@ class CardWriteFields(CatalogStrictModel):
     suggested_questions: list[str] = Field(default_factory=list, max_length=6)
     policy_versions: dict[str, str] = Field(default_factory=dict)
     identity_titles: list[str] = Field(default_factory=list, max_length=8)
+    identity_positioning: str | None = Field(default=None, max_length=240)
+    identity_tags: list[str] = Field(default_factory=list, max_length=3)
     contact_fields: list[CardContactItem] = Field(default_factory=list, max_length=8)
     employee_contact_visibility: list[Literal["mobile", "email"]] = Field(
         default_factory=list,
@@ -406,6 +408,21 @@ class CardWriteFields(CatalogStrictModel):
                 raise ValueError("identity titles must contain 1-80 characters")
             if key not in seen:
                 normalized.append(title)
+                seen.add(key)
+        return normalized
+
+    @field_validator("identity_tags")
+    @classmethod
+    def validate_identity_tags(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            tag = value.strip()
+            key = tag.casefold()
+            if not tag or len(tag) > 40:
+                raise ValueError("identity tags must contain 1-40 characters")
+            if key not in seen:
+                normalized.append(tag)
                 seen.add(key)
         return normalized
 
@@ -463,6 +480,7 @@ EnterpriseTemplateActionTargetType = Literal[
 ]
 
 EnterpriseTemplateActionTemplate = Literal[
+    "quick",
     "shortcuts",
     "media",
     "event",

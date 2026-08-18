@@ -18,6 +18,22 @@ MemberRowOutcome = Literal["created", "updated", "unchanged", "duplicate", "fail
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _MOBILE_PATTERN = re.compile(r"^\+?[0-9]{6,20}$")
 _PERMISSION_PATTERN = re.compile(r"^[a-z][a-z0-9_.:-]{0,79}$")
+
+
+def _normalize_public_labels(
+    values: list[str], *, max_length: int, field_name: str
+) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = raw.strip()
+        key = value.casefold()
+        if not value or len(value) > max_length:
+            raise ValueError(f"{field_name} must contain 1-{max_length} characters")
+        if key not in seen:
+            normalized.append(value)
+            seen.add(key)
+    return normalized
 ALLOWED_COMPANY_MEMBER_PERMISSIONS = frozenset(
     {
         "analytics.read",
@@ -71,12 +87,25 @@ class BulkMemberRow(MemberModel):
     job_title: str | None = Field(default=None, max_length=200)
     avatar_url: str | None = Field(default=None, max_length=2_048)
     business_summary: str | None = Field(default=None, max_length=2_000)
+    public_positioning: str | None = Field(default=None, max_length=240)
+    identity_titles: list[str] = Field(default_factory=list, max_length=5)
+    professional_tags: list[str] = Field(default_factory=list, max_length=3)
     role: MemberRole = "card_owner"
     permissions: list[str] | None = Field(default=None, max_length=40)
     status: MemberStatus = "active"
     rotate_password: bool = False
 
     _validate_avatar_url = field_validator("avatar_url")(validate_safe_asset_url)
+
+    @field_validator("identity_titles")
+    @classmethod
+    def validate_identity_titles(cls, values: list[str]) -> list[str]:
+        return _normalize_public_labels(values, max_length=80, field_name="identity title")
+
+    @field_validator("professional_tags")
+    @classmethod
+    def validate_professional_tags(cls, values: list[str]) -> list[str]:
+        return _normalize_public_labels(values, max_length=40, field_name="professional tag")
 
     @field_validator("account")
     @classmethod
@@ -157,6 +186,9 @@ class MemberRecord(MemberModel):
     job_title: str | None = None
     avatar_url: str | None = None
     business_summary: str | None = None
+    public_positioning: str | None = None
+    identity_titles: list[str] = Field(default_factory=list, max_length=5)
+    professional_tags: list[str] = Field(default_factory=list, max_length=3)
     email: str | None = None
     mobile: str | None = None
     role: MemberRole
@@ -222,6 +254,9 @@ class UpdateMemberAccessRequest(MemberModel):
     job_title: str | None = Field(default=None, max_length=200)
     avatar_url: str | None = Field(default=None, max_length=2_048)
     business_summary: str | None = Field(default=None, max_length=2_000)
+    public_positioning: str | None = Field(default=None, max_length=240)
+    identity_titles: list[str] | None = Field(default=None, max_length=5)
+    professional_tags: list[str] | None = Field(default=None, max_length=3)
     email: str | None = Field(default=None, max_length=320)
     mobile: str | None = Field(default=None, max_length=24)
     role: MemberRole | None = None
@@ -231,6 +266,16 @@ class UpdateMemberAccessRequest(MemberModel):
 
     _validate_email = field_validator("email")(BulkMemberRow.validate_email)
     _validate_mobile = field_validator("mobile")(BulkMemberRow.validate_mobile)
+
+    @field_validator("identity_titles")
+    @classmethod
+    def validate_identity_titles(cls, values: list[str] | None) -> list[str] | None:
+        return None if values is None else BulkMemberRow.validate_identity_titles(values)
+
+    @field_validator("professional_tags")
+    @classmethod
+    def validate_professional_tags(cls, values: list[str] | None) -> list[str] | None:
+        return None if values is None else BulkMemberRow.validate_professional_tags(values)
 
     @field_validator("permissions")
     @classmethod

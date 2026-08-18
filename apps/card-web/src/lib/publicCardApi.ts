@@ -11,7 +11,7 @@ export type PublicEnterpriseTemplateBlock = {
   sort_order?: number;
   layout_variant?: "auto" | "list" | "grid" | "carousel" | "featured" | "mosaic" | "horizontal" | "vertical";
   item_limit?: number;
-  action_template?: "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
+  action_template?: "quick" | "shortcuts" | "media" | "event" | "banner" | "articles" | "video" | "buttons";
   presentation?: {
     identity_layout?: "horizontal" | "vertical";
     background?: {
@@ -88,6 +88,8 @@ export type PublicCardData = {
   avatar_url?: string | null;
   business_summary?: string | null;
   identity_titles?: string[];
+  identity_positioning?: string | null;
+  identity_tags?: string[];
   contact_fields: PublicLinkItem[];
   wecom_contact?: {
     available: boolean;
@@ -103,6 +105,9 @@ export type PublicCardData = {
     website?: string | null;
     logo_url?: string | null;
     official_card_slug?: string | null;
+    positioning?: string | null;
+    profile_facts?: Array<{ id: string; label: string; value: string }>;
+    profile_tags?: string[];
   };
   featured_products: PublicLinkItem[];
   featured_cases: PublicLinkItem[];
@@ -317,6 +322,10 @@ function parsePublicCard(value: unknown): PublicCardData {
     identity_titles: Array.isArray(data.identity_titles)
       ? data.identity_titles.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, 8)
       : [],
+    identity_positioning: optionalString(data, "identity_positioning"),
+    identity_tags: Array.isArray(data.identity_tags)
+      ? data.identity_tags.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, 3)
+      : [],
     contact_fields: stringRecordList(data.contact_fields),
     wecom_contact: isRecord(data.wecom_contact)
       ? {
@@ -335,6 +344,19 @@ function parsePublicCard(value: unknown): PublicCardData {
       website: optionalString(company, "website"),
       logo_url: optionalString(company, "logo_url"),
       official_card_slug: optionalString(company, "official_card_slug"),
+      positioning: optionalString(company, "positioning"),
+      profile_facts: Array.isArray(company.profile_facts)
+        ? company.profile_facts.flatMap((item) => {
+            if (!isRecord(item)) return [];
+            const id = optionalString(item, "id");
+            const label = optionalString(item, "label");
+            const value = optionalString(item, "value");
+            return id && label && value ? [{ id, label, value }] : [];
+          }).slice(0, 4)
+        : [],
+      profile_tags: Array.isArray(company.profile_tags)
+        ? company.profile_tags.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).slice(0, 3)
+        : [],
     },
     featured_products: stringRecordList(data.featured_products),
     featured_cases: stringRecordList(data.featured_cases),

@@ -49,12 +49,14 @@ import type {
   EnterpriseTemplateBlockType,
   EnterpriseTemplateThemeKey,
   IdentityContactField,
+  IdentityProfileFact,
   ManagedCardInput,
   ManagedCard,
   Product,
   SelectableFaqDocument,
 } from "../api/types";
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
+import { normalizeImageUpload } from "../lib/normalizeImageUpload";
 import { TemplateBlockInspector } from "./enterprise-template/TemplateBlockInspector";
 import { CardStudioEditorSurface } from "./enterprise-template/CardStudioEditorSurface";
 import { TemplateCanvas } from "./enterprise-template/TemplateCanvas";
@@ -76,7 +78,7 @@ export const enterpriseTemplateBlockLabels: Record<EnterpriseTemplateBlockType, 
   trust_panel: "企业资料",
   faq: "常见问题",
   cta: "行动按钮",
-  action_collection: "行动入口",
+  action_collection: "快捷入口",
   ai_assistant: "AI 助手入口",
 };
 
@@ -89,7 +91,7 @@ const enterpriseTemplateBlockDescriptions: Partial<Record<EnterpriseTemplateBloc
   trust_panel: "企业认证与公开资料",
   faq: "引用已发布问答库",
   cta: "单个主要行动按钮",
-  action_collection: "多个页面或联系入口",
+  action_collection: "最多 8 个图标链接，公开页前四个直显",
 };
 
 function nextBlockId(type: EnterpriseTemplateBlockType) {
@@ -132,8 +134,9 @@ export function createEnterpriseTemplateBlock(
       itemLimit: 4,
     } : {}),
     ...(type === "action_collection" ? {
-      layoutVariant: "grid" as const,
+      layoutVariant: "auto" as const,
       itemLimit: 4,
+      actionTemplate: "quick" as const,
       actionItems: [],
     } : {}),
   };
@@ -221,7 +224,7 @@ export function getEnterpriseTemplateBlockIssue(
       if (!block.ctaLabel?.trim()) return "请输入按钮文案。";
       return isHttpsUrl(block.ctaUrl) ? undefined : "请输入有效的 HTTPS 跳转地址。";
     case "action_collection":
-      if (!block.actionItems?.length) return "请至少添加一个行动入口。";
+      if (!block.actionItems?.length) return "请至少添加一个快捷入口。";
       return block.actionItems.every(isActionTargetValid)
         ? undefined
         : "请补齐入口标题，并检查跳转目标格式。";
@@ -404,6 +407,7 @@ export type EnterpriseTemplateEditorDataSource = Pick<
   | "listProducts"
   | "listCaseStudies"
   | "getCompanyProfile"
+  | "updateCompanyProfile"
   | "listSelectableFaqDocuments"
   | "uploadCardAsset"
   | "uploadCardVideoAsset"
@@ -445,6 +449,9 @@ export function EnterpriseTemplateEditor({
   const [tabletSidePane, setTabletSidePane] = useState<"structure" | "inspector">("structure");
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
   const [identityTitles, setIdentityTitles] = useState<string[]>([]);
+  const [identityPositioning, setIdentityPositioning] = useState("");
+  const [identityTags, setIdentityTags] = useState<string[]>([]);
+  const [identityFacts, setIdentityFacts] = useState<IdentityProfileFact[]>([]);
   const [identityContactFields, setIdentityContactFields] = useState<IdentityContactField[]>([]);
   const [identityDirty, setIdentityDirty] = useState(false);
   const [undoStack, setUndoStack] = useState<Array<{ blocks: EnterpriseTemplateBlock[]; themeKey: EnterpriseTemplateThemeKey }>>([]);
@@ -503,11 +510,41 @@ export function EnterpriseTemplateEditor({
         const upgradedLegacyOverview = normalizedBlocks.some((block) => (
           block.type === "rich_text" && block.title?.trim() === "概览" && !block.body?.trim()
         ));
-        const editableBlocks = normalizedBlocks.map((block) => (
-          block.type === "rich_text" && block.title?.trim() === "概览" && !block.body?.trim()
-            ? { ...block, body: LEGACY_OVERVIEW_DEFAULT }
-            : block
+        const upgradedLegacyActions = normalizedBlocks.some((block) => (
+          block.type === "action_collection"
+          && (block.actionTemplate !== "quick" || block.title?.trim() === "行动入口")
         ));
+        const upgradedLegacyIdentityLayout = normalizedBlocks.some((block) => (
+          block.type === "identity"
+          && (
+            block.layoutVariant === "vertical"
+            || block.presentation?.identityLayout === "vertical"
+          )
+        ));
+        const editableBlocks = normalizedBlocks.map((block) => {
+          if (block.type === "rich_text" && block.title?.trim() === "概览" && !block.body?.trim()) {
+            return { ...block, body: LEGACY_OVERVIEW_DEFAULT };
+          }
+          if (block.type === "action_collection") {
+            return {
+              ...block,
+              title: !block.title?.trim() || block.title.trim() === "行动入口" ? "快捷入口" : block.title,
+              actionTemplate: "quick" as const,
+              layoutVariant: block.layoutVariant === "horizontal" ? "horizontal" as const : "auto" as const,
+            };
+          }
+          if (block.type === "identity") {
+            return {
+              ...block,
+              layoutVariant: "horizontal" as const,
+              presentation: {
+                ...block.presentation,
+                identityLayout: "horizontal" as const,
+              },
+            };
+          }
+          return block;
+        });
         const removedLegacyAiBlock = editableBlocks.length !== document.blocks.length;
         replaceBlocks(editableBlocks);
         setUndoStack([]);
@@ -517,7 +554,11 @@ export function EnterpriseTemplateEditor({
         setProducts(productResult);
         setCases(caseResult);
         setCompany(companyProfile);
-        setIdentityTitles(card?.identityTitles ?? creationDraft?.identityPreview.identityTitles ?? []);
+        const loadedKind = card?.cardKind ?? creationDraft?.cardKind ?? defaultKind ?? "enterprise";
+        setIdentityTitles(loadedKind === "employee" ? card?.identityTitles ?? creationDraft?.identityPreview.identityTitles ?? [] : []);
+        setIdentityPositioning(loadedKind === "employee" ? card?.identityPositioning ?? card?.title ?? "" : companyProfile.positioning ?? "");
+        setIdentityTags(loadedKind === "employee" ? card?.identityTags ?? [] : companyProfile.profileTags ?? []);
+        setIdentityFacts(loadedKind === "enterprise" ? companyProfile.profileFacts ?? [] : []);
         setIdentityContactFields(normalizeIdentityContactFields(
           card?.contactFields ?? creationDraft?.identityPreview.contactFields ?? [],
         ));
@@ -527,11 +568,13 @@ export function EnterpriseTemplateEditor({
             ? current
             : editableBlocks[0]?.id
         ));
-        if (removedLegacyAiBlock || upgradedLegacyOverview) {
+        if (removedLegacyAiBlock || upgradedLegacyOverview || upgradedLegacyActions || upgradedLegacyIdentityLayout) {
           setDirty(true);
           setSavedNotice([
             removedLegacyAiBlock ? "已移除旧版 AI 助手区块" : "",
             upgradedLegacyOverview ? "已将旧版预览文案转为可编辑的真实内容" : "",
+            upgradedLegacyActions ? "已将旧版行动入口升级为快捷入口" : "",
+            upgradedLegacyIdentityLayout ? "已统一为当前基础名片布局" : "",
           ].filter(Boolean).join("；") + "。保存草稿后生效。");
         }
         // The editor must open on the current shared renderer. Published mode
@@ -804,6 +847,27 @@ export function EnterpriseTemplateEditor({
     }
   };
 
+  const uploadCompanyLogo = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const invalid = validateImage(file);
+    if (invalid) { setError(invalid); return; }
+    setUploadingKey("company-logo");
+    setError(undefined);
+    try {
+      const uploaded = await dataSource.uploadCardAsset(await normalizeImageUpload(file));
+      setCompany((current) => current ? { ...current, logoUrl: uploaded.url } : current);
+      setDirty(true);
+      setIdentityDirty(true);
+      setSavedNotice("企业 Logo 已上传，保存草稿后同步企业资料。");
+    } catch (cause) {
+      setError(toApiError(cause, "上传企业 Logo 失败。", "COMPANY_LOGO_UPLOAD_FAILED"));
+    } finally {
+      setUploadingKey(undefined);
+    }
+  };
+
   const uploadActionCover = async (
     index: number,
     actionId: string,
@@ -876,11 +940,21 @@ export function EnterpriseTemplateEditor({
     try {
       let baseVersion = version;
       let savedCard = card;
+      if (card?.cardKind === "enterprise" && identityDirty && company?.version) {
+        const { id: _id, updatedAt: _updatedAt, onboardingStatus: _onboardingStatus, ...companyInput } = company;
+        await dataSource.updateCompanyProfile({
+          ...companyInput,
+          positioning: identityPositioning,
+          profileFacts: identityFacts,
+          profileTags: identityTags,
+        });
+        setCompany(await dataSource.getCompanyProfile());
+      }
       if (card && identityDirty) {
         const cardInput: ManagedCardInput = {
           cardKind: card.cardKind,
           ownerUserId: card.ownerUserId,
-          displayName: card.displayName,
+          displayName: card.cardKind === "enterprise" ? company?.name || card.displayName : card.displayName,
           title: card.title,
           avatarUrl: card.avatarUrl,
           assistantName: card.assistantName,
@@ -888,6 +962,8 @@ export function EnterpriseTemplateEditor({
           suggestedQuestions: card.suggestedQuestions,
           policyVersions: card.policyVersions,
           identityTitles,
+          identityPositioning,
+          identityTags,
           contactFields: normalizeIdentityContactFields(identityContactFields),
           employeeContactVisibility: card.employeeContactVisibility ?? [],
         };
@@ -1005,17 +1081,16 @@ export function EnterpriseTemplateEditor({
       : company?.summary || card.title
     : company?.summary || "";
   const effectiveKind = card?.cardKind ?? creationDraft?.cardKind ?? defaultKind ?? "enterprise";
-  const effectiveDisplayName = card?.displayName
-    || creationDraft?.identityPreview.displayName
-    || company?.name
-    || "名片主体";
+  const effectiveDisplayName = effectiveKind === "enterprise"
+    ? company?.name || card?.displayName || creationDraft?.identityPreview.displayName || "名片主体"
+    : card?.displayName || creationDraft?.identityPreview.displayName || company?.name || "名片主体";
   const effectiveTitle = card?.title
     || creationDraft?.identityPreview.title
     || effectiveCompanySummary
     || "业务定位或职位信息";
-  const effectiveAvatarUrl = card?.avatarUrl
-    || creationDraft?.identityPreview.avatarUrl
-    || company?.logoUrl;
+  const effectiveAvatarUrl = effectiveKind === "enterprise"
+    ? company?.logoUrl || card?.avatarUrl || creationDraft?.identityPreview.avatarUrl
+    : card?.avatarUrl || creationDraft?.identityPreview.avatarUrl || company?.logoUrl;
   const previewIdentityContactFields: IdentityContactField[] = useMemo(() => [
     ...identityContactFields,
     ...(company?.website && !identityContactFields.some((field) => field.kind === "website")
@@ -1276,12 +1351,14 @@ export function EnterpriseTemplateEditor({
                               avatarUrl: effectiveAvatarUrl,
                               companyName: company?.name,
                               summary: company?.summary,
-                              positioning: effectiveCompanySummary || company?.summary,
+                              positioning: identityPositioning || effectiveCompanySummary || company?.summary,
                               identityTitles,
+                              identityTags,
+                              identityFacts,
                               contactFields: previewIdentityContactFields,
                             }}
                             selectedBlockId={selectedBlock?.id}
-                            onSelectBlock={setSelectedBlockId}
+                            onSelectBlock={selectStructureBlock}
                             onMoveBlock={moveBlockById}
                           />
                         )}
@@ -1318,6 +1395,11 @@ export function EnterpriseTemplateEditor({
                         selectableFaqs={selectableFaqs}
                         labels={enterpriseTemplateBlockLabels}
                         identityTitles={identityTitles}
+                        companyName={company?.name}
+                        companyLogoUrl={company?.logoUrl}
+                        identityPositioning={identityPositioning}
+                        identityTags={identityTags}
+                        identityFacts={identityFacts}
                         identityContactFields={identityContactFields}
                         galleryInputRefs={galleryInputRefs}
                         videoInputRefs={videoInputRefs}
@@ -1328,6 +1410,37 @@ export function EnterpriseTemplateEditor({
                         onUpdate={(patch) => updateBlock(selectedIndex >= 0 ? selectedIndex : 0, patch)}
                         onIdentityTitlesChange={(titles) => {
                           setIdentityTitles(titles);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onCompanyNameChange={(name) => {
+                          setCompany((current) => current ? { ...current, name } : current);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onCompanyLogoUpload={(event) => void uploadCompanyLogo(event)}
+                        onCompanyLogoRemove={() => {
+                          setCompany((current) => current ? { ...current, logoUrl: "" } : current);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onIdentityPositioningChange={(positioning) => {
+                          setIdentityPositioning(positioning);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onIdentityTagsChange={(tags) => {
+                          setIdentityTags(tags);
+                          setDirty(true);
+                          setIdentityDirty(true);
+                          setSavedNotice(undefined);
+                        }}
+                        onIdentityFactsChange={(facts) => {
+                          setIdentityFacts(facts);
                           setDirty(true);
                           setIdentityDirty(true);
                           setSavedNotice(undefined);

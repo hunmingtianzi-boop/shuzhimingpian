@@ -24,6 +24,7 @@ import { ApiError } from "../api/client";
 import { memberApi } from "../api/memberApi";
 import type {
   CompanyMember,
+  CompanyProfile,
   IdentityContactField,
   IdentityContactKind,
   ManagedCard,
@@ -31,12 +32,36 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { resolveApiResourceUrl } from "../lib/resourceUrl";
+import { normalizeImageUpload } from "../lib/normalizeImageUpload";
 import { FormFeedback } from "./FormFeedback";
 import { IdentityTitlesEditor } from "./IdentityTitlesEditor";
 
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024;
 const CARD_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PUBLIC_CONTACT_SHORTCUT_LIMIT = 4;
+
+export async function syncEnterpriseLogo(logoUrl: string): Promise<CompanyProfile> {
+  const profile = await adminApi.getCompanyProfile();
+  if (profile.version === undefined) {
+    throw new ApiError("企业资料缺少版本号，无法安全更新 Logo。", {
+      code: "COMPANY_PROFILE_VERSION_MISSING",
+    });
+  }
+  await adminApi.updateCompanyProfile({
+    name: profile.name,
+    summary: profile.summary,
+    industry: profile.industry,
+    region: profile.region,
+    website: profile.website,
+    logoUrl,
+    positioning: profile.positioning ?? "",
+    profileFacts: profile.profileFacts ?? [],
+    profileTags: profile.profileTags ?? [],
+    profilePersonalizationPolicyVersion: profile.profilePersonalizationPolicyVersion,
+    version: profile.version,
+  });
+  return { ...profile, logoUrl, version: profile.version + 1 };
+}
 
 export function normalizeCardContactFields(
   fields: IdentityContactField[],
@@ -167,10 +192,14 @@ export function CardEditor({
   const [error, setError] = useState<ApiError>();
   const [imageFile, setImageFile] = useState<File>();
   const [imagePreview, setImagePreview] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+  const [selectedImageName, setSelectedImageName] = useState("");
   const [avatarChanged, setAvatarChanged] = useState(false);
   const [templateSources, setTemplateSources] = useState<ManagedCard[]>([]);
   const [employees, setEmployees] = useState<CompanyMember[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const avatarChangedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -178,10 +207,25 @@ export function CardEditor({
     setForm(input);
     setQuestionsText(input.suggestedQuestions.join("\n"));
     setImageFile(undefined);
+    setImageUploading(false);
+    setUploadedImageUrl("");
+    setSelectedImageName("");
     setAvatarChanged(false);
+    avatarChangedRef.current = false;
     setAttempted(false);
     setError(undefined);
   }, [createKind, item, open]);
+
+  useEffect(() => {
+    if (!open || (item?.cardKind ?? createKind) !== "enterprise") return;
+    let active = true;
+    void adminApi.getCompanyProfile().then((profile) => {
+      if (active && !avatarChangedRef.current) {
+        setForm((current) => ({ ...current, avatarUrl: profile.logoUrl ?? "" }));
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [createKind, item?.cardKind, open]);
 
   useEffect(() => {
     if (!open || (item?.cardKind ?? createKind) !== "employee") return;
@@ -298,6 +342,7 @@ export function CardEditor({
     const employee = employees.find((member) => member.userId === userId);
     setImageFile(undefined);
     setAvatarChanged(false);
+    avatarChangedRef.current = false;
     setForm((current) => ({
       ...current,
       ownerUserId: userId,
@@ -355,7 +400,7 @@ export function CardEditor({
     }));
   };
 
-  const chooseImage = (file?: File) => {
+  const chooseImage = async (file?: File) => {
     if (!file) return;
     setError(undefined);
     if (!CARD_IMAGE_TYPES.has(file.type)) {
@@ -375,14 +420,29 @@ export function CardEditor({
       return;
     }
     setImageFile(file);
+    setSelectedImageName(file.name);
     setAvatarChanged(true);
+    avatarChangedRef.current = true;
+    setImageUploading(true);
+    try {
+      const normalized = await normalizeImageUpload(file);
+      const uploaded = await adminApi.uploadCardAsset(normalized);
+      setUploadedImageUrl(uploaded.url);
+      setForm((current) => ({ ...current, avatarUrl: uploaded.url }));
+      setImageFile(undefined);
+    } catch (caught) {
+      setUploadedImageUrl("");
+      setError(toApiError(caught));
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAttempted(true);
     setError(undefined);
-    if (!valid || saving) return;
+    if (!valid || saving || imageUploading) return;
     if (!item && form.composerMode === "customize") {
       onCustomize({
         input: {
@@ -410,10 +470,13 @@ export function CardEditor({
     }
     setSaving(true);
     try {
-      const uploaded = imageFile
+      const uploaded = !uploadedImageUrl && imageFile
         ? await adminApi.uploadCardAsset(imageFile)
         : undefined;
-      const avatarUrl = uploaded?.url ?? form.avatarUrl;
+      const avatarUrl = uploadedImageUrl || uploaded?.url || form.avatarUrl;
+      if (form.cardKind === "enterprise" && avatarChanged) {
+        await syncEnterpriseLogo(avatarUrl);
+      }
       if (form.cardKind === "employee" && avatarChanged && selectedEmployee) {
         if (auth.user?.role !== "company_admin" && selectedEmployee.userId !== auth.user?.id) {
           throw new ApiError("只能修改自己的员工头像。", {
@@ -576,7 +639,7 @@ export function CardEditor({
             </>
           )}
 
-          <section className="card-identity-fields" aria-labelledby="card-identity-fields-title">
+          {form.cardKind === "employee" ? <section className="card-identity-fields" aria-labelledby="card-identity-fields-title">
             <div className="form-section-heading compact">
               <div>
                 <span className="form-step-label">第 1 步 · 对外身份</span>
@@ -669,7 +732,12 @@ export function CardEditor({
                 当前共有 {publicContactCount} 个公开联系方式；公开页首屏快捷入口最多展示 {PUBLIC_CONTACT_SHORTCUT_LIMIT} 个，超出的项目仍会保存，但不会出现在首屏快捷栏。
               </div>
             ) : null}
-          </section>
+          </section> : (
+            <div className="immutable-resource-note">
+              <strong>企业基础名片内容在页面编辑器维护</strong>
+              <span>企业定位、信息项、标签、联系方式与地址请点击“编辑内容”，再选择基础名片统一维护。</span>
+            </div>
+          )}
 
           <section
             className={`card-image-upload ${form.cardKind}`}
@@ -697,9 +765,13 @@ export function CardEditor({
                   ? selectedEmployee
                     ? "支持 PNG、JPEG、WebP，最大 5 MiB；保存后同步到企业员工及其公开名片。"
                     : "请先选择企业员工，再为其上传头像。"
-                  : "支持 PNG、JPEG、WebP，最大 5 MiB；保存时自动上传并压缩。"}
+                  : "支持 PNG、JPEG、WebP，最大 5 MiB；选择后立即规范化并上传。"}
               </span>
-              {imageFile && <em role="status">已选择：{imageFile.name}（保存时上传）</em>}
+              {selectedImageName && <em role="status">{imageUploading
+                ? `正在上传：${selectedImageName}`
+                : uploadedImageUrl
+                  ? `已上传：${selectedImageName}（保存后生效）`
+                  : `已选择：${selectedImageName}`}</em>}
               <div className="card-image-upload-actions">
                 <input
                   ref={imageInputRef}
@@ -707,9 +779,9 @@ export function CardEditor({
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   aria-label={form.cardKind === "enterprise" ? "选择企业 Logo" : "选择员工头像"}
-                  disabled={saving || (form.cardKind === "employee" && !selectedEmployee)}
+                  disabled={saving || imageUploading || (form.cardKind === "employee" && !selectedEmployee)}
                   onChange={(event) => {
-                    chooseImage(event.target.files?.[0]);
+                    void chooseImage(event.target.files?.[0]);
                     event.target.value = "";
                   }}
                 />
@@ -718,7 +790,7 @@ export function CardEditor({
                   appearance="secondary"
                   icon={<ArrowUpload24Regular />}
                   onClick={() => imageInputRef.current?.click()}
-                  disabled={saving || (form.cardKind === "employee" && !selectedEmployee)}
+                  disabled={saving || imageUploading || (form.cardKind === "employee" && !selectedEmployee)}
                 >
                   选择图片
                 </Button>
@@ -729,10 +801,13 @@ export function CardEditor({
                     icon={<Delete24Regular />}
                     onClick={() => {
                       setImageFile(undefined);
+                      setUploadedImageUrl("");
+                      setSelectedImageName("");
                       setAvatarChanged(true);
+                      avatarChangedRef.current = true;
                       update("avatarUrl", "");
                     }}
-                    disabled={saving || (form.cardKind === "employee" && !selectedEmployee)}
+                    disabled={saving || imageUploading || (form.cardKind === "employee" && !selectedEmployee)}
                   >
                     移除
                   </Button>
@@ -781,6 +856,10 @@ export function CardEditor({
                 value={form.avatarUrl}
                 onChange={(_, data) => {
                   setImageFile(undefined);
+                  setUploadedImageUrl("");
+                  setSelectedImageName("");
+                  setAvatarChanged(true);
+                  avatarChangedRef.current = true;
                   update("avatarUrl", data.value);
                 }}
                 disabled={saving}

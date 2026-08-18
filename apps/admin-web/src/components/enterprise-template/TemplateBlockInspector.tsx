@@ -38,6 +38,7 @@ import type {
   EnterpriseTemplateLayoutVariant,
   IdentityContactField,
   IdentityContactKind,
+  IdentityProfileFact,
   Product,
   SelectableFaqDocument,
 } from "../../api/types";
@@ -57,6 +58,11 @@ type Props = {
   selectableFaqs: SelectableFaqDocument[];
   labels: Record<EnterpriseTemplateBlock["type"], string>;
   identityTitles: string[];
+  companyName?: string;
+  companyLogoUrl?: string;
+  identityPositioning: string;
+  identityTags: string[];
+  identityFacts: IdentityProfileFact[];
   identityContactFields: IdentityContactField[];
   galleryInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
   videoInputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -68,6 +74,12 @@ type Props = {
     patch: Partial<EnterpriseTemplateBlock> | ((current: EnterpriseTemplateBlock) => Partial<EnterpriseTemplateBlock>),
   ) => void;
   onIdentityTitlesChange: (titles: string[]) => void;
+  onCompanyNameChange: (name: string) => void;
+  onCompanyLogoUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  onCompanyLogoRemove: () => void;
+  onIdentityPositioningChange: (positioning: string) => void;
+  onIdentityTagsChange: (tags: string[]) => void;
+  onIdentityFactsChange: (facts: IdentityProfileFact[]) => void;
   onIdentityContactFieldsChange: (fields: IdentityContactField[]) => void;
   onMove: (direction: -1 | 1) => void;
   onDuplicate: () => void;
@@ -99,10 +111,11 @@ type StableTextareaProps = ComponentProps<typeof FluentTextarea>;
  * preview. The parent remains the persisted source of truth, but it cannot
  * write an older render back over an in-progress keystroke.
  */
-function Input({ value, onChange, ...props }: StableInputProps) {
+function Input({ value, onChange, onCompositionStart, onCompositionEnd, ...props }: StableInputProps) {
   const controlledValue = typeof value === "string" ? value : undefined;
   const [draft, setDraft] = useState(controlledValue ?? "");
   const lastCommitted = useRef(controlledValue);
+  const composing = useRef(false);
 
   useEffect(() => {
     if (controlledValue !== undefined && controlledValue !== lastCommitted.current) {
@@ -115,18 +128,30 @@ function Input({ value, onChange, ...props }: StableInputProps) {
   return <FluentInput
     {...props}
     value={draft}
+    onCompositionStart={(event) => {
+      composing.current = true;
+      onCompositionStart?.(event);
+    }}
+    onCompositionEnd={(event) => {
+      composing.current = false;
+      lastCommitted.current = event.currentTarget.value;
+      setDraft(event.currentTarget.value);
+      onCompositionEnd?.(event);
+    }}
     onChange={(event, data) => {
-      lastCommitted.current = data.value;
       setDraft(data.value);
+      if (composing.current) return;
+      lastCommitted.current = data.value;
       onChange?.(event, data);
     }}
   />;
 }
 
-function Textarea({ value, onChange, ...props }: StableTextareaProps) {
+function Textarea({ value, onChange, onCompositionStart, onCompositionEnd, ...props }: StableTextareaProps) {
   const controlledValue = typeof value === "string" ? value : undefined;
   const [draft, setDraft] = useState(controlledValue ?? "");
   const lastCommitted = useRef(controlledValue);
+  const composing = useRef(false);
 
   useEffect(() => {
     if (controlledValue !== undefined && controlledValue !== lastCommitted.current) {
@@ -139,9 +164,20 @@ function Textarea({ value, onChange, ...props }: StableTextareaProps) {
   return <FluentTextarea
     {...props}
     value={draft}
+    onCompositionStart={(event) => {
+      composing.current = true;
+      onCompositionStart?.(event);
+    }}
+    onCompositionEnd={(event) => {
+      composing.current = false;
+      lastCommitted.current = event.currentTarget.value;
+      setDraft(event.currentTarget.value);
+      onCompositionEnd?.(event);
+    }}
     onChange={(event, data) => {
-      lastCommitted.current = data.value;
       setDraft(data.value);
+      if (composing.current) return;
+      lastCommitted.current = data.value;
       onChange?.(event, data);
     }}
   />;
@@ -302,6 +338,11 @@ export function TemplateBlockInspector({
   selectableFaqs,
   labels,
   identityTitles,
+  companyName,
+  companyLogoUrl,
+  identityPositioning,
+  identityTags,
+  identityFacts,
   identityContactFields,
   galleryInputRefs,
   videoInputRefs,
@@ -311,6 +352,12 @@ export function TemplateBlockInspector({
   collectionCoverInputRefs,
   onUpdate,
   onIdentityTitlesChange,
+  onCompanyNameChange,
+  onCompanyLogoUpload,
+  onCompanyLogoRemove,
+  onIdentityPositioningChange,
+  onIdentityTagsChange,
+  onIdentityFactsChange,
   onIdentityContactFieldsChange,
   onMove,
   onDuplicate,
@@ -323,6 +370,7 @@ export function TemplateBlockInspector({
   onCollectionCoverUpload,
 }: Props) {
   const isIdentity = block.type === "identity";
+  const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const identityContactsRef = useRef(identityContactFields);
   identityContactsRef.current = identityContactFields;
   const commitIdentityContacts = (updater: (current: IdentityContactField[]) => IdentityContactField[]) => {
@@ -399,7 +447,9 @@ export function TemplateBlockInspector({
       return { galleryItems: currentItems.map((item) => item.id === id ? { ...item, ...patch } : item) };
     });
   };
-  const availableLayouts = layoutOptions[block.type];
+  const availableLayouts = block.type === "action_collection" && (block.actionTemplate ?? "quick") === "quick"
+    ? undefined
+    : layoutOptions[block.type];
   const backgroundOpacityPercent = Math.round(
     Math.min(1, Math.max(0.08, block.presentation?.background?.opacity ?? 0.28)) * 100,
   );
@@ -439,7 +489,7 @@ export function TemplateBlockInspector({
     trust_panel: { icon: "check", description: "企业认证与公开资料", source: "企业资料" },
     faq: { icon: "help", description: "直接选择已发布问答", source: "真实问答库" },
     cta: { icon: "external", description: "轻量行动与跳转入口", source: "行动链接" },
-    action_collection: { icon: "external", description: "官网、活动、资料与电话入口", source: "自定义内容" },
+    action_collection: { icon: "external", description: "官网、活动和资料等常用链接", source: "自定义内容" },
     ai_assistant: { icon: "message", description: "使用默认底部 AI 接待入口", source: "企业资料" },
   };
   const meta = inspectorMeta[block.type];
@@ -484,13 +534,98 @@ export function TemplateBlockInspector({
 
       {isIdentity ? (
         <div className="identity-inspector-fields">
+          {cardKind === "enterprise" ? <>
+            <Field label="企业名称">
+              <Input value={companyName ?? ""} maxLength={200} disabled={busy} onChange={(_, data) => onCompanyNameChange(data.value)} />
+            </Field>
+            <div className="template-action-cover-row">
+              {companyLogoUrl ? <img src={resolveApiResourceUrl(companyLogoUrl)} alt="企业 Logo" /> : <i aria-hidden="true">企</i>}
+              <div>
+                <input ref={companyLogoInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp" aria-label="选择企业 Logo" disabled={busy} onChange={onCompanyLogoUpload}/>
+                <Button appearance="secondary" size="small" icon={<ArrowUpload24Regular/>} disabled={busy} onClick={() => companyLogoInputRef.current?.click()}>{uploadingKey === "company-logo" ? "上传中…" : "上传企业 Logo"}</Button>
+                {companyLogoUrl ? <Button appearance="subtle" size="small" disabled={busy} onClick={onCompanyLogoRemove}>移除</Button> : null}
+              </div>
+            </div>
+          </> : null}
           <Field
-            label={cardKind === "enterprise" ? "企业标签与资质" : "身份头衔"}
-            hint={cardKind === "enterprise"
-              ? "逐条添加企业标签或资质，例如高新技术企业、专精特新企业、优秀企业。"
-              : "逐条添加、独立排序；保存后同步到真实公开名片。"}
+            label={cardKind === "enterprise" ? "企业一句话定位" : "员工一句话定位"}
+            hint="控制基础名片姓名或企业名称下方的主说明，建议保持一行。"
           >
-            <IdentityTitlesEditor values={identityTitles} kind={cardKind} disabled={busy} onChange={onIdentityTitlesChange} />
+            <Input
+              value={identityPositioning}
+              maxLength={240}
+              disabled={busy}
+              placeholder={cardKind === "enterprise" ? "例如：AI 人才发展与产业场景服务" : "例如：AI 人才与产业项目共创"}
+              onChange={(_, data) => onIdentityPositioningChange(data.value)}
+            />
+          </Field>
+          <Field
+            label={cardKind === "enterprise" ? "企业信息项" : "身份头衔"}
+            hint={cardKind === "enterprise"
+              ? "最多 4 项，每项由小标题和内容组成；1–4 项会自动适配排版。"
+              : "逐条添加、独立排序；保存后同步到企业员工资料和公开名片。"}
+          >
+            {cardKind === "employee" ? (
+              <IdentityTitlesEditor values={identityTitles} kind="employee" disabled={busy} onChange={onIdentityTitlesChange} />
+            ) : (
+              <div className="identity-fact-editor">
+                {identityFacts.map((fact, factIndex) => (
+                  <div className="identity-fact-editor-row" key={fact.id}>
+                    <Input
+                      aria-label={`企业信息项${factIndex + 1}标题`}
+                      value={fact.label}
+                      maxLength={40}
+                      disabled={busy}
+                      placeholder="小标题，如成立时间"
+                      onChange={(_, data) => onIdentityFactsChange(identityFacts.map((item) => item.id === fact.id ? { ...item, label: data.value } : item))}
+                    />
+                    <Input
+                      aria-label={`企业信息项${factIndex + 1}内容`}
+                      value={fact.value}
+                      maxLength={80}
+                      disabled={busy}
+                      placeholder="内容，如2016年"
+                      onChange={(_, data) => onIdentityFactsChange(identityFacts.map((item) => item.id === fact.id ? { ...item, value: data.value } : item))}
+                    />
+                    <Button appearance="subtle" size="small" icon={<ArrowUp24Regular />} aria-label={`上移企业信息项${factIndex + 1}`} disabled={busy || factIndex === 0} onClick={() => {
+                      const next = [...identityFacts];
+                      [next[factIndex - 1], next[factIndex]] = [next[factIndex], next[factIndex - 1]];
+                      onIdentityFactsChange(next);
+                    }}/>
+                    <Button appearance="subtle" size="small" icon={<ArrowDown24Regular />} aria-label={`下移企业信息项${factIndex + 1}`} disabled={busy || factIndex === identityFacts.length - 1} onClick={() => {
+                      const next = [...identityFacts];
+                      [next[factIndex], next[factIndex + 1]] = [next[factIndex + 1], next[factIndex]];
+                      onIdentityFactsChange(next);
+                    }}/>
+                    <Button appearance="subtle" size="small" icon={<Delete24Regular />} aria-label={`删除企业信息项${factIndex + 1}`} disabled={busy} onClick={() => onIdentityFactsChange(identityFacts.filter((item) => item.id !== fact.id))}/>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  size="small"
+                  appearance="secondary"
+                  icon={<Add24Regular />}
+                  disabled={busy || identityFacts.length >= 4}
+                  onClick={() => onIdentityFactsChange([...identityFacts, { id: `fact-${crypto.randomUUID()}`, label: "", value: "" }])}
+                >添加信息项</Button>
+              </div>
+            )}
+          </Field>
+          <Field
+            label={cardKind === "enterprise" ? "企业标签与资质" : "专业标签"}
+            hint={cardKind === "enterprise" ? "例如：高新技术企业、产学研共创。最多 3 项。" : "例如：企业 AI、产品战略、人才共创。最多 3 项。"}
+          >
+            <IdentityTitlesEditor
+              values={identityTags}
+              kind={cardKind}
+              itemLabel={cardKind === "enterprise" ? "企业标签" : "专业标签"}
+              addButtonLabel="添加标签"
+              emptyExample={cardKind === "enterprise" ? "高新技术企业" : "企业 AI"}
+              maxItems={3}
+              maxItemLength={40}
+              disabled={busy}
+              onChange={onIdentityTagsChange}
+            />
           </Field>
           <div className="identity-inspector-contact-heading">
             <div><strong>联系快捷入口</strong><span>电话、微信、邮箱、地址和官网都会在基础名片中显示。</span></div>
@@ -581,32 +716,7 @@ export function TemplateBlockInspector({
             <strong>基础名片信息自动同步</strong>
             <p>企业名片读取企业资料；员工名片读取企业员工资料。这里不保存姓名、职位、头像或联系方式副本。</p>
           </div>
-          <section className="template-inspector-fields template-identity-presentation" aria-label="基础名片布局与背景">
-            <div className="field">
-              <label>身份排布</label>
-              <div className="option-grid">
-                {([[
-                  "horizontal", "横向身份卡", "首屏信息密度更高",
-                ], [
-                  "vertical", "纵向身份卡", "突出头像与个人信任",
-                ]] as const).map(([value, title, detail]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-label={value === "horizontal" ? "横向" : "竖向"}
-                    aria-checked={(block.presentation?.identityLayout ?? "horizontal") === value}
-                    className={`option-card ${(block.presentation?.identityLayout ?? "horizontal") === value ? "active" : ""}`}
-                    disabled={busy}
-                    onClick={() => onUpdate((currentBlock) => ({
-                      layoutVariant: value,
-                      presentation: { ...currentBlock.presentation, identityLayout: value },
-                    }))}
-                  ><strong>{title}</strong><small>{detail}</small></button>
-                ))}
-              </div>
-            </div>
-
+          <section className="template-inspector-fields template-identity-presentation" aria-label="基础名片背景">
             <div className="template-media-field field">
               <div className="template-media-heading">
                 <div><strong>基础名片背景</strong><span>图片仅作底层，身份字段继续来自真实资料。</span></div>
@@ -988,7 +1098,95 @@ export function TemplateBlockInspector({
         </fieldset>
       ) : null}
 
-      {block.type === "action_collection" ? (
+      {block.type === "action_collection" && (block.actionTemplate ?? "quick") === "quick" ? (
+        <section className="template-action-collection-editor template-quick-entry-editor" aria-labelledby={`quick-entry-${block.id}`}>
+          <div className="template-data-source-heading">
+            <div>
+              <strong id={`quick-entry-${block.id}`}>快捷入口</strong>
+              <span>只设置图标、名称和跳转地址；公开页最多直接展示 4 个，超出项进入“更多”。</span>
+            </div>
+            <Button
+              appearance="secondary"
+              size="small"
+              icon={<Add24Regular />}
+              disabled={busy || (block.actionItems?.length ?? 0) >= 8}
+              onClick={() => onUpdate((currentBlock) => ({ actionItems: [...(currentBlock.actionItems ?? []), nextActionItem()] }))}
+            >添加入口</Button>
+          </div>
+
+          <Field label="排列方式" hint="智能排布会根据 1–4 个入口自动调整；横向滑动始终保持单行。">
+            <RadioGroup
+              layout="horizontal"
+              value={block.layoutVariant === "horizontal" ? "horizontal" : "auto"}
+              onChange={(_, data) => onUpdate({ layoutVariant: data.value === "horizontal" ? "horizontal" : "auto" })}
+            >
+              <Radio value="auto" label="智能排布" disabled={busy} />
+              <Radio value="horizontal" label="横向滑动" disabled={busy} />
+            </RadioGroup>
+          </Field>
+
+          {(block.actionItems ?? []).length ? (
+            <ol className="template-action-item-list template-quick-entry-list">
+              {(block.actionItems ?? []).map((item, itemIndex) => {
+                const updateItem = (patch: Partial<EnterpriseTemplateActionItem>) => onUpdate((currentBlock) => ({
+                  actionItems: currentBlock.actionItems?.map((current) => current.id === item.id ? { ...current, ...patch } : current),
+                }));
+                const actionUploading = uploadingKey === `${block.id}:action:${item.id}`;
+                const testHref = actionTestHref({ ...item, targetType: "external_url" });
+                return (
+                  <li key={item.id}>
+                    <header>
+                      <div><span>{String(itemIndex + 1).padStart(2, "0")}</span><strong>{item.title || "未命名入口"}</strong></div>
+                      <div className="template-quick-entry-order">
+                        <Button appearance="subtle" size="small" icon={<ArrowUp24Regular />} aria-label={`上移快捷入口${itemIndex + 1}`} disabled={busy || itemIndex === 0} onClick={() => onUpdate((currentBlock) => {
+                          const next = [...(currentBlock.actionItems ?? [])];
+                          [next[itemIndex - 1], next[itemIndex]] = [next[itemIndex], next[itemIndex - 1]];
+                          return { actionItems: next };
+                        })}/>
+                        <Button appearance="subtle" size="small" icon={<ArrowDown24Regular />} aria-label={`下移快捷入口${itemIndex + 1}`} disabled={busy || itemIndex === (block.actionItems?.length ?? 0) - 1} onClick={() => onUpdate((currentBlock) => {
+                          const next = [...(currentBlock.actionItems ?? [])];
+                          [next[itemIndex], next[itemIndex + 1]] = [next[itemIndex + 1], next[itemIndex]];
+                          return { actionItems: next };
+                        })}/>
+                        <Button appearance="subtle" size="small" icon={<Delete24Regular />} aria-label={`删除快捷入口${itemIndex + 1}`} disabled={busy} onClick={() => onUpdate((currentBlock) => ({ actionItems: currentBlock.actionItems?.filter((current) => current.id !== item.id) }))}/>
+                      </div>
+                    </header>
+                    <div className="template-quick-entry-fields">
+                      <div className="template-action-cover-row">
+                        {item.imageUrl ? <img src={resolveApiResourceUrl(item.imageUrl)} alt="" /> : <span className="template-quick-entry-icon-preview"><StudioIcon name={item.icon ?? "external"}/></span>}
+                        <div>
+                          <input
+                            ref={(node) => { actionCoverInputRefs.current[`${block.id}:${item.id}`] = node; }}
+                            className="visually-hidden"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            disabled={busy}
+                            onChange={(event) => onActionCoverUpload(item.id, event)}
+                          />
+                          <Button appearance="secondary" size="small" icon={<ArrowUpload24Regular />} disabled={busy} onClick={() => actionCoverInputRefs.current[`${block.id}:${item.id}`]?.click()}>
+                            {actionUploading ? "上传中…" : item.imageUrl ? "更换图标" : "上传图标"}
+                          </Button>
+                          {item.imageUrl ? <Button appearance="subtle" size="small" disabled={busy} onClick={() => updateItem({ imageUrl: undefined })}>移除</Button> : null}
+                        </div>
+                      </div>
+                      <Field label="入口名称" required>
+                        <Input value={item.title} maxLength={40} disabled={busy} placeholder="例如：企业官网" onChange={(_, data) => updateItem({ title: data.value })}/>
+                      </Field>
+                      <Field label="跳转网址" required validationState={item.targetValue.trim() && !testHref ? "error" : "none"} validationMessage={item.targetValue.trim() && !testHref ? "请输入完整的 HTTPS 地址。" : undefined}>
+                        <Input value={item.targetValue} disabled={busy} placeholder="https://" onChange={(_, data) => updateItem({ targetType: "external_url", targetValue: data.value, openMode: "new_tab" })}/>
+                      </Field>
+                      <Field label="预设图标" hint="没有上传自定义图标时使用。">
+                        <ActionIconPresetPicker value={item.icon} disabled={busy} onChange={(icon) => updateItem({ icon })}/>
+                      </Field>
+                      {testHref ? <a className="template-test-action-link" href={testHref} target="_blank" rel="noreferrer">测试跳转 <Open24Regular aria-hidden="true"/></a> : <span className="template-test-action-link is-disabled">补齐网址后可测试</span>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : <div className="template-inspector-empty"><strong>还没有快捷入口</strong><p>添加官网、资料页、活动页等常用去处。</p></div>}
+        </section>
+      ) : block.type === "action_collection" ? (
         <section className="template-action-collection-editor" aria-labelledby={`action-collection-${block.id}`}>
           <div className="template-data-source-heading">
             <div>

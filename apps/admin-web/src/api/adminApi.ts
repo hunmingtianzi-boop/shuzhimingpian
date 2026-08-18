@@ -93,6 +93,13 @@ function requireId(data: JsonRecord, label: string): string {
 
 function normalizeCompany(payload: unknown): CompanyProfile {
   const raw = requireRecord(payload, "企业资料");
+  const profileFacts = Array.isArray(raw.profile_facts) ? raw.profile_facts.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    const id = optionalString(value.id);
+    const label = optionalString(value.label);
+    const factValue = optionalString(value.value);
+    return id && label && factValue ? [{ id, label, value: factValue }] : [];
+  }) : [];
   return {
     id: typeof raw.id === "string" ? raw.id : undefined,
     name: optionalString(raw.name),
@@ -101,6 +108,9 @@ function normalizeCompany(payload: unknown): CompanyProfile {
     region: optionalString(raw.region),
     website: optionalString(raw.website),
     logoUrl: optionalString(raw.logo_url),
+    positioning: optionalString(raw.positioning),
+    profileFacts,
+    profileTags: normalizeStringArray(raw.profile_tags).slice(0, 3),
     profilePersonalizationPolicyVersion:
       optionalString(raw.profile_personalization_policy_version) ||
       "profile-personalization-v1",
@@ -255,7 +265,7 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
       ? layoutVariant as EnterpriseTemplateBlock["layoutVariant"]
       : undefined,
     itemLimit: optionalNumber(value.item_limit),
-    actionTemplate: type === "action_collection" && ["shortcuts", "media", "event", "banner", "articles", "video", "buttons"].includes(optionalString(value.action_template))
+    actionTemplate: type === "action_collection" && ["quick", "shortcuts", "media", "event", "banner", "articles", "video", "buttons"].includes(optionalString(value.action_template))
       ? optionalString(value.action_template) as EnterpriseTemplateBlock["actionTemplate"]
       : undefined,
     presentation: presentation ? {
@@ -727,6 +737,8 @@ function normalizeManagedCard(rawValue: unknown): ManagedCard {
       leadConsent: optionalString(policies.lead_consent),
     },
     identityTitles: normalizeStringArray(rawValue.identity_titles).slice(0, 8),
+    identityPositioning: optionalString(rawValue.identity_positioning),
+    identityTags: normalizeStringArray(rawValue.identity_tags).slice(0, 3),
     contactFields,
     employeeContactVisibility: normalizeStringArray(rawValue.employee_contact_visibility)
       .filter((value): value is "mobile" | "email" => value === "mobile" || value === "email"),
@@ -823,6 +835,13 @@ function companyPayload(input: CompanyProfileInput) {
     region: nullableString(input.region),
     website: nullableString(input.website),
     logo_url: nullableString(input.logoUrl),
+    positioning: nullableString(input.positioning),
+    profile_facts: input.profileFacts.slice(0, 4).map((fact) => ({
+      id: fact.id,
+      label: fact.label.trim(),
+      value: fact.value.trim(),
+    })),
+    profile_tags: input.profileTags.map((value) => value.trim()).filter(Boolean).slice(0, 3),
     profile_personalization_policy_version:
       input.profilePersonalizationPolicyVersion.trim(),
   };
@@ -949,6 +968,8 @@ function managedCardPayload(input: ManagedCardInput, requireOwner: boolean) {
       .map((value) => value.trim())
       .filter(Boolean)
       .slice(0, 8),
+    identity_positioning: nullableString(input.identityPositioning ?? ""),
+    identity_tags: (input.identityTags ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 3),
     contact_fields: input.contactFields
       .filter((field) => field.label.trim() && field.value.trim())
       .slice(0, 8)

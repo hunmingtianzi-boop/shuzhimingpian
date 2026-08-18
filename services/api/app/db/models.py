@@ -371,6 +371,13 @@ class Membership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     job_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(2_048), nullable=True)
     business_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    public_positioning: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    identity_titles: Mapped[list[str]] = mapped_column(
+        ARRAY(String(80)), nullable=False, default=list, server_default=text("'{}'::varchar[]")
+    )
+    professional_tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String(40)), nullable=False, default=list, server_default=text("'{}'::varchar[]")
+    )
     status: Mapped[LifecycleStatus] = mapped_column(
         db_enum(LifecycleStatus, "membership_status"),
         nullable=False,

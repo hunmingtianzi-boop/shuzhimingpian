@@ -11,11 +11,15 @@ if (!root) throw new Error("Application root element is missing");
 const applicationRoot = createRoot(root);
 
 async function renderApplication() {
-  const content = import.meta.env.DEV && window.location.pathname === "/__dev/card-editor"
-    ? await import("./dev/StandaloneCardEditor").then(({ StandaloneCardEditor }) => (
+  const content = import.meta.env.DEV && window.location.pathname === "/__dev/card-studio-v2"
+    ? await import("./dev/StandaloneCardStudioV2").then(({ StandaloneCardStudioV2 }) => (
+        <StandaloneCardStudioV2 />
+      ))
+    : import.meta.env.DEV && window.location.pathname === "/__dev/card-editor"
+      ? await import("./dev/StandaloneCardEditor").then(({ StandaloneCardEditor }) => (
         <StandaloneCardEditor />
       ))
-    : <App />;
+      : <App />;
 
   applicationRoot.render(
     <StrictMode>

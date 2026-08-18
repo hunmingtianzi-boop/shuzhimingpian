@@ -81,7 +81,12 @@ export function CompanySetupPage() {
         ...card
       } = cardProfile;
       setData({
-        company,
+        company: {
+          ...company,
+          positioning: company.positioning ?? "",
+          profileFacts: company.profileFacts ?? [],
+          profileTags: company.profileTags ?? [],
+        },
         card,
         completed:
           companyOnboarding === "completed" &&

@@ -36,7 +36,7 @@ import { memberApi } from "../api/memberApi";
 import type { EnterpriseTemplate, ManagedCard, ManagedCardInput } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
-import { CardEditor } from "../components/CardEditor";
+import { CardEditor, syncEnterpriseLogo } from "../components/CardEditor";
 import type { CardCreationDraft } from "../components/CardEditor";
 import { EnterpriseTemplateEditor } from "../components/EnterpriseTemplateEditor";
 import { CardContentOverridesDialog } from "../components/CardContentOverridesDialog";
@@ -275,6 +275,9 @@ export function CardsPage() {
         ? await adminApi.uploadCardAsset(creationDraft.imageFile)
         : undefined;
       const canonicalAvatarUrl = uploaded?.url ?? creationDraft.canonicalAvatarUrl;
+      if (creationDraft.input.cardKind === "enterprise" && creationDraft.avatarChanged) {
+        await syncEnterpriseLogo(canonicalAvatarUrl);
+      }
       if (
         creationDraft.input.cardKind === "employee"
         && creationDraft.avatarChanged

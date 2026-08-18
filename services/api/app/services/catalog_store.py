@@ -77,10 +77,14 @@ class CatalogScope:
 
 @dataclass(frozen=True, slots=True)
 class EmployeeIdentityProjection:
+    membership_id: uuid.UUID
     display_name: str
     job_title: str | None
     avatar_url: str | None
     business_summary: str | None
+    public_positioning: str | None
+    identity_titles: tuple[str, ...]
+    professional_tags: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1133,6 +1137,9 @@ class CatalogStore:
                     require_active=True,
                     for_update=True,
                 )
+                employee_identity = await self._apply_employee_identity_fields(
+                    session, employee_identity=employee_identity, body=body
+                )
                 await self._ensure_employee_card_available(
                     session,
                     scope=scope,
@@ -1207,6 +1214,10 @@ class CatalogStore:
                     scope,
                     body.owner_user_id,
                     require_active=True,
+                    for_update=True,
+                )
+                employee_identity = await self._apply_employee_identity_fields(
+                    session, employee_identity=employee_identity, body=body
                 )
                 if body.owner_user_id != card.owner_user_id:
                     await self._ensure_employee_card_available(
@@ -2055,8 +2066,12 @@ class CatalogStore:
                 User.status.label("user_status"),
                 User.deleted_at.label("user_deleted_at"),
                 Membership.job_title.label("job_title"),
+                Membership.id.label("membership_id"),
                 Membership.avatar_url.label("avatar_url"),
                 Membership.business_summary.label("business_summary"),
+                Membership.public_positioning.label("public_positioning"),
+                Membership.identity_titles.label("identity_titles"),
+                Membership.professional_tags.label("professional_tags"),
                 Membership.status.label("membership_status"),
             )
             .join(Membership, Membership.user_id == User.id)
@@ -2077,10 +2092,42 @@ class CatalogStore:
         ):
             raise ApiError(422, "INVALID_CARD_OWNER", "员工身份已停用，无法修改或发布名片")
         return EmployeeIdentityProjection(
+            membership_id=row["membership_id"],
             display_name=str(row["display_name"]),
             job_title=_string_value(row["job_title"]),
             avatar_url=_string_value(row["avatar_url"]),
             business_summary=_string_value(row["business_summary"]),
+            public_positioning=_string_value(row["public_positioning"]),
+            identity_titles=tuple(row["identity_titles"] or ()),
+            professional_tags=tuple(row["professional_tags"] or ()),
+        )
+
+    async def _apply_employee_identity_fields(
+        self,
+        session: AsyncSession,
+        *,
+        employee_identity: EmployeeIdentityProjection,
+        body: CreateCardRequest | UpdateManagedCardRequest,
+    ) -> EmployeeIdentityProjection:
+        membership = await session.scalar(
+            select(Membership)
+            .where(Membership.id == employee_identity.membership_id)
+            .with_for_update()
+        )
+        if membership is None:
+            raise ApiError(422, "INVALID_CARD_OWNER", "员工身份资料不存在")
+        membership.public_positioning = body.identity_positioning or None
+        membership.identity_titles = list(body.identity_titles)
+        membership.professional_tags = list(body.identity_tags)
+        return EmployeeIdentityProjection(
+            membership_id=employee_identity.membership_id,
+            display_name=employee_identity.display_name,
+            job_title=employee_identity.job_title,
+            avatar_url=employee_identity.avatar_url,
+            business_summary=employee_identity.business_summary,
+            public_positioning=membership.public_positioning,
+            identity_titles=tuple(membership.identity_titles),
+            professional_tags=tuple(membership.professional_tags),
         )
 
     async def _ensure_employee_card_available(
@@ -2213,7 +2260,21 @@ class CatalogStore:
             welcome_message=_string_value(settings.get("welcome_message")),
             suggested_questions=_string_list(settings.get("suggested_questions"), limit=6),
             policy_versions=_string_dict(settings.get("policy_versions")),
-            identity_titles=_string_list(settings.get("identity_titles"), limit=8),
+            identity_titles=(
+                list(employee_identity.identity_titles)
+                if employee_identity is not None
+                else _string_list(settings.get("identity_titles"), limit=8)
+            ),
+            identity_positioning=(
+                employee_identity.public_positioning
+                if employee_identity is not None
+                else _string_value(settings.get("identity_positioning"))
+            ),
+            identity_tags=(
+                list(employee_identity.professional_tags)
+                if employee_identity is not None
+                else _string_list(settings.get("identity_tags"), limit=3)
+            ),
             contact_fields=settings.get("contact_fields", []),
             employee_contact_visibility=_employee_contact_visibility(settings),
             status=card.status.value,
@@ -2395,7 +2456,6 @@ def _employee_card_expression_settings(
         "welcome_message": body.welcome_message,
         "suggested_questions": list(body.suggested_questions),
         "policy_versions": dict(body.policy_versions),
-        "identity_titles": list(body.identity_titles),
         "contact_fields": [
             item.model_dump(mode="json", exclude_none=True) for item in body.contact_fields
         ],
@@ -2405,7 +2465,14 @@ def _employee_card_expression_settings(
 
 def _without_employee_identity(value: object) -> dict[str, Any]:
     settings = _dict_value(value)
-    for key in ("title", "avatar_url", "business_summary"):
+    for key in (
+        "title",
+        "avatar_url",
+        "business_summary",
+        "identity_titles",
+        "identity_positioning",
+        "identity_tags",
+    ):
         settings.pop(key, None)
     return settings
 

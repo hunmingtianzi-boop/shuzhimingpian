@@ -497,6 +497,70 @@ describe("CardsPage", () => {
     expect(create.mock.calls[0][0].ownerUserId).toBe("");
   });
 
+  it("uploads an enterprise logo into the canonical company profile", async () => {
+    const user = userEvent.setup();
+    const enterpriseCard: ManagedCard = {
+      ...draftCard,
+      id: "card-enterprise-logo",
+      cardKind: "enterprise",
+      ownerUserId: undefined,
+      displayName: "拓途商务",
+      title: "企业数字化服务",
+      avatarUrl: "/legacy-card-image.webp",
+    };
+    const companyProfile = {
+      id: "company-1",
+      name: "拓途商务",
+      summary: "企业数字化服务",
+      industry: "企业服务",
+      region: "杭州",
+      website: "https://example.test",
+      logoUrl: "/old-company-logo.webp",
+      positioning: "企业数字化服务",
+      profileFacts: [],
+      profileTags: [],
+      profilePersonalizationPolicyVersion: "profile-v1",
+      version: 3,
+    };
+    const uploadedUrl = "/api/v1/public/card-assets/company-1/new-logo.webp";
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([enterpriseCard]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    const updateCompany = vi.spyOn(adminApi, "updateCompanyProfile").mockResolvedValue(undefined);
+    vi.spyOn(adminApi, "uploadCardAsset").mockResolvedValue({
+      url: uploadedUrl,
+      contentType: "image/webp",
+      width: 640,
+      height: 640,
+      sizeBytes: 2048,
+    });
+    const updateCard = vi.spyOn(adminApi, "updateManagedCard").mockResolvedValue({
+      ...enterpriseCard,
+      avatarUrl: uploadedUrl,
+      version: 7,
+    });
+    renderPage();
+
+    await screen.findByText("拓途商务");
+    await user.click(within(screen.getByRole("table", { name: "企业名片列表" })).getByRole("button", { name: "编辑" }));
+    expect(await screen.findByRole("img", { name: "企业 Logo 预览" })).toHaveAttribute(
+      "src",
+      companyProfile.logoUrl,
+    );
+    const logo = new File(["logo"], "company-logo.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择企业 Logo"), logo);
+    await user.click(screen.getByRole("button", { name: "保存名片", hidden: true }));
+
+    await waitFor(() => expect(updateCompany).toHaveBeenCalledWith(expect.objectContaining({
+      logoUrl: uploadedUrl,
+      version: companyProfile.version,
+    })));
+    await waitFor(() => expect(updateCard).toHaveBeenCalledWith(
+      enterpriseCard.id,
+      enterpriseCard.version,
+      expect.objectContaining({ avatarUrl: uploadedUrl }),
+    ));
+  });
+
   it("copies a same-kind card configuration on the quick create path", async () => {
     const user = userEvent.setup();
     const source: ManagedCard = {
@@ -598,7 +662,7 @@ describe("CardsPage", () => {
     const composer = await screen.findByRole("dialog", { name: "创建前设计员工名片" });
     await user.click(within(composer).getByRole("button", { name: "取消创建" }));
     await waitFor(() => expect(composer).not.toBeInTheDocument());
-    expect(upload).toHaveBeenCalledTimes(0);
+    expect(upload).toHaveBeenCalledTimes(1);
     expect(updateMember).toHaveBeenCalledTimes(0);
     expect(updateMyProfile).toHaveBeenCalledTimes(0);
     expect(create).toHaveBeenCalledTimes(0);
@@ -645,7 +709,7 @@ describe("CardsPage", () => {
 
     const composer = await screen.findByRole("dialog", { name: "创建前设计员工名片" });
     expect(screen.getByText(employeeMember.displayName)).toBeInTheDocument();
-    expect(upload).not.toHaveBeenCalled();
+    expect(upload).toHaveBeenCalledTimes(1);
     expect(updateMember).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
     await user.click(within(composer).getByRole("button", { name: "使用此设计创建名片" }));

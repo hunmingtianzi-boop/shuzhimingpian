@@ -50,6 +50,7 @@ import type {
 } from "../api/types";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { FormFeedback } from "../components/FormFeedback";
+import { IdentityTitlesEditor } from "../components/IdentityTitlesEditor";
 import { OperationFeedback } from "../components/OperationFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { PaginationBar } from "../components/PaginationBar";
@@ -82,6 +83,9 @@ const emptyCreate: MemberCreateInput = {
   jobTitle: "",
   avatarUrl: "",
   businessSummary: "",
+  publicPositioning: "",
+  identityTitles: [],
+  professionalTags: [],
   role: "card_owner",
   permissions: [],
   status: "active",
@@ -166,6 +170,9 @@ function MemberEditor({
           jobTitle: member.jobTitle ?? "",
           avatarUrl: member.avatarUrl ?? "",
           businessSummary: member.businessSummary ?? "",
+          publicPositioning: member.publicPositioning ?? "",
+      identityTitles: member.identityTitles ?? [],
+      professionalTags: member.professionalTags ?? [],
           email: member.email ?? "",
           mobile: member.mobile ?? "",
           role: member.role,
@@ -206,6 +213,9 @@ function MemberEditor({
           jobTitle: form.jobTitle,
           avatarUrl,
           businessSummary: form.businessSummary,
+          publicPositioning: form.publicPositioning,
+          identityTitles: form.identityTitles,
+          professionalTags: form.professionalTags,
           email: form.email,
           mobile: form.mobile,
           role: form.role,
@@ -302,6 +312,15 @@ function MemberEditor({
                 </Field>
                 <Field label="个人业务摘要" hint="用于员工名片的业务介绍；不改变企业公共资料。" className="form-field-span-2">
                   <Textarea value={form.businessSummary} disabled={pending} onChange={(_, data) => setForm((value) => ({ ...value, businessSummary: data.value }))} />
+                </Field>
+                <Field label="个人定位" hint="基础名片姓名下方的一句话定位，建议控制在 24 个字内。" className="form-field-span-2">
+                  <Input value={form.publicPositioning ?? ""} maxLength={240} disabled={pending} onChange={(_, data) => setForm((value) => ({ ...value, publicPositioning: data.value }))} />
+                </Field>
+                <Field label="身份头衔" hint="逐项显示在员工基础名片中，最多 5 项。" className="form-field-span-2">
+                  <IdentityTitlesEditor values={form.identityTitles ?? []} maxItems={5} disabled={pending} onChange={(identityTitles) => setForm((value) => ({ ...value, identityTitles }))} />
+                </Field>
+                <Field label="专业标签" hint="基础名片最多展示 3 个短标签。" className="form-field-span-2">
+                  <IdentityTitlesEditor values={form.professionalTags ?? []} maxItems={3} maxItemLength={40} kind="enterprise" itemLabel="专业标签" addButtonLabel="添加标签" emptyExample="例如：企业 AI" disabled={pending} onChange={(professionalTags) => setForm((value) => ({ ...value, professionalTags }))} />
                 </Field>
                 <>
                     <Field label="邮箱" hint="可选；邮箱账号会自动作为邮箱。">

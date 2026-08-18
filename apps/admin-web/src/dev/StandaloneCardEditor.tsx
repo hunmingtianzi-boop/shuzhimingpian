@@ -276,6 +276,9 @@ function createPreviewDataSource(): EnterpriseTemplateEditorDataSource {
     async getCompanyProfile() {
       return previewCompany;
     },
+    async updateCompanyProfile(input) {
+      void input;
+    },
     async listSelectableFaqDocuments() {
       return previewFaqs;
     },

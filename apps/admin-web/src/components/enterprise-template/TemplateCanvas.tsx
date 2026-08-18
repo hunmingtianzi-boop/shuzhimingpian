@@ -48,6 +48,8 @@ export type TemplateCanvasProps = {
     summary?: string;
     positioning?: string;
     identityTitles?: string[];
+    identityTags?: string[];
+    identityFacts?: Array<{ label: string; value: string }>;
     contactFields?: IdentityContactField[];
   };
   selectedBlockId?: string;
@@ -213,15 +215,18 @@ function TemplateCanvasComponent({
             className={`template-shared-card-page template-theme-${themeKey}`}
             data={{
               identity: {
+                variant: "v2",
                 kind: identity.cardKind,
                 name: identity.displayName,
-                headline: identity.title,
+                headline: identity.positioning || identity.title,
                 imageUrl: identity.avatarUrl,
                 companyName: identity.cardKind === "employee" ? identity.companyName : undefined,
                 verificationLabel: "企业认证",
                 summary: identity.summary,
                 positioning: identity.positioning,
                 titles: identity.identityTitles,
+                tags: identity.identityTags,
+                facts: identity.identityFacts,
                 contacts: identity.contactFields?.map((contact) => ({
                   id: contact.id,
                   kind: contact.kind,
@@ -300,5 +305,7 @@ export const TemplateCanvas = memo(TemplateCanvasComponent, (previous, next) => 
   && previous.identity.summary === next.identity.summary
   && previous.identity.positioning === next.identity.positioning
   && previous.identity.identityTitles === next.identity.identityTitles
+  && previous.identity.identityTags === next.identity.identityTags
+  && previous.identity.identityFacts === next.identity.identityFacts
   && previous.identity.contactFields === next.identity.contactFields
 ));

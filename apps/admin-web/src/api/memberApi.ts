@@ -73,6 +73,9 @@ function companyMember(value: unknown): CompanyMember {
     jobTitle: typeof item.job_title === "string" ? item.job_title : undefined,
     avatarUrl: typeof item.avatar_url === "string" ? item.avatar_url : undefined,
     businessSummary: typeof item.business_summary === "string" ? item.business_summary : undefined,
+    publicPositioning: typeof item.public_positioning === "string" ? item.public_positioning : undefined,
+    identityTitles: Array.isArray(item.identity_titles) ? item.identity_titles.filter((value): value is string => typeof value === "string") : [],
+    professionalTags: Array.isArray(item.professional_tags) ? item.professional_tags.filter((value): value is string => typeof value === "string") : [],
     email: typeof item.email === "string" ? item.email : undefined,
     mobile: typeof item.mobile === "string" ? item.mobile : undefined,
     role: memberRole(item.role),
@@ -101,6 +104,9 @@ function memberPayload(input: MemberCreateInput): JsonRecord {
   if (input.businessSummary !== undefined) {
     payload.business_summary = input.businessSummary.trim() || null;
   }
+  if (input.publicPositioning !== undefined) payload.public_positioning = input.publicPositioning.trim() || null;
+  if (input.identityTitles !== undefined) payload.identity_titles = input.identityTitles.map((value) => value.trim()).filter(Boolean).slice(0, 5);
+  if (input.professionalTags !== undefined) payload.professional_tags = input.professionalTags.map((value) => value.trim()).filter(Boolean).slice(0, 3);
   return payload;
 }
 
@@ -168,6 +174,9 @@ export function createMemberApi(client: ApiClient) {
       if (input.jobTitle !== undefined) body.job_title = input.jobTitle.trim() || null;
       if (input.avatarUrl !== undefined) body.avatar_url = input.avatarUrl.trim() || null;
       if (input.businessSummary !== undefined) body.business_summary = input.businessSummary.trim() || null;
+      if (input.publicPositioning !== undefined) body.public_positioning = input.publicPositioning.trim() || null;
+      if (input.identityTitles !== undefined) body.identity_titles = input.identityTitles.map((value) => value.trim()).filter(Boolean).slice(0, 5);
+      if (input.professionalTags !== undefined) body.professional_tags = input.professionalTags.map((value) => value.trim()).filter(Boolean).slice(0, 3);
       if (input.email !== undefined) body.email = input.email.trim() || null;
       if (input.mobile !== undefined) body.mobile = input.mobile.trim() || null;
       if (input.role !== undefined) body.role = input.role;

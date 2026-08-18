@@ -184,6 +184,9 @@ class AdminStore:
                     "region": body.region,
                     "website": _url_value(body.website),
                     "logo_url": _url_value(body.logo_url),
+                    "business_positioning": body.positioning or None,
+                    "profile_facts": [fact.model_dump(mode="json") for fact in body.profile_facts],
+                    "profile_tags": list(body.profile_tags),
                     "policy_versions": policy_versions,
                 }
             )
@@ -1311,6 +1314,9 @@ def _company_profile(company: Company) -> CompanyProfile:
         region=_string_value(settings.get("region")),
         website=_string_value(settings.get("website")),
         logo_url=_string_value(settings.get("logo_url")),
+        positioning=_string_value(settings.get("business_positioning")),
+        profile_facts=_profile_facts(settings.get("profile_facts")),
+        profile_tags=_string_list(settings.get("profile_tags"), limit=3),
         profile_personalization_policy_version=(
             _string_value(policy_versions.get("profile_personalization"))
             or "profile-personalization-v1"
@@ -1370,6 +1376,35 @@ def _require_version(current: int, expected: int) -> None:
 
 def _dict_value(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _string_list(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()][:limit]
+
+
+def _profile_facts(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    facts: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        fact_id = item.get("id")
+        label = item.get("label")
+        fact_value = item.get("value")
+        if all(isinstance(part, str) and part.strip() for part in (fact_id, label, fact_value)):
+            facts.append(
+                {
+                    "id": fact_id.strip(),
+                    "label": label.strip(),
+                    "value": fact_value.strip(),
+                }
+            )
+        if len(facts) >= 4:
+            break
+    return facts
 
 
 def _string_value(value: object) -> str | None:

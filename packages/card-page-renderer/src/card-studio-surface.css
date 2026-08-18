@@ -1452,3 +1452,96 @@ input.sr-only {
 .service-grid.layout-stack .service-card.has-media .service-index,
 .service-grid.layout-stack .service-card.has-media .service-arrow { margin: 0; }
 .service-grid.layout-stack .service-card.has-media .service-copy { padding: 10px 0; }
+
+/* Identity V2 is opt-in. Employee and enterprise cards share tokens, not composition. */
+.identity-v2 {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin: 4px 16px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.identity-v2--has-background {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.identity-v2-content { position: relative; z-index: 1; }
+.identity-v2-main { display: grid; align-items: start; gap: 16px; padding: 16px 2px 18px; }
+.identity-v2--employee .identity-v2-main { grid-template-columns: 108px minmax(0, 1fr); }
+.identity-v2--enterprise .identity-v2-main { grid-template-columns: 82px minmax(0, 1fr); align-items: center; }
+.identity-v2-visual { position: relative; display: grid; place-items: center; overflow: visible; }
+.identity-v2-visual img,
+.identity-v2-visual > span { width: 100%; display: grid; place-items: center; }
+.identity-v2--employee .identity-v2-visual img,
+.identity-v2--employee .identity-v2-visual > span { height: 132px; object-fit: cover; object-position: center top; border-radius: 17px; background: #e8f2f3; }
+.identity-v2--enterprise .identity-v2-visual { width: 82px; height: 82px; padding: 9px; border: 1px solid var(--line); border-radius: 18px; background: #f7fbfb; }
+.identity-v2--enterprise .identity-v2-visual img,
+.identity-v2--enterprise .identity-v2-visual > span { height: 100%; object-fit: contain; border-radius: 11px; color: var(--cyan-strong); background: transparent; font-size: 18px; font-weight: 820; }
+.identity-v2-copy { min-width: 0; }
+.identity-v2-kicker { margin-bottom: 5px; color: var(--cyan-strong); font-size: 9px; font-weight: 780; letter-spacing: .08em; }
+.identity-v2-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.identity-v2-name-row h1 { margin: 0; color: var(--ink-strong); font-family: var(--font-display); font-size: 25px; font-weight: 820; letter-spacing: -.04em; line-height: 1.15; }
+.identity-v2-headline { margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; font-weight: 650; line-height: 1.45; }
+.identity-v2-title-lines { display: grid; gap: 2px; margin-top: 8px; }
+.identity-v2-title-lines span { color: var(--ink); font-size: 11px; font-weight: 650; line-height: 1.45; }
+.identity-v2-company { display: flex; align-items: center; gap: 5px; margin: 8px 0 0; color: var(--ink-soft); font-size: 10px; font-weight: 680; }
+.identity-v2-company .icon { width: 14px; height: 14px; color: var(--cyan-strong); }
+.identity-v2-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 13px 0 0; border-top: 1px solid var(--line); }
+.identity-v2-facts.count-1 { grid-template-columns: 1fr; }
+.identity-v2-facts.count-3 > div:last-child { grid-column: 1 / -1; }
+.identity-v2-facts > div { min-width: 0; padding: 8px 8px 2px 0; }
+.identity-v2-facts dt { color: var(--ink-faint); font-size: 8px; line-height: 1.3; }
+.identity-v2-facts dd { margin: 2px 0 0; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 720; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.identity-v2-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.identity-v2-tags span { padding: 3px 6px; border: 1px solid #cfe2e3; border-radius: 6px; color: var(--cyan-strong); background: #f2f9f9; font-size: 8px; font-weight: 650; }
+.identity-v2-contacts { display: grid; grid-template-columns: repeat(var(--identity-contact-count, 4), minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.identity-v2-contacts.count-1 { --identity-contact-count: 1; }
+.identity-v2-contacts.count-2 { --identity-contact-count: 2; }
+.identity-v2-contacts.count-3 { --identity-contact-count: 3; }
+.identity-v2-contacts a,
+.identity-v2-contacts button { min-width: 0; min-height: 52px; display: grid; place-items: center; align-content: center; gap: 3px; padding: 7px 4px; border: 0; border-right: 1px solid var(--line); color: var(--ink-soft); background: transparent; text-decoration: none; cursor: pointer; }
+.identity-v2-contacts > :last-child { border-right: 0; }
+.identity-v2-contacts .icon { width: 17px; height: 17px; color: var(--cyan-strong); }
+.identity-v2-contacts span { overflow: hidden; font-size: 9px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Quick entries stay links, not miniature product/case cards. */
+.quick-links-module .module-heading { margin-bottom: 8px; }
+.quick-links { min-width: 0; }
+.quick-links.is-single .quick-link-item { min-height: 68px; grid-template-columns: 48px minmax(0, 1fr) 18px; padding: 9px 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.quick-links.is-multiple.is-adaptive { display: grid; grid-template-columns: repeat(var(--quick-link-count, 4), minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+.quick-links.is-multiple.count-2 { --quick-link-count: 2; }
+.quick-links.is-multiple.count-3 { --quick-link-count: 3; }
+.quick-links.is-multiple.count-4 { --quick-link-count: 4; }
+.quick-links.is-multiple.is-adaptive .quick-link-item { min-width: 0; min-height: 88px; grid-template-columns: 1fr; justify-items: center; align-content: center; gap: 6px; padding: 10px 4px; text-align: center; border-right: 1px solid var(--line); }
+.quick-links.is-multiple.is-adaptive .quick-link-item:last-child { border-right: 0; }
+.quick-links.is-horizontal { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; }
+.quick-links.is-horizontal .quick-link-item { min-width: 132px; min-height: 72px; flex: 1 0 132px; grid-template-columns: 44px minmax(0, 1fr); padding: 9px; border: 1px solid var(--line); border-radius: 12px; scroll-snap-align: start; }
+.quick-link-item { display: grid; align-items: center; gap: 9px; color: var(--ink); background: transparent; text-decoration: none; cursor: pointer; }
+button.quick-link-item { font: inherit; }
+.quick-link-icon { width: 44px; height: 44px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; color: var(--cyan-strong); background: var(--cyan-soft); }
+.quick-link-icon img { width: 100%; height: 100%; object-fit: cover; }
+.quick-link-icon .icon { width: 22px; height: 22px; }
+.quick-link-copy { min-width: 0; display: grid; gap: 1px; }
+.quick-link-copy strong { overflow: hidden; font-size: 11px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+.quick-link-copy small { overflow: hidden; color: var(--ink-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.quick-link-item > .icon { width: 14px; height: 14px; color: var(--cyan-strong); }
+.quick-links.is-multiple.is-adaptive .quick-link-item > .icon { display: none; }
+.quick-links.is-multiple.is-adaptive .quick-link-icon { width: 44px; height: 44px; }
+.quick-link-more { border: 0; }
+.quick-link-overflow { margin-top: 8px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 12px; background: #f7fbfb; }
+.quick-link-overflow-heading { min-height: 38px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.quick-link-overflow-heading strong { font-size: 10px; }
+.quick-link-overflow-heading button { width: 36px; height: 36px; border: 0; background: transparent; cursor: pointer; font-size: 18px; }
+.quick-link-overflow-item { min-height: 48px; display: grid; grid-template-columns: 30px minmax(0, 1fr) 16px; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.quick-link-overflow-item:last-child { border-bottom: 0; }
+.quick-link-overflow-item .quick-link-icon { width: 30px; height: 30px; border-radius: 8px; }
+.quick-link-overflow-item .icon { width: 14px; height: 14px; }
+
+@media (max-width: 360px) {
+  .identity-v2--employee .identity-v2-main { grid-template-columns: 94px minmax(0, 1fr); gap: 13px; }
+  .identity-v2--employee .identity-v2-visual img,
+  .identity-v2--employee .identity-v2-visual > span { height: 120px; }
+  .identity-v2-name-row h1 { font-size: 23px; }
+}
