@@ -104,11 +104,16 @@ def test_employee_card_write_persists_expression_without_identity_copy() -> None
         "welcome_message": "欢迎咨询",
         "suggested_questions": ["可以提供什么服务？"],
         "policy_versions": {},
-        "identity_titles": [],
         "contact_fields": [],
         "employee_contact_visibility": [],
     }
-    assert not {"display_name", "title", "avatar_url", "business_summary"} & stored.keys()
+    assert not {
+        "display_name",
+        "title",
+        "avatar_url",
+        "business_summary",
+        "identity_titles",
+    } & stored.keys()
 
 
 def test_existing_card_identity_copies_are_removed_without_losing_expression() -> None:
@@ -125,10 +130,14 @@ def test_managed_employee_record_uses_live_identity_projection() -> None:
         allow_insecure_http=True,
     )
     identity = EmployeeIdentityProjection(
+        membership_id=uuid.uuid4(),
         display_name="当前员工姓名",
         job_title="解决方案总监",
         avatar_url="https://cdn.example/current.png",
         business_summary="当前成员资料",
+        public_positioning="企业数字化顾问",
+        identity_titles=("解决方案总监",),
+        professional_tags=("数字化转型",),
     )
 
     record = store._managed_card_record(card, employee_identity=identity)
@@ -193,14 +202,19 @@ async def test_catalog_rejects_a_second_employee_card_for_the_same_employee() ->
 @pytest.mark.asyncio
 async def test_catalog_identity_reflects_membership_title_without_card_edit() -> None:
     scope = _scope()
+    membership_id = uuid.uuid4()
     session = _ExecuteSession(
         {
             "display_name": "真实姓名",
             "user_status": LifecycleStatus.ACTIVE,
             "user_deleted_at": None,
             "job_title": "新职位",
+            "membership_id": membership_id,
             "avatar_url": "https://cdn.example/new-avatar.png",
             "business_summary": "新业务摘要",
+            "public_positioning": "企业数字化顾问",
+            "identity_titles": ["新职位"],
+            "professional_tags": ["客户成功"],
             "membership_status": LifecycleStatus.ACTIVE,
         }
     )
@@ -218,10 +232,14 @@ async def test_catalog_identity_reflects_membership_title_without_card_edit() ->
     )
 
     assert identity == EmployeeIdentityProjection(
+        membership_id=membership_id,
         display_name="真实姓名",
         job_title="新职位",
         avatar_url="https://cdn.example/new-avatar.png",
         business_summary="新业务摘要",
+        public_positioning="企业数字化顾问",
+        identity_titles=("新职位",),
+        professional_tags=("客户成功",),
     )
     statement = str(session.statements[0])
     assert "memberships.tenant_id" in statement
@@ -237,6 +255,9 @@ async def test_public_employee_identity_uses_user_and_membership_projection() ->
             "job_title": "客户成功负责人",
             "avatar_url": "https://cdn.example/public-avatar.png",
             "business_summary": "帮助企业把复杂方案转成可落地路径。",
+            "public_positioning": "客户成功顾问",
+            "identity_titles": ["客户成功负责人"],
+            "professional_tags": ["客户成功"],
             "email_ciphertext": b"email",
             "mobile_ciphertext": b"mobile",
         }

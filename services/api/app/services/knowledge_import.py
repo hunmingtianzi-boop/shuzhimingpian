@@ -181,6 +181,8 @@ def _parse_pdf(file_name: str, payload: bytes) -> ImportDraft:
     # layout separators. Normalize only those two characters; NUL and the
     # remaining control range continue to fail the shared dangerous-value gate.
     text = text.replace("\x0b", "\n").replace("\x0c", "\n")
+    if _CONTROL_RE.search(text):
+        raise KnowledgeImportError("IMPORT_DANGEROUS_VALUE")
     return _validated_draft(file_name.rsplit(".", 1)[0], text, "public")
 
 
