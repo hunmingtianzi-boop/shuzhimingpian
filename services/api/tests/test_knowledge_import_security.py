@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from pptx import Presentation
 from pypdf import PdfWriter
 
+from app.services import knowledge_import as knowledge_import_module
 from app.services.knowledge_import import (
     _OCR_RESULT_PREFIX,
     MAX_OCR_RENDER_PIXELS,
@@ -112,6 +113,42 @@ def test_encrypted_pdf_and_mime_magic_mismatches_are_rejected() -> None:
     writer.write(buffer)
     with pytest.raises(KnowledgeImportError, match="IMPORT_ENCRYPTED_PDF"):
         parse_payload("pdf", "secret.pdf", buffer.getvalue())
+
+
+def test_pdf_layout_controls_are_normalized_but_other_controls_stay_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Page:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def extract_text(self) -> str:
+            return self._text
+
+    class Reader:
+        is_encrypted = False
+
+        def __init__(self, text: str) -> None:
+            self.pages = [Page(text)]
+
+    safe_text = ("项目背景与解决方案" * 12) + "\x0b分页\x0c成果"
+    monkeypatch.setattr(
+        knowledge_import_module,
+        "PdfReader",
+        lambda *_args, **_kwargs: Reader(safe_text),
+    )
+    draft = knowledge_import_module._parse_pdf("case.pdf", b"pdf")
+    assert "\x0b" not in draft.raw_text
+    assert "\x0c" not in draft.raw_text
+
+    dangerous_text = ("项目背景与解决方案" * 12) + "\x01危险"
+    monkeypatch.setattr(
+        knowledge_import_module,
+        "PdfReader",
+        lambda *_args, **_kwargs: Reader(dangerous_text),
+    )
+    with pytest.raises(KnowledgeImportError, match="IMPORT_DANGEROUS_VALUE"):
+        knowledge_import_module._parse_pdf("case.pdf", b"pdf")
 
     with pytest.raises(KnowledgeImportError, match="IMPORT_MIME_MISMATCH"):
         validate_upload("file.pdf", "text/plain", b"%PDF-1.7")

@@ -177,6 +177,10 @@ def _parse_pdf(file_name: str, payload: bytes) -> ImportDraft:
         raise KnowledgeImportError("IMPORT_PDF_INVALID") from exc
     if len(text) < 80:
         text = _ocr_pdf(payload, max_pages=min(MAX_OCR_PAGES, len(reader.pages)))
+    # PDF text extractors may emit vertical-tab or form-feed as harmless page
+    # layout separators. Normalize only those two characters; NUL and the
+    # remaining control range continue to fail the shared dangerous-value gate.
+    text = text.replace("\x0b", "\n").replace("\x0c", "\n")
     return _validated_draft(file_name.rsplit(".", 1)[0], text, "public")
 
 

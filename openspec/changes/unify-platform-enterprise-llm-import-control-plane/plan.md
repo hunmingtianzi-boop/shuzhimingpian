@@ -80,6 +80,11 @@ Implementation MUST start in a new exact run under `openspec/changes/unify-platf
 - [x] 6.3 Ensure UI distinguishes upload validation, async processing, draft/review/publish and failure; default auto-publish remains off and permission-gated. Verify focused component/API tests.
 - [x] 6.4 Run the AC5 ordinary enterprise-import smoke: one small supported DOCX/PDF or TXT → Worker → visible draft; one unsupported/invalid file error; one cross-tenant denial. Do not run 19 MiB Docling/OCR validation.
 - [x] 6.5 Scope-review dependencies, migrations and source tree for rejected reference components. Expected result: no `document_import`, Docling/MinerU, new OCR service, source-unit lifecycle or second raw-document parser/Worker was introduced; the only allowed LLM document use is 3A.4 over current parsed drafts.
+- [x] 6.6 Add current-head progress, field-warning and Worker lease contracts to `content_import_runs` / candidates plus allowlisted schemas and claim functions. Verify migration/model/schema/tenant-claim tests.
+- [x] 6.7 Refactor content classification into fast enqueue, compact whole-document candidate discovery, category-scoped enrichment and field-level degradation; no full-document second repair. Verify first-pass salvage, partial-field and duplicate/recovery tests.
+- [x] 6.8 Add a restricted Worker poll/executor for content import runs with lease recovery, truthful stage updates and progressive candidate persistence. Verify repository/task success, stale lease and failure paths.
+- [x] 6.9 Extend the import workbench and API client for progressive state, then add an AppShell-level hover/focus/tap task dock with exact-run return navigation and reduced-motion behavior. Verify component/API/AppShell tests and admin build.
+- [x] 6.10 Run one real website journey with a supported PDF: start task, navigate away, inspect the dock, return to the exact run, and observe candidates without a full repair pass. Capture representative screenshots, request timing, console errors and DB/API stage receipts.
 
 ## 7. Focused integration, evidence and handoff
 

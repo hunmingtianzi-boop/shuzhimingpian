@@ -14,6 +14,8 @@ from app.ai import (
 from app.services.content_classification import (
     ClassificationDocument,
     classify_content_with_hard_gates,
+    discover_content_candidates,
+    enrich_content_candidates,
     validate_content_classification,
 )
 
@@ -95,6 +97,199 @@ class EmptyRecordingProvider:
                 "unclassified": [],
             }
         )
+
+
+@pytest.mark.asyncio
+async def test_progressive_directory_is_one_compact_whole_document_call() -> None:
+    provider = FakeProvider(
+        _completion(
+            {
+                "candidates": [
+                    {
+                        "category": "products",
+                        "label": "设备数据接入与协同",
+                        "meta": {
+                            "source_id": "doc-1",
+                            "source_text": "核心业务：设备数据接入与协同。",
+                            "confidence": 0.91,
+                        },
+                    }
+                ]
+            }
+        )
+    )
+
+    discovered = await discover_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[DOCUMENT],
+        max_tokens=8_192,
+    )
+
+    assert len(discovered) == 1
+    assert discovered[0].label == "设备数据接入与协同"
+    assert len(provider.calls) == 1
+    assert provider.calls[0][1]["max_tokens"] == 4_096
+
+
+@pytest.mark.asyncio
+async def test_progressive_directory_accepts_provider_bare_array() -> None:
+    provider = FakeProvider(
+        _completion(
+            json.dumps(
+                [
+                    {
+                        "category": "products",
+                        "label": "设备数据接入与协同",
+                        "meta": {
+                            "source_id": "doc-1",
+                            "source_text": "核心业务：设备数据接入与协同。",
+                            "confidence": 0.91,
+                        },
+                    }
+                ],
+                ensure_ascii=False,
+            )
+        )
+    )
+
+    discovered = await discover_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[DOCUMENT],
+        max_tokens=4_096,
+    )
+
+    assert [item.category for item in discovered] == ["products"]
+
+
+@pytest.mark.asyncio
+async def test_progressive_directory_restores_pdf_compatibility_glyphs() -> None:
+    document = ClassificationDocument(
+        source_id="pdf-1",
+        file_name="生态规划.pdf",
+        content="拓浙 AI ⽣态规划书。业务包括 AI 学习培养体系。",
+    )
+    provider = FakeProvider(
+        _completion(
+            {
+                "candidates": [
+                    {
+                        "category": "products",
+                        "label": "AI 学习培养体系",
+                        "meta": {
+                            "source_id": "pdf-1",
+                            "source_text": "拓浙 AI 生态规划书。业务包括 AI 学习培养体系。",
+                            "confidence": 0.9,
+                        },
+                    }
+                ]
+            }
+        )
+    )
+
+    discovered = await discover_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+        max_tokens=4_096,
+    )
+
+    assert len(discovered) == 1
+    assert discovered[0].source_text == document.content
+
+
+@pytest.mark.asyncio
+async def test_progressive_directory_expands_narrow_anchor_for_enrichment() -> None:
+    paragraph = "AI 学习培养体系面向学生提供课程、项目实践和长期成长支持。" * 18
+    document = ClassificationDocument(
+        source_id="doc-long",
+        file_name="规划书.txt",
+        content=f"前言。\n\n{paragraph}\n\n后续规划。",
+    )
+    provider = FakeProvider(
+        _completion(
+            [
+                {
+                    "category": "products",
+                    "label": "AI 学习培养体系",
+                    "meta": {
+                        "source_id": "doc-long",
+                        "source_text": "AI 学习培养体系",
+                        "confidence": 0.9,
+                    },
+                }
+            ]
+        )
+    )
+
+    discovered = await discover_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[document],
+        max_tokens=4_096,
+    )
+
+    assert len(discovered[0].source_text) > 300
+    assert discovered[0].source_text in document.content
+
+
+@pytest.mark.asyncio
+async def test_progressive_enrichment_clears_only_unsupported_field() -> None:
+    directory_provider = FakeProvider(
+        _completion(
+            {
+                "candidates": [
+                    {
+                        "category": "case_studies",
+                        "label": "设备数据接入与协同",
+                        "meta": {
+                            "source_id": "doc-1",
+                            "source_text": "核心业务：设备数据接入与协同。",
+                            "confidence": 0.88,
+                        },
+                    }
+                ]
+            }
+        )
+    )
+    discovered = await discover_content_candidates(
+        provider=directory_provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[DOCUMENT],
+        max_tokens=4_096,
+    )
+    provider = FakeProvider(
+        _completion(
+            {
+                "items": [
+                    {
+                        "candidate_id": str(discovered[0].id),
+                        "payload": {
+                            "title": "设备数据接入与协同",
+                            "industry": "医疗行业",
+                            "client_display_name": "",
+                            "background": "设备数据需要统一接入。",
+                            "solution": "通过设备数据接入实现协同。",
+                            "result": "形成设备数据接入与协同能力。",
+                        },
+                    }
+                ]
+            }
+        )
+    )
+
+    enriched = await enrich_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        candidates=discovered,
+        max_tokens=4_096,
+    )
+
+    assert enriched[0].payload["industry"] == ""
+    assert enriched[0].payload["background"]
+    assert "industry" in enriched[0].field_warnings
+    assert len(provider.calls) == 1
 
 
 def test_accepts_strict_five_category_payload_with_exact_evidence() -> None:

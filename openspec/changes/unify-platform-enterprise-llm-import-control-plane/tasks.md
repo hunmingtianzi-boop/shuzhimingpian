@@ -72,6 +72,15 @@
 - Verification: focused frontend/API/Worker import tests and one small real import smoke. No 19 MiB Docling or reference-repo validation.
 - Rollback: remove the onboarding adapter and revert presentation changes; current parser/store/Worker behavior and existing batches remain untouched.
 
+### WP6A — Progressive content classification and global task dock
+
+- Scope: add progress and lease fields to the existing content import run/candidate tables, enqueue classification for the current Worker, discover a compact source-backed candidate directory, enrich only relevant categories, and surface the same run through the import workbench and AppShell task dock.
+- Expected files: one current-head migration/model/schema/service increment, focused Worker claim/executor changes, `knowledgeImportsApi.ts`, `KnowledgeImportPanel.tsx`, one global dock component, AppShell/routing styles and focused tests.
+- Acceptance: enqueue returns before model completion; stale leases recover without duplicates; optional field grounding failures degrade only that field; candidates appear progressively; the dock is tenant-scoped, keyboard/mobile accessible and returns to the exact run.
+- Depends on: current LLM resolver and WP6 parser/import baseline. No second parser, raw-document store or permission model is introduced.
+- Verification: focused API/Worker/admin tests, admin build, migration/claim smoke and one real website PDF journey with cross-page dock screenshots.
+- Rollback: stop claiming queued content runs and hide the dock while preserving existing batches, runs and candidates; no user content is deleted.
+
 ## WP7 — Contract sync and proportional integrated evidence
 
 - Scope: sync OpenAPI when API contracts change; run focused tests/build; execute the six high-value browser/runtime smokes; review diff for secrets, rejected import components, provisional-resource leaks, ports/base path and unintended migrations.

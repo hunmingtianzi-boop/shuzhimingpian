@@ -2291,8 +2291,28 @@ class ContentImportRun(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, B
             name="content_import_run_status_allowed",
         ),
         CheckConstraint("attempts >= 0 AND attempts <= 2", name="attempts_allowed"),
+        CheckConstraint(
+            "stage IN ('queued','discovering','enriching','validating',"
+            "'finalizing','completed','failed')",
+            name="stage_allowed",
+        ),
+        CheckConstraint(
+            "progress_current >= 0 AND progress_total >= 1 AND progress_current <= progress_total",
+            name="progress_valid",
+        ),
+        CheckConstraint(
+            "job_attempts >= 0 AND max_job_attempts > 0 AND job_attempts <= max_job_attempts",
+            name="job_attempts_valid",
+        ),
         Index("ix_content_import_runs_company_created", "company_id", "created_at"),
         Index("ix_content_import_runs_batch_created", "batch_id", "created_at"),
+        Index(
+            "ix_content_import_runs_due",
+            "status",
+            "stage",
+            "next_attempt_at",
+            "created_at",
+        ),
     )
 
     batch_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -2307,6 +2327,31 @@ class ContentImportRun(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, B
     counts: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+    stage: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="queued", server_default=text("'queued'")
+    )
+    stage_message: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    progress_current: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    progress_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    job_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    max_job_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default=text("3")
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    lock_token: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -2345,6 +2390,10 @@ class ContentImportCandidate(
             name="content_import_candidate_status_allowed",
         ),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_range"),
+        CheckConstraint(
+            "enrichment_status IN ('pending','processing','completed','needs_review')",
+            name="enrichment_status_allowed",
+        ),
         CheckConstraint("char_length(fingerprint) = 64", name="fingerprint_sha256"),
         Index("ix_content_import_candidates_run_status", "run_id", "status", "created_at"),
         Index(
@@ -2367,6 +2416,12 @@ class ContentImportCandidate(
         nullable=False,
         default="pending_review",
         server_default=text("'pending_review'"),
+    )
+    enrichment_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    field_warnings: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
     target_resource_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     target_resource_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)

@@ -14,6 +14,16 @@ ContentCategory = Literal[
     "unclassified",
 ]
 CandidateStatus = Literal["pending_review", "accepted", "ignored", "conflict"]
+CandidateEnrichmentStatus = Literal["pending", "processing", "completed", "needs_review"]
+ContentImportStage = Literal[
+    "queued",
+    "discovering",
+    "enriching",
+    "validating",
+    "finalizing",
+    "completed",
+    "failed",
+]
 
 
 class ContentImportModel(BaseModel):
@@ -83,6 +93,8 @@ class ContentImportCandidateRecord(ContentImportModel):
     source_text: str
     confidence: float = Field(ge=0, le=1)
     status: CandidateStatus
+    enrichment_status: CandidateEnrichmentStatus = "completed"
+    field_warnings: list[str] = Field(default_factory=list, max_length=64)
     target_resource_type: str | None = None
     target_resource_id: uuid.UUID | None = None
     version: int = Field(ge=1)
@@ -99,7 +111,13 @@ class ContentImportRunRecord(ContentImportModel):
     attempts: int = Field(ge=0, le=2)
     failure_code: str | None = None
     counts: dict[str, int]
+    stage: ContentImportStage = "completed"
+    stage_message: str | None = None
+    progress_current: int = Field(default=1, ge=0)
+    progress_total: int = Field(default=1, ge=1)
+    job_attempts: int = Field(default=0, ge=0)
     candidates: list[ContentImportCandidateRecord] = Field(default_factory=list)
+    started_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

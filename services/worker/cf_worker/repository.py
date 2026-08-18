@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import (
 
 from cf_worker.config import WorkerSettings
 from cf_worker.domain import (
+    ClaimedContentImport,
     ClaimedEvent,
     ExportIntent,
     HandlerResult,
@@ -263,6 +264,38 @@ class PostgresOutboxRepository:
                     attempts=int(row["attempts"]),
                     max_attempts=int(row["max_attempts"]),
                     requested_by=row["requested_by"],
+                )
+                for row in rows
+            )
+
+    async def claim_content_imports(self) -> tuple[ClaimedContentImport, ...]:
+        async with self._engine.begin() as connection:
+            rows = (
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT * FROM app.claim_content_import_runs("
+                            ":worker_id, :batch_size, :lease_seconds)"
+                        ),
+                        {
+                            "worker_id": self._settings.worker_id,
+                            "batch_size": self._settings.content_import_batch_size,
+                            "lease_seconds": self._settings.content_import_lease_seconds,
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return tuple(
+                ClaimedContentImport(
+                    id=row["run_id"],
+                    tenant_id=row["tenant_id"],
+                    company_id=row["company_id"],
+                    lock_token=row["lock_token"],
+                    requested_by=row["requested_by"],
+                    attempt=int(row["job_attempts"]),
+                    max_attempts=int(row["max_job_attempts"]),
                 )
                 for row in rows
             )

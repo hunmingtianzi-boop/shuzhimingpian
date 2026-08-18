@@ -1,9 +1,14 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { knowledgeImportsApi, type KnowledgeImportBatch } from "../api/knowledgeImportsApi";
+import {
+  contentImportsApi,
+  knowledgeImportsApi,
+  type ContentImportRun,
+  type KnowledgeImportBatch,
+} from "../api/knowledgeImportsApi";
 import { adminApi } from "../api/adminApi";
 import { adminLightTheme } from "../theme";
 import { KnowledgeImportPanel, validateKnowledgeImportFiles } from "./KnowledgeImportPanel";
@@ -17,6 +22,36 @@ const batch: KnowledgeImportBatch = {
     { id: "item-1", fileName: "guide.pdf", sourceType: "pdf", status: "completed", documentId: "document-1", versionId: "version-1", createdAt: "2026-07-12T00:00:00Z", completedAt: "2026-07-12T00:01:00Z" },
     { id: "item-2", fileName: "faq.csv", sourceType: "csv", status: "failed", rowNumber: 3, errorCode: "CSV_RAW_TEXT_REQUIRED", createdAt: "2026-07-12T00:00:00Z", completedAt: "2026-07-12T00:01:00Z" },
   ],
+};
+
+const oldRun: ContentImportRun = {
+  id: "run-old",
+  batchId: "batch-1",
+  status: "review",
+  provider: "deepseek",
+  model: "deepseek-v4-flash",
+  attempts: 1,
+  counts: { products: 1 },
+  stage: "completed",
+  progressCurrent: 1,
+  progressTotal: 1,
+  jobAttempts: 1,
+  candidates: [{
+    id: "candidate-old",
+    runId: "run-old",
+    category: "products",
+    payload: { name: "旧批次业务", category: "", summary: "旧内容", detail: "旧内容", audience: "", price_boundary: "" },
+    sourceId: "item-old",
+    sourceText: "旧批次业务",
+    confidence: 0.9,
+    status: "pending_review",
+    enrichmentStatus: "completed",
+    fieldWarnings: [],
+    version: 1,
+  }],
+  completedAt: "2026-07-12T00:02:00Z",
+  createdAt: "2026-07-12T00:00:00Z",
+  updatedAt: "2026-07-12T00:02:00Z",
 };
 
 function renderPanel(props: React.ComponentProps<typeof KnowledgeImportPanel> = {}) {
@@ -43,6 +78,7 @@ describe("KnowledgeImportPanel", () => {
       visitReportNotificationsEnabled: true, visitNotificationInAppEnabled: true,
       visitNotificationWecomEnabled: true, visitNotificationRecipientScope: "both", version: 1,
     });
+    vi.spyOn(contentImportsApi, "list").mockResolvedValue([]);
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -104,5 +140,46 @@ describe("KnowledgeImportPanel", () => {
     await user.click(await screen.findByRole("button", { name: "删除内容" }));
 
     expect(onRequestDeleteDocument).toHaveBeenCalledWith("document-1");
+  });
+
+  it("clears the previous candidate run when another batch has no run", async () => {
+    const user = userEvent.setup();
+    const nextBatch: KnowledgeImportBatch = {
+      ...batch,
+      id: "batch-2",
+      sequenceNumber: 2,
+      displayName: "启智平台资料",
+      items: [{
+        id: "item-new",
+        fileName: "启智平台.docx",
+        sourceType: "docx",
+        status: "completed",
+        createdAt: "2026-07-13T00:00:00Z",
+        completedAt: "2026-07-13T00:01:00Z",
+      }],
+    };
+    vi.mocked(knowledgeImportsApi.list).mockResolvedValue({
+      items: [{ ...batch, items: [] }, { ...nextBatch, items: [] }],
+      total: 2,
+      limit: 20,
+      offset: 0,
+    });
+    vi.spyOn(knowledgeImportsApi, "get").mockImplementation(async (id) => (
+      id === batch.id ? batch : nextBatch
+    ));
+    vi.mocked(contentImportsApi.list).mockResolvedValue([oldRun]);
+    renderPanel();
+
+    const oldRow = (await screen.findByText("首批企业资料")).closest("tr");
+    expect(oldRow).not.toBeNull();
+    await user.click(within(oldRow!).getByRole("button", { name: "查看结果" }));
+    expect((await screen.findAllByText("旧批次业务")).length).toBeGreaterThan(0);
+
+    const newRow = screen.getByText("启智平台资料").closest("tr");
+    expect(newRow).not.toBeNull();
+    await user.click(within(newRow!).getByRole("button", { name: "查看结果" }));
+
+    await waitFor(() => expect(screen.queryAllByText("旧批次业务")).toHaveLength(0));
+    expect(screen.getByRole("button", { name: "开始智能整理" })).toBeInTheDocument();
   });
 });

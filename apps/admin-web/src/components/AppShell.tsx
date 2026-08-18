@@ -43,6 +43,7 @@ import {
   type AppPath,
   usePathname,
 } from "../routing";
+import { ContentImportTaskDock } from "./ContentImportTaskDock";
 
 type NavItem = {
   path: AppPath;
@@ -328,6 +329,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Navigation onNavigate={() => setMobileOpen(false)} />
         </DrawerBody>
       </OverlayDrawer>
+      {!isPlatform && hasNavPermission(auth.user, "knowledge.read") && (
+        <ContentImportTaskDock />
+      )}
     </div>
   );
 }

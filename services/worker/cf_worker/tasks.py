@@ -11,6 +11,7 @@ from celery.utils.log import get_task_logger
 from sqlalchemy.exc import SQLAlchemyError
 
 from cf_worker.config import get_worker_settings
+from cf_worker.content_imports import ContentImportExecutor
 from cf_worker.domain import ClaimedEvent
 from cf_worker.evaluation import ApiEvaluationRunner
 from cf_worker.handlers import EventHandlerRegistry
@@ -258,6 +259,38 @@ def poll_knowledge_imports() -> int:
     return _run_database_poll("poll_knowledge_imports", run)
 
 
+@shared_task(
+    name="cf_worker.poll_content_imports",
+    ignore_result=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def poll_content_imports() -> int:
+    async def run() -> int:
+        settings = get_worker_settings()
+        repository = PostgresOutboxRepository(settings)
+        try:
+            executor = ContentImportExecutor(repository, settings)
+            completed = 0
+            for claim in await repository.claim_content_imports():
+                try:
+                    await executor.execute(claim)
+                    completed += 1
+                except Exception as exc:
+                    logger.exception(
+                        "content import classification failed",
+                        extra={
+                            "run_id": str(claim.id),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+            return completed
+        finally:
+            await repository.close()
+
+    return _run_database_poll("poll_content_imports", run)
+
+
 __all__ = [
     "enqueue_inactive_visit_reports",
     "poll_outbox",
@@ -266,4 +299,5 @@ __all__ = [
     "purge_expired_platform_onboarding_sessions",
     "poll_scheduled_publishes",
     "poll_knowledge_imports",
+    "poll_content_imports",
 ]

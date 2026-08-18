@@ -28,6 +28,10 @@ VISIT_ROLLOUT_GUARD_MIGRATION = (
 WECOM_SUITE_DELIVERY_MIGRATION = (
     ROOT / "services/api/migrations/versions/20260819_0043_worker_wecom_suite_delivery.py"
 )
+CONTENT_IMPORT_MIGRATION = (
+    ROOT
+    / "services/api/migrations/versions/20260819_0044_progressive_content_import.py"
+)
 
 
 def test_backoff_is_exponential_and_capped() -> None:
@@ -109,6 +113,17 @@ def test_knowledge_import_claim_is_leased_scoped_and_least_privilege() -> None:
     assert "claim_knowledge_import_items" in sql
     assert "payload_ciphertext" in sql
     assert "cf_ai_card_worker" in sql
+    assert "bypassrls" not in sql
+
+
+def test_content_import_claim_is_leased_scoped_and_least_privilege() -> None:
+    sql = CONTENT_IMPORT_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "for update skip locked" in sql
+    assert "security definer" in sql
+    assert "claim_content_import_runs" in sql
+    assert "lease_expires_at" in sql
+    assert "cf_ai_card_worker" in sql
+    assert "grant select on platform_llm_profiles to cf_ai_card_worker" in sql
     assert "bypassrls" not in sql
 
 
