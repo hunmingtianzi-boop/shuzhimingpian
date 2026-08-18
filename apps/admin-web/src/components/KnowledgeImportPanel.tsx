@@ -241,6 +241,9 @@ const classificationFailureLabels: Record<string, string> = {
 
 function classificationFailureMessage(code?: string) {
   if (!code) return "模型结果未通过证据硬门，请核对资料后重试。";
+  if (code.includes("field_review_required")) {
+    return "候选目录已经完成；少数字段缺少充分原文证据，已留空并标记待补。";
+  }
   if (code.startsWith("classification_partial:")) {
     return "部分资料已生成候选，另有分片未能完成；现有候选可以继续核对。";
   }
@@ -278,14 +281,25 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setRun(undefined);
+    setDrafts({});
+    setApplyFields({});
+    setSelectedId(undefined);
+    setBulkConfirming(false);
+    setSensitiveConfirmId(undefined);
+    setNotice(undefined);
+    setError(undefined);
     void contentImportsApi.list().then((runs) => {
+      if (cancelled) return;
       const existing = runs.find((item) => item.batchId === batch.id);
       if (existing) {
         setRun(existing);
         setDrafts(Object.fromEntries(existing.candidates.map((item) => [item.id, item])));
-        setSelectedId((current) => current ?? existing.candidates[0]?.id);
+        setSelectedId(existing.candidates[0]?.id);
       }
     }, (caught) => setError(asApiError(caught)));
+    return () => { cancelled = true; };
   }, [batch.id]);
 
   useEffect(() => {
@@ -387,16 +401,33 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
         {!run && <Button appearance="primary" disabled={busy} onClick={() => void generate()}>{busy ? "正在识别" : "开始智能整理"}</Button>}
       </div>
       <OperationFeedback notice={notice} error={error} onRetry={!run ? () => void generate() : undefined} />
-      {run?.status === "processing" && <ResourceState status="loading" title="正在分段整理资料" description="系统会逐段识别并合并重复候选。刷新页面不会重复创建任务。" compact />}
+      {run?.status === "processing" && <div className="content-import-progress-state">
+        <ResourceState
+          status="loading"
+          title={run.stage === "queued" ? "任务已进入后台队列" : run.stage === "discovering" ? "正在识别候选目录" : "正在补全候选字段"}
+          description={run.stageMessage ?? "可以切换到其他页面，右下角浮窗会持续显示进度。"}
+          compact
+        />
+        <progress
+          aria-label="智能整理进度"
+          max={run.progressTotal}
+          value={run.progressCurrent}
+        />
+        <span>{run.progressCurrent}/{run.progressTotal} · 已发现 {run.candidates.length} 条候选</span>
+      </div>}
       {run?.status === "manual_required" && <div className="content-import-manual-state">
         <ResourceState status="error" title="本次整理未完成" description={classificationFailureMessage(run.failureCode)} compact />
         <Button disabled={busy} onClick={() => void generate(true)}>{busy ? "正在重试" : "安全重试"}</Button>
       </div>}
-      {run?.status === "review" && run.failureCode?.startsWith("classification_partial:") && <div className="content-import-manual-state">
+      {run?.status === "review" && run.failureCode?.startsWith("classification_partial:") && !run.failureCode.includes("field_review_required") && <div className="content-import-manual-state">
         <ResourceState status="error" title="部分分片需要重试" description={classificationFailureMessage(run.failureCode)} compact />
         <Button disabled={busy} onClick={() => void generate(true)}>{busy ? "正在重新整理" : "重新整理未完成内容"}</Button>
       </div>}
-      {run?.status === "review" && (
+      {run?.status === "review" && run.failureCode?.includes("field_review_required") && <div className="content-import-field-review-note" role="status">
+        <strong>候选已经生成，部分字段待补</strong>
+        <span>{classificationFailureMessage(run.failureCode)}</span>
+      </div>}
+      {run && (run.status === "review" || run.candidates.length > 0) && (
         <div className="content-import-review-shell">
           <div className="content-import-review-summary">
             <span>共 {run.candidates.length} 条候选</span>
@@ -413,13 +444,14 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
                 const related = similarCandidates(candidate, pendingCandidates).length;
                 return <button type="button" className={candidate.id === selected?.id ? "content-import-candidate-row active" : "content-import-candidate-row"} key={candidate.id} onClick={() => setSelectedId(candidate.id)}>
                   <span className="content-import-candidate-row-copy"><strong>{candidateTitle(candidate)}</strong><small>{categoryLabels[candidate.category]}{related > 0 ? ` · ${related + 1} 条相似候选` : ""}</small></span>
-                  <Badge appearance="tint" color={candidate.status === "accepted" ? "success" : candidate.status === "ignored" ? "subtle" : score < 0.7 ? "warning" : "informative"}>{candidate.status === "accepted" ? "已写入" : candidate.status === "ignored" ? "已忽略" : `建议 ${Math.round(score * 100)}%`}</Badge>
+                  <Badge appearance="tint" color={candidate.status === "accepted" ? "success" : candidate.status === "ignored" ? "subtle" : candidate.enrichmentStatus === "pending" || candidate.enrichmentStatus === "processing" ? "informative" : score < 0.7 ? "warning" : "informative"}>{candidate.status === "accepted" ? "已写入" : candidate.status === "ignored" ? "已忽略" : candidate.enrichmentStatus === "pending" || candidate.enrichmentStatus === "processing" ? "正在补全" : candidate.enrichmentStatus === "needs_review" ? "字段待补" : `建议 ${Math.round(score * 100)}%`}</Badge>
                 </button>;
               })}
             </nav>
             {selected && (() => {
               const accepted = selected.status === "accepted";
               const ignored = selected.status === "ignored";
+              const candidateReady = selected.enrichmentStatus === "completed" || selected.enrichmentStatus === "needs_review";
               const selectedFields = applyFields[selected.id] ?? defaultEnterpriseFields(selected, companyProfile);
               const selectedSensitiveFields = selectedFields.filter((field) => {
                 if (!(field === "company_name" || field === "website") || !companyProfile) return false;
@@ -431,13 +463,15 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
               return <article className="content-import-candidate-detail">
                 <div className="content-import-candidate-head">
                   <div><span className="eyebrow">当前候选</span><h3>{candidateTitle(selected)}</h3></div>
-                  <select aria-label="候选分类" disabled={accepted || ignored || busy} value={selected.category} onChange={(event) => {
+                  <select aria-label="候选分类" disabled={accepted || ignored || busy || !candidateReady} value={selected.category} onChange={(event) => {
                     const category = event.target.value as ContentImportCategory;
                     replaceCandidate({ ...selected, category, payload: { ...payloadDefaults[category] } });
                   }}>{Object.entries(categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
                 </div>
                 <div className="content-import-review-reasons" aria-label="候选判断依据">
                   <Badge appearance="tint">模型置信度 {Math.round(selected.confidence * 100)}%</Badge>
+                  {!candidateReady && <Badge appearance="tint">后台正在补全字段</Badge>}
+                  {selected.fieldWarnings.length > 0 && <Badge appearance="tint" color="warning">待补字段：{selected.fieldWarnings.map((field) => fieldLabels[field] ?? (field === "detail_enrichment_failed" ? "字段补全" : field)).join("、")}</Badge>}
                   <Badge appearance="tint" color={missing.length ? "warning" : "success"}>{missing.length ? `待补：${missing.map((field) => fieldLabels[field] ?? field).join("、")}` : "字段完整"}</Badge>
                   {related.length > 0 && <Badge appearance="tint" color="warning">发现 {related.length} 条相似候选，请对照后决定</Badge>}
                   {selected.category === "enterprise_profile" && <Badge appearance="tint" color="warning">企业资料不参与批量确认</Badge>}
@@ -447,8 +481,8 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
                     const multiline = ["summary", "detail", "background", "solution", "result", "answer", "text", "reason"].includes(field);
                     const update = (next: string) => replaceCandidate({ ...selected, payload: { ...selected.payload, [field]: next } });
                     return <label key={field}><span>{fieldLabels[field] ?? field}</span>{multiline
-                      ? <Textarea disabled={accepted || ignored || busy} value={value} onChange={(_, data) => update(data.value)} resize="vertical" />
-                      : <Input disabled={accepted || ignored || busy} value={value} onChange={(_, data) => update(data.value)} />}</label>;
+                      ? <Textarea disabled={accepted || ignored || busy || !candidateReady} value={value} onChange={(_, data) => update(data.value)} resize="vertical" />
+                      : <Input disabled={accepted || ignored || busy || !candidateReady} value={value} onChange={(_, data) => update(data.value)} />}</label>;
                   })}
                 </div>
                 <details className="content-import-evidence"><summary>查看原文证据</summary><blockquote>{selected.sourceText}</blockquote></details>
@@ -465,10 +499,10 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
                   <span>将更新：{selectedSensitiveFields.map((field) => fieldLabels[field]).join("、")}。这可能表示导入了另一家企业的资料。</span>
                   <div><Button appearance="primary" disabled={busy} onClick={() => void act(selected, "accept", true)}>确认覆盖并写入</Button><Button disabled={busy} onClick={() => setSensitiveConfirmId(undefined)}>返回核对</Button></div>
                 </div>}
-                {!accepted && !ignored && <div className="content-import-detail-actions"><Button disabled={busy} onClick={() => void act(selected, "save")}>保存修改</Button><Button appearance="primary" disabled={busy || selected.category === "unclassified" || (selected.category === "enterprise_profile" && selectedFields.length === 0)} onClick={() => {
+                {!accepted && !ignored && <div className="content-import-detail-actions"><Button disabled={busy || !candidateReady} onClick={() => void act(selected, "save")}>保存修改</Button><Button appearance="primary" disabled={busy || !candidateReady || selected.category === "unclassified" || (selected.category === "enterprise_profile" && selectedFields.length === 0)} onClick={() => {
                   if (selectedSensitiveFields.length > 0) setSensitiveConfirmId(selected.id);
                   else void act(selected, "accept");
-                }}>接受并写入草稿</Button><Button appearance="subtle" disabled={busy} onClick={() => void act(selected, "ignore")}>忽略</Button></div>}
+                }}>接受并写入草稿</Button><Button appearance="subtle" disabled={busy || !candidateReady} onClick={() => void act(selected, "ignore")}>忽略</Button></div>}
               </article>;
             })()}
           </div>
@@ -480,8 +514,10 @@ function ContentImportReview({ batch }: { batch: KnowledgeImportBatch }) {
 
 export function KnowledgeImportPanel({
   onRequestDeleteDocument,
+  focusRunId,
 }: {
   onRequestDeleteDocument?: (documentId: string) => void;
+  focusRunId?: string;
 } = {}) {
   const auth = useContext(AuthContext);
   const canImport = auth?.user
@@ -501,6 +537,26 @@ export function KnowledgeImportPanel({
   const [validationError, setValidationError] = useState<string>();
   const [operationError, setOperationError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
+  const manualSelectionRef = useRef(false);
+
+  const clearFocusedRun = () => {
+    manualSelectionRef.current = true;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("run")) return;
+    url.searchParams.delete("run");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  useEffect(() => {
+    if (!focusRunId) return;
+    manualSelectionRef.current = false;
+    void contentImportsApi.get(focusRunId).then(async (focusedRun) => {
+      const batch = await knowledgeImportsApi.get(focusedRun.batchId);
+      if (manualSelectionRef.current) return;
+      setSelectedBatch(batch);
+      setEditingBatchName(batch.displayName);
+    }, (caught) => setOperationError(asApiError(caught)));
+  }, [focusRunId]);
 
   useEffect(() => {
     const active = resource.data?.items.some(isActive) || (selectedBatch && isActive(selectedBatch));
@@ -539,6 +595,7 @@ export function KnowledgeImportPanel({
       const batch = Object.keys(options).length > 0
         ? await knowledgeImportsApi.create(selectedFiles, options)
         : await knowledgeImportsApi.create(selectedFiles);
+      clearFocusedRun();
       setSelectedBatch(batch);
       setEditingBatchName(batch.displayName);
       setSelectedFiles([]);
@@ -561,6 +618,7 @@ export function KnowledgeImportPanel({
     setOperationError(undefined);
     try {
       const loaded = await knowledgeImportsApi.get(batch.id);
+      clearFocusedRun();
       setSelectedBatch(loaded);
       setEditingBatchName(loaded.displayName);
     } catch (caught) {
@@ -621,7 +679,7 @@ export function KnowledgeImportPanel({
             <Button disabled={uploading || !editingBatchName.trim() || editingBatchName.trim() === selectedBatch.displayName} onClick={() => void renameBatch()}>保存名称</Button>
           </div>
           <ImportDetail batch={selectedBatch} onRequestDeleteDocument={canImport ? onRequestDeleteDocument : undefined} />
-          {canImport && <ContentImportReview batch={selectedBatch} />}
+          {canImport && <ContentImportReview key={selectedBatch.id} batch={selectedBatch} />}
         </>
       )}
 

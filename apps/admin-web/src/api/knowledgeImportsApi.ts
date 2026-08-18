@@ -1,4 +1,5 @@
 import { apiClient, ApiClient, ApiError, unwrapData } from "./client";
+import { rememberContentImportTask } from "../utils/contentImportTask";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -103,6 +104,8 @@ export type ContentImportCandidate = {
   sourceText: string;
   confidence: number;
   status: ContentImportCandidateStatus;
+  enrichmentStatus: "pending" | "processing" | "completed" | "needs_review";
+  fieldWarnings: string[];
   targetResourceType?: string;
   targetResourceId?: string;
   version: number;
@@ -117,8 +120,16 @@ export type ContentImportRun = {
   attempts: number;
   failureCode?: string;
   counts: Record<string, number>;
+  stage: "queued" | "discovering" | "enriching" | "validating" | "finalizing" | "completed" | "failed";
+  stageMessage?: string;
+  progressCurrent: number;
+  progressTotal: number;
+  jobAttempts: number;
   candidates: ContentImportCandidate[];
+  startedAt?: string;
+  completedAt?: string;
   createdAt: string;
+  updatedAt: string;
 };
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -145,6 +156,12 @@ function requiredCount(value: unknown, field: string): number {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
+}
+
+function optionalCount(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : fallback;
 }
 
 const batchStatuses = new Set<KnowledgeImportBatchStatus>([
@@ -254,6 +271,12 @@ function normalizeCandidate(value: unknown): ContentImportCandidate {
     sourceText: requiredString(value.source_text, "candidate.source_text"),
     confidence,
     status,
+    enrichmentStatus: ["pending", "processing", "completed", "needs_review"].includes(String(value.enrichment_status))
+      ? value.enrichment_status as ContentImportCandidate["enrichmentStatus"]
+      : "completed",
+    fieldWarnings: Array.isArray(value.field_warnings)
+      ? value.field_warnings.filter((item): item is string => typeof item === "string")
+      : [],
     targetResourceType: optionalString(value.target_resource_type),
     targetResourceId: optionalString(value.target_resource_id),
     version: requiredCount(value.version, "candidate.version"),
@@ -268,6 +291,11 @@ function normalizeContentRun(value: unknown): ContentImportRun {
   if (!["processing", "review", "manual_required"].includes(runStatus)) {
     throw new ApiError("智能整理任务状态无法识别。", { code: "INVALID_API_RESPONSE" });
   }
+  const fallbackStage = runStatus === "processing" ? "queued" : runStatus === "review" ? "completed" : "failed";
+  const stage = typeof value.stage === "string" && ["queued", "discovering", "enriching", "validating", "finalizing", "completed", "failed"].includes(value.stage)
+    ? value.stage as ContentImportRun["stage"]
+    : fallbackStage;
+  const progressTotal = Math.max(optionalCount(value.progress_total, 1), 1);
   return {
     id: requiredString(value.id, "run.id"),
     batchId: requiredString(value.batch_id, "run.batch_id"),
@@ -277,8 +305,16 @@ function normalizeContentRun(value: unknown): ContentImportRun {
     attempts: requiredCount(value.attempts, "run.attempts"),
     failureCode: optionalString(value.failure_code),
     counts: Object.fromEntries(Object.entries(value.counts).map(([key, count]) => [key, requiredCount(count, `counts.${key}`)])),
+    stage,
+    stageMessage: optionalString(value.stage_message),
+    progressCurrent: Math.min(optionalCount(value.progress_current, runStatus === "processing" ? 0 : 1), progressTotal),
+    progressTotal,
+    jobAttempts: optionalCount(value.job_attempts, 0),
     candidates: value.candidates.map(normalizeCandidate),
+    startedAt: optionalString(value.started_at),
+    completedAt: optionalString(value.completed_at),
     createdAt: requiredString(value.created_at, "run.created_at"),
+    updatedAt: optionalString(value.updated_at) ?? requiredString(value.created_at, "run.created_at"),
   };
 }
 
@@ -333,10 +369,12 @@ export const knowledgeImportsApi = createKnowledgeImportsApi();
 export function createContentImportsApi(client: ApiClient = apiClient) {
   return {
     async generate(batchId: string, options: { retry?: boolean } = {}): Promise<ContentImportRun> {
-      return normalizeContentRun(unwrapData(await client.post("/admin/content-import-runs", {
+      const run = normalizeContentRun(unwrapData(await client.post("/admin/content-import-runs", {
         batch_id: batchId,
         retry: options.retry === true,
       })));
+      rememberContentImportTask(run.id, run.batchId);
+      return run;
     },
     async list(): Promise<ContentImportRun[]> {
       const payload = await client.get("/admin/content-import-runs");

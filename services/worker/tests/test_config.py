@@ -70,6 +70,17 @@ def test_platform_onboarding_retention_purge_interval_is_bounded() -> None:
         WorkerSettings(platform_onboarding_retention_purge_seconds=86_401)
 
 
+def test_content_import_poll_and_lease_are_bounded() -> None:
+    settings = WorkerSettings(_env_file=None)
+    assert settings.content_import_poll_seconds == 2
+    assert settings.content_import_batch_size == 2
+    assert settings.content_import_lease_seconds == 900
+    with pytest.raises(ValidationError):
+        WorkerSettings(content_import_poll_seconds=0.5)
+    with pytest.raises(ValidationError):
+        WorkerSettings(content_import_lease_seconds=30)
+
+
 def test_production_rejects_local_worker_identity() -> None:
     with pytest.raises(ValidationError):
         WorkerSettings(app_env="production")

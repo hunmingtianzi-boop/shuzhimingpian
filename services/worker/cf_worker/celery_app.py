@@ -79,6 +79,14 @@ celery_app.conf.update(
                 "expires": settings.knowledge_import_poll_seconds * 2,
             },
         },
+        "poll-content-imports": {
+            "task": "cf_worker.poll_content_imports",
+            "schedule": settings.content_import_poll_seconds,
+            "options": {
+                "queue": "outbox.poll",
+                "expires": settings.content_import_poll_seconds * 2,
+            },
+        },
     },
 )
 

@@ -57,6 +57,9 @@ class WorkerSettings(BaseSettings):
     knowledge_import_lease_seconds: int = Field(default=900, ge=30, le=3_600)
     knowledge_import_max_attempts: int = Field(default=6, ge=1, le=50)
     knowledge_import_parse_timeout_seconds: int = Field(default=300, ge=30, le=900)
+    content_import_poll_seconds: float = Field(default=2.0, ge=1, le=300)
+    content_import_batch_size: int = Field(default=2, ge=1, le=20)
+    content_import_lease_seconds: int = Field(default=900, ge=60, le=3_600)
     embedding_provider: str | None = None
     embedding_base_url: str | None = None
     embedding_api_key: SecretStr | None = None

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -46,7 +46,11 @@ from app.services.catalog_store import CatalogScope, CatalogStore
 from app.services.content_classification import (
     ClassificationDocument,
     ContentClassification,
-    classify_content_with_hard_gates,
+    DiscoveredCandidate,
+    EnrichedCandidate,
+    discover_content_candidates,
+    enrich_content_candidates,
+    placeholder_candidate_payload,
 )
 from app.services.platform_llm_profiles import LLMRuntimeUnavailable, resolve_effective_chat_config
 
@@ -68,7 +72,7 @@ class ContentImportReviewService:
         retry: bool = False,
         trace_id: str | None,
     ) -> ContentImportRunRecord:
-        documents = await self._documents(scope=scope, batch_id=batch_id)
+        await self._documents(scope=scope, batch_id=batch_id)
         try:
             config = await resolve_effective_chat_config(self._sessions, self._settings)
         except LLMRuntimeUnavailable as exc:
@@ -78,63 +82,88 @@ class ContentImportReviewService:
                 "智能整理服务尚未配置，请联系平台管理员检查模型设置",
                 details={"reason": exc.code},
             ) from exc
-        run_id, should_execute = await self._prepare_run(
+        run_id, _ = await self._prepare_run(
             scope=scope,
             batch_id=batch_id,
             provider=config.provider,
             model=config.model,
             retry=retry,
         )
-        if not should_execute:
-            return await self.get_run(scope=scope, run_id=run_id)
-        provider = OpenAICompatibleChatProvider(
-            ChatProviderConfig(
-                base_url=config.base_url,
-                model=config.model,
-                provider_name=config.provider,
-                timeout_seconds=min(config.timeout_seconds, 60),
-                output_mode=StructuredOutputMode.JSON_OBJECT,
-                thinking_mode=config.thinking,
-                reasoning_effort=config.reasoning_effort,
-                max_retries=config.max_retries,
-            )
+        return await self.get_run(scope=scope, run_id=run_id)
+
+    async def execute_claimed_run(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+        trace_id: str | None = None,
+    ) -> ContentImportRunRecord:
+        """Execute one leased run independently from the initiating HTTP request."""
+
+        documents = await self._documents_for_claim(
+            scope=scope, run_id=run_id, lock_token=lock_token
         )
         try:
-            outcome = await classify_content_with_hard_gates(
+            config = await resolve_effective_chat_config(self._sessions, self._settings)
+            provider = OpenAICompatibleChatProvider(
+                ChatProviderConfig(
+                    base_url=config.base_url,
+                    model=config.model,
+                    provider_name=config.provider,
+                    timeout_seconds=min(config.timeout_seconds, 60),
+                    output_mode=StructuredOutputMode.JSON_OBJECT,
+                    thinking_mode=config.thinking,
+                    reasoning_effort=config.reasoning_effort,
+                    max_retries=config.max_retries,
+                )
+            )
+            credentials = ProviderCredentials(api_key=config.api_key.get_secret_value())
+            discovered = await discover_content_candidates(
                 provider=provider,
-                credentials=ProviderCredentials(api_key=config.api_key.get_secret_value()),
+                credentials=credentials,
                 documents=documents,
-                max_tokens=min(config.max_output_tokens, 32_768),
+                max_tokens=min(config.max_output_tokens, 4_096),
                 trace_id=trace_id,
             )
-        except Exception:
-            await self._finalize_failed_run(
+            await self._persist_candidate_directory(
                 scope=scope,
                 run_id=run_id,
+                lock_token=lock_token,
+                candidates=discovered,
+            )
+
+            async def persist_group(group: tuple[EnrichedCandidate, ...]) -> None:
+                await self._persist_enriched_group(
+                    scope=scope,
+                    run_id=run_id,
+                    lock_token=lock_token,
+                    candidates=group,
+                )
+
+            enriched = await enrich_content_candidates(
+                provider=provider,
+                credentials=credentials,
+                candidates=discovered,
+                max_tokens=min(config.max_output_tokens, 4_096),
+                trace_id=trace_id,
+                max_concurrency=min(config.max_concurrency, 3),
+                on_group_complete=persist_group,
+            )
+            await self._complete_claimed_run(
+                scope=scope,
+                run_id=run_id,
+                lock_token=lock_token,
+                candidates=enriched,
+            )
+        except Exception:
+            await self._finalize_failed_claim(
+                scope=scope,
+                run_id=run_id,
+                lock_token=lock_token,
                 failure_code="classification_internal_error",
             )
             raise
-        now = datetime.now(UTC)
-        async with self._sessions() as session, session.begin():
-            await self._set_scope(session, scope)
-            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
-            run.status = outcome.status
-            run.attempts = outcome.attempts
-            run.failure_code = (outcome.failure_code or "")[:500] or None
-            run.counts = _classification_counts(outcome.classification)
-            run.completed_at = now
-            await session.execute(
-                delete(ContentImportCandidate).where(ContentImportCandidate.run_id == run_id)
-            )
-            session.add_all(
-                _candidate_rows(
-                    classification=outcome.classification,
-                    run_id=run_id,
-                    tenant_id=scope.tenant_id,
-                    company_id=scope.company_id,
-                )
-            )
-            await session.flush()
         return await self.get_run(scope=scope, run_id=run_id)
 
     async def _prepare_run(
@@ -200,6 +229,16 @@ class ContentImportReviewService:
                 run.attempts = 0
                 run.failure_code = None
                 run.counts = {}
+                run.stage = "queued"
+                run.stage_message = "等待后台智能整理"
+                run.progress_current = 0
+                run.progress_total = 1
+                run.job_attempts = 0
+                run.next_attempt_at = datetime.now(UTC)
+                run.lock_token = None
+                run.locked_by = None
+                run.lease_expires_at = None
+                run.started_at = None
                 run.completed_at = None
                 await session.flush()
                 return run.id, True
@@ -215,10 +254,184 @@ class ContentImportReviewService:
                 model=model,
                 attempts=0,
                 counts={},
+                stage="queued",
+                stage_message="等待后台智能整理",
+                progress_current=0,
+                progress_total=1,
             )
             session.add(run)
             await session.flush()
             return run.id, True
+
+    async def _documents_for_claim(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+    ) -> list[ClassificationDocument]:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
+            self._require_claim(run, lock_token)
+            run.stage = "discovering"
+            run.stage_message = "正在识别候选目录"
+            run.progress_current = 0
+            run.progress_total = 1
+            run.failure_code = None
+        return await self._documents(scope=scope, batch_id=run.batch_id)
+
+    async def _persist_candidate_directory(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+        candidates: tuple[DiscoveredCandidate, ...],
+    ) -> None:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
+            self._require_claim(run, lock_token)
+            reviewed = await session.scalar(
+                select(ContentImportCandidate.id)
+                .where(
+                    ContentImportCandidate.run_id == run_id,
+                    ContentImportCandidate.status != "pending_review",
+                )
+                .limit(1)
+            )
+            if reviewed is not None:
+                raise ApiError(
+                    409,
+                    "CONTENT_IMPORT_REVIEW_STARTED",
+                    "候选审核已经开始，不能覆盖后台整理结果",
+                )
+            await session.execute(
+                delete(ContentImportCandidate).where(ContentImportCandidate.run_id == run_id)
+            )
+            session.add_all(
+                _discovered_candidate_rows(
+                    candidates=candidates,
+                    run_id=run_id,
+                    tenant_id=scope.tenant_id,
+                    company_id=scope.company_id,
+                )
+            )
+            run.stage = "enriching"
+            run.stage_message = f"已发现 {len(candidates)} 条候选，正在补全字段"
+            run.progress_current = 0
+            run.progress_total = max(len(candidates), 1)
+            run.counts = _directory_counts(candidates)
+            await session.flush()
+
+    async def _persist_enriched_group(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+        candidates: tuple[EnrichedCandidate, ...],
+    ) -> None:
+        if not candidates:
+            return
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
+            self._require_claim(run, lock_token)
+            rows = {
+                row.id: row
+                for row in (
+                    await session.scalars(
+                        select(ContentImportCandidate)
+                        .where(
+                            ContentImportCandidate.run_id == run_id,
+                            ContentImportCandidate.id.in_(
+                                [item.candidate.id for item in candidates]
+                            ),
+                        )
+                        .with_for_update()
+                    )
+                ).all()
+            }
+            for item in candidates:
+                row = rows.get(item.candidate.id)
+                if row is None:
+                    continue
+                row.payload = dict(item.payload)
+                row.field_warnings = list(item.field_warnings)
+                row.enrichment_status = (
+                    "needs_review" if item.field_warnings else "completed"
+                )
+                row.version += 1
+            run.progress_current = min(
+                run.progress_total, run.progress_current + len(candidates)
+            )
+            run.stage_message = (
+                f"已补全 {run.progress_current}/{run.progress_total} 条候选"
+            )
+            await session.flush()
+
+    async def _complete_claimed_run(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+        candidates: tuple[EnrichedCandidate, ...],
+    ) -> None:
+        warnings = [
+            warning
+            for item in candidates
+            for warning in item.field_warnings
+        ]
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
+            self._require_claim(run, lock_token)
+            run.stage = "completed"
+            run.stage_message = (
+                f"智能整理完成，{len(candidates)} 条候选等待审核"
+            )
+            run.progress_current = run.progress_total
+            run.status = "review" if candidates else "manual_required"
+            run.attempts = 1
+            run.failure_code = (
+                "classification_partial:field_review_required" if warnings else None
+            )
+            run.completed_at = datetime.now(UTC)
+            run.lock_token = None
+            run.locked_by = None
+            run.lease_expires_at = None
+            await session.flush()
+
+    async def _finalize_failed_claim(
+        self,
+        *,
+        scope: AdminScope,
+        run_id: uuid.UUID,
+        lock_token: uuid.UUID,
+        failure_code: str,
+    ) -> None:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            run = await self._run(session, scope=scope, run_id=run_id, lock=True)
+            if run.lock_token != lock_token:
+                return
+            run.status = "manual_required"
+            run.stage = "failed"
+            run.stage_message = "智能整理未完成，可以安全重试"
+            run.failure_code = failure_code[:500]
+            run.completed_at = datetime.now(UTC)
+            run.lock_token = None
+            run.locked_by = None
+            run.lease_expires_at = None
+            await session.flush()
+
+    @staticmethod
+    def _require_claim(run: ContentImportRun, lock_token: uuid.UUID) -> None:
+        if run.status != "processing" or run.lock_token != lock_token:
+            raise ApiError(409, "CONTENT_IMPORT_LEASE_LOST", "智能整理任务租约已失效")
 
     async def _finalize_failed_run(
         self, *, scope: AdminScope, run_id: uuid.UUID, failure_code: str
@@ -634,7 +847,13 @@ class ContentImportReviewService:
             attempts=run.attempts,
             failure_code=run.failure_code,
             counts={str(key): int(value) for key, value in run.counts.items()},
+            stage=run.stage,
+            stage_message=run.stage_message,
+            progress_current=run.progress_current,
+            progress_total=run.progress_total,
+            job_attempts=run.job_attempts,
             candidates=[_candidate_record(candidate) for candidate in candidates],
+            started_at=run.started_at,
             completed_at=run.completed_at,
             created_at=run.created_at,
             updated_at=run.updated_at,
@@ -683,6 +902,52 @@ def _candidate_rows(
     return rows
 
 
+def _discovered_candidate_rows(
+    *,
+    candidates: tuple[DiscoveredCandidate, ...],
+    run_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    company_id: uuid.UUID,
+) -> list[ContentImportCandidate]:
+    return [
+        ContentImportCandidate(
+            id=item.id,
+            tenant_id=tenant_id,
+            company_id=company_id,
+            run_id=run_id,
+            category=item.category,
+            payload=placeholder_candidate_payload(item),
+            source_id=item.source_id,
+            source_text=item.source_text,
+            confidence=item.confidence,
+            fingerprint=_fingerprint(
+                item.category,
+                {"label": item.label},
+                item.source_id,
+                item.source_text,
+            ),
+            status="pending_review",
+            enrichment_status="pending",
+            field_warnings=[],
+            version=1,
+        )
+        for item in candidates
+    ]
+
+
+def _directory_counts(candidates: tuple[DiscoveredCandidate, ...]) -> dict[str, int]:
+    return {
+        category: sum(item.category == category for item in candidates)
+        for category in (
+            "enterprise_profile",
+            "products",
+            "case_studies",
+            "faqs",
+            "unclassified",
+        )
+    }
+
+
 def _classification_counts(classification: ContentClassification) -> dict[str, int]:
     return {
         category: len(getattr(classification, category))
@@ -714,12 +979,18 @@ def _fingerprint(
 def _recover_stale_run(run: ContentImportRun) -> None:
     if run.status != "processing":
         return
-    updated_at = run.updated_at
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=UTC)
-    if updated_at >= datetime.now(UTC) - timedelta(minutes=10):
+    if run.stage == "queued":
+        return
+    lease_expires_at = run.lease_expires_at
+    if lease_expires_at is None:
+        return
+    if lease_expires_at.tzinfo is None:
+        lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+    if lease_expires_at > datetime.now(UTC) or run.job_attempts < run.max_job_attempts:
         return
     run.status = "manual_required"
+    run.stage = "failed"
+    run.stage_message = "后台任务多次中断，可以安全重试"
     run.failure_code = "classification_interrupted"
     run.completed_at = datetime.now(UTC)
 
@@ -738,6 +1009,8 @@ def _candidate_record(candidate: ContentImportCandidate) -> ContentImportCandida
         source_text=candidate.source_text,
         confidence=candidate.confidence,
         status=candidate.status,
+        enrichment_status=candidate.enrichment_status,
+        field_warnings=list(candidate.field_warnings),
         target_resource_type=candidate.target_resource_type,
         target_resource_id=candidate.target_resource_id,
         version=candidate.version,
@@ -749,6 +1022,8 @@ def _candidate_record(candidate: ContentImportCandidate) -> ContentImportCandida
 def _require_pending(candidate: ContentImportCandidate) -> None:
     if candidate.status != "pending_review":
         raise ApiError(409, "CANDIDATE_NOT_PENDING", "该候选已经处理")
+    if candidate.enrichment_status not in {"completed", "needs_review"}:
+        raise ApiError(409, "CANDIDATE_ENRICHMENT_PENDING", "候选字段仍在补全，请稍后操作")
 
 
 def _require_version(current: int, expected: int) -> None:

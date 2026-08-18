@@ -19,6 +19,17 @@ class ClaimedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimedContentImport:
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    company_id: uuid.UUID
+    lock_token: uuid.UUID
+    requested_by: uuid.UUID
+    attempt: int
+    max_attempts: int
+
+
+@dataclass(frozen=True, slots=True)
 class OutboxRecord(ClaimedEvent):
     aggregate_type: str
     aggregate_id: uuid.UUID
@@ -201,6 +212,7 @@ class OutboxRepository(Protocol):
 
 
 __all__ = [
+    "ClaimedContentImport",
     "ClaimedEvent",
     "EvaluationRunner",
     "ExportIntent",

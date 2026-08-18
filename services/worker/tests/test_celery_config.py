@@ -51,3 +51,10 @@ def test_celery_uses_redis_late_ack_and_visibility_larger_than_database_lease() 
     imports = celery_app.conf.beat_schedule["poll-knowledge-imports"]
     assert imports["task"] == "cf_worker.poll_knowledge_imports"
     assert imports["schedule"] == settings.knowledge_import_poll_seconds
+    content_imports = celery_app.conf.beat_schedule["poll-content-imports"]
+    assert content_imports["task"] == "cf_worker.poll_content_imports"
+    assert content_imports["schedule"] == settings.content_import_poll_seconds
+    assert content_imports["options"] == {
+        "queue": "outbox.poll",
+        "expires": settings.content_import_poll_seconds * 2,
+    }
