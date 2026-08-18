@@ -36,6 +36,7 @@ from cf_worker.domain import (
     NotificationIntent,
     OutboxRecord,
     VisitNotificationSnapshot,
+    WeComVisitCard,
 )
 from cf_worker.knowledge_imports import ClaimedKnowledgeImport, create_draft
 
@@ -201,12 +202,11 @@ class PostgresOutboxRepository:
                 http_client=client,
             ).send_text(user_id=user_id, content=content)
 
-    async def _send_wecom_text_card(
+    async def _send_wecom_template_card(
         self,
         *,
         user_id: str,
-        title: str,
-        description: str,
+        card: WeComVisitCard,
         report_url: str,
         suite_context: tuple[str, str, int] | None,
     ) -> None:
@@ -222,24 +222,34 @@ class PostgresOutboxRepository:
                     settings=self._settings,  # type: ignore[arg-type]
                     http_client=client,
                     redis=self._redis,
-                ).send_text_card(
+                ).send_template_card(
                     auth_corpid=auth_corpid,
                     permanent_code=permanent_code,
                     agent_id=agent_id,
                     user_id=user_id,
-                    title=title,
-                    description=description,
+                    title=card.title,
+                    subtitle=card.subtitle,
+                    summary=card.summary,
+                    emphasis_title=card.emphasis_title,
+                    emphasis_description=card.emphasis_description,
+                    details=card.details,
                     url=report_url,
+                    action_text=card.action_text,
                 )
                 return
             await WeComClient(
                 settings=self._settings,  # type: ignore[arg-type]
                 http_client=client,
-            ).send_text_card(
+            ).send_template_card(
                 user_id=user_id,
-                title=title,
-                description=description,
+                title=card.title,
+                subtitle=card.subtitle,
+                summary=card.summary,
+                emphasis_title=card.emphasis_title,
+                emphasis_description=card.emphasis_description,
+                details=card.details,
                 url=report_url,
+                action_text=card.action_text,
             )
 
     async def purge_expired_visitor_profiles(self) -> int:
@@ -1182,8 +1192,7 @@ class PostgresOutboxRepository:
         event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        title: str,
-        description: str,
+        card: WeComVisitCard,
         report_url: str,
     ) -> int:
         self_built_configured = bool(
@@ -1228,10 +1237,9 @@ class PostgresOutboxRepository:
         for row in rows:
             try:
                 user_id = self._cipher.decrypt(bytes(row["wecom_user_id_ciphertext"]))
-                await self._send_wecom_text_card(
+                await self._send_wecom_template_card(
                     user_id=user_id,
-                    title=title,
-                    description=description,
+                    card=card,
                     report_url=report_url,
                     suite_context=suite_context,
                 )

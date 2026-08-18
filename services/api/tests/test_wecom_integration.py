@@ -227,18 +227,37 @@ async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> Non
 
 
 @pytest.mark.asyncio
-async def test_wecom_suite_text_card_opens_the_application_report() -> None:
+async def test_wecom_suite_template_card_opens_the_application_report() -> None:
     async def provider(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         assert payload == {
             "touser": "suite-user-id",
-            "msgtype": "textcard",
+            "msgtype": "template_card",
             "agentid": 1000002,
-            "textcard": {
-                "title": "新访问报告已生成",
-                "description": "访客浏览了企业名片。",
-                "url": "https://card.example.test/c/admin/wecom/entry?return_to=report",
-                "btntxt": "查看报告",
+            "template_card": {
+                "card_type": "text_notice",
+                "source": {"desc": "数智名片 · 访客洞察", "desc_color": 3},
+                "main_title": {
+                    "title": "新访问报告已生成",
+                    "desc": "拓浙 AI 生态",
+                },
+                "emphasis_content": {"title": "中等", "desc": "综合意向"},
+                "sub_title_text": "访客浏览了企业名片。",
+                "horizontal_content_list": [
+                    {"keyname": "停留", "value": "2 分 6 秒"},
+                    {"keyname": "AI提问", "value": "2 次"},
+                ],
+                "jump_list": [
+                    {
+                        "type": 1,
+                        "title": "查看访问报告",
+                        "url": "https://card.example.test/c/admin/wecom/entry?return_to=report",
+                    }
+                ],
+                "card_action": {
+                    "type": 1,
+                    "url": "https://card.example.test/c/admin/wecom/entry?return_to=report",
+                },
             },
             "safe": 0,
             "enable_id_trans": 0,
@@ -267,13 +286,17 @@ async def test_wecom_suite_text_card_opens_the_application_report() -> None:
             settings=settings,
             http_client=client,
             redis=redis,
-        ).send_text_card(
+        ).send_template_card(
             auth_corpid="wwcorp123456",
             permanent_code="permanent-code",
             agent_id=1000002,
             user_id="suite-user-id",
             title="新访问报告已生成",
-            description="访客浏览了企业名片。",
+            subtitle="拓浙 AI 生态",
+            summary="访客浏览了企业名片。",
+            emphasis_title="中等",
+            emphasis_description="综合意向",
+            details=(("停留", "2 分 6 秒"), ("AI提问", "2 次")),
             url="https://card.example.test/c/admin/wecom/entry?return_to=report",
         )
 
@@ -373,13 +396,16 @@ async def test_wecom_test_message_uses_cached_token_and_rejects_invalid_user() -
 
 
 @pytest.mark.asyncio
-async def test_wecom_self_built_text_card_uses_the_application_agent() -> None:
+async def test_wecom_self_built_template_card_uses_the_application_agent() -> None:
     async def provider(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
-        assert payload["msgtype"] == "textcard"
+        assert payload["msgtype"] == "template_card"
         assert payload["agentid"] == 1000002
-        assert payload["textcard"]["btntxt"] == "查看报告"
-        assert payload["textcard"]["url"].endswith("/wecom/entry?return_to=report")
+        card = payload["template_card"]
+        assert card["card_type"] == "text_notice"
+        assert card["emphasis_content"] == {"title": "实时", "desc": "正在访问"}
+        assert card["jump_list"][0]["title"] == "查看访问报告"
+        assert card["card_action"]["url"].endswith("/wecom/entry?return_to=report")
         return httpx.Response(
             200,
             json={"errcode": 0, "errmsg": "ok", "msgid": "message-card-2"},
@@ -393,10 +419,14 @@ async def test_wecom_self_built_text_card_uses_the_application_agent() -> None:
             settings=_settings(),
             http_client=client,
             redis=redis,
-        ).send_text_card(
+        ).send_template_card(
             user_id="test-user",
             title="有人正在查看名片",
-            description="访客正在查看企业名片。",
+            subtitle="拓浙 AI 生态",
+            summary="访客正在查看企业名片。",
+            emphasis_title="实时",
+            emphasis_description="正在访问",
+            details=(("来源", "微信"), ("状态", "正在浏览")),
             url="https://card.example.test/c/admin/wecom/entry?return_to=report",
         )
 

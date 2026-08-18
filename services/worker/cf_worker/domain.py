@@ -68,6 +68,17 @@ class VisitNotificationSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class WeComVisitCard:
+    title: str
+    subtitle: str
+    summary: str
+    emphasis_title: str
+    emphasis_description: str
+    details: tuple[tuple[str, str], ...]
+    action_text: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReportIntent:
     result_type: str
     schema_version: int
@@ -193,8 +204,7 @@ class OutboxRepository(Protocol):
         event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        title: str,
-        description: str,
+        card: WeComVisitCard,
         report_url: str,
     ) -> int: ...
 
@@ -223,4 +233,5 @@ __all__ = [
     "PermanentEventError",
     "ReportIntent",
     "VisitNotificationSnapshot",
+    "WeComVisitCard",
 ]

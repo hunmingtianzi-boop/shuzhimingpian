@@ -14,7 +14,7 @@ from app.integrations.wecom import (
     WeComMember,
     WeComMessageResult,
     WeComProviderError,
-    build_wecom_text_card_payload,
+    build_wecom_template_card_payload,
     parse_wecom_message_result,
 )
 
@@ -321,7 +321,7 @@ class WeComSuiteClient:
         )
         return parse_wecom_message_result(payload)
 
-    async def send_text_card(
+    async def send_template_card(
         self,
         *,
         auth_corpid: str,
@@ -329,9 +329,13 @@ class WeComSuiteClient:
         agent_id: int,
         user_id: str,
         title: str,
-        description: str,
+        subtitle: str,
+        summary: str,
+        emphasis_title: str,
+        emphasis_description: str,
+        details: tuple[tuple[str, str], ...],
         url: str,
-        button_text: str = "查看报告",
+        action_text: str = "查看访问报告",
     ) -> WeComMessageResult:
         if agent_id <= 0:
             raise WeComConfigurationError("wecom_suite_agent_not_configured")
@@ -343,13 +347,17 @@ class WeComSuiteClient:
             "POST",
             "/cgi-bin/message/send",
             params={"access_token": token},
-            json=build_wecom_text_card_payload(
+            json=build_wecom_template_card_payload(
                 user_id=user_id,
                 agent_id=agent_id,
                 title=title,
-                description=description,
+                subtitle=subtitle,
+                summary=summary,
+                emphasis_title=emphasis_title,
+                emphasis_description=emphasis_description,
+                details=details,
                 url=url,
-                button_text=button_text,
+                action_text=action_text,
             ),
         )
         return parse_wecom_message_result(payload)

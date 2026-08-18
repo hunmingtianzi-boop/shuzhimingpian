@@ -34,38 +34,80 @@ class WeComMessageResult:
     message_id: str | None
 
 
-def build_wecom_text_card_payload(
+def build_wecom_template_card_payload(
     *,
     user_id: str,
     agent_id: int,
     title: str,
-    description: str,
+    subtitle: str,
+    summary: str,
+    emphasis_title: str,
+    emphasis_description: str,
+    details: tuple[tuple[str, str], ...],
     url: str,
-    button_text: str = "查看报告",
+    action_text: str = "查看访问报告",
 ) -> dict[str, object]:
-    """Build a clickable application card accepted by the WeCom message API."""
+    """Build a native WeCom text-notice template card for a visit report."""
 
     normalized_title = title.strip()
-    normalized_description = description.strip()
+    normalized_subtitle = subtitle.strip()
+    normalized_summary = summary.strip()
+    normalized_emphasis_title = emphasis_title.strip()
+    normalized_emphasis_description = emphasis_description.strip()
     normalized_url = url.strip()
-    normalized_button = button_text.strip() or "查看报告"
+    normalized_action = action_text.strip() or "查看访问报告"
+    normalized_details = tuple(
+        (key.strip(), value.strip()) for key, value in details if key.strip() and value.strip()
+    )
     if (
         not user_id.strip()
         or agent_id <= 0
         or not normalized_title
-        or not normalized_description
+        or not normalized_summary
+        or not normalized_emphasis_title
+        or not normalized_emphasis_description
+        or not normalized_details
+        or len(normalized_details) > 6
         or not normalized_url.startswith(("https://", "http://"))
     ):
-        raise WeComConfigurationError("wecom_text_card_invalid")
+        raise WeComConfigurationError("wecom_template_card_invalid")
     return {
         "touser": user_id,
-        "msgtype": "textcard",
+        "msgtype": "template_card",
         "agentid": agent_id,
-        "textcard": {
-            "title": normalized_title[:128],
-            "description": normalized_description[:512],
-            "url": normalized_url[:2_048],
-            "btntxt": normalized_button[:4],
+        "template_card": {
+            "card_type": "text_notice",
+            "source": {
+                "desc": "数智名片 · 访客洞察",
+                "desc_color": 3,
+            },
+            "main_title": {
+                "title": normalized_title[:36],
+                "desc": normalized_subtitle[:44],
+            },
+            "emphasis_content": {
+                "title": normalized_emphasis_title[:14],
+                "desc": normalized_emphasis_description[:22],
+            },
+            "sub_title_text": normalized_summary[:112],
+            "horizontal_content_list": [
+                {
+                    "keyname": key[:5],
+                    "value": value[:30],
+                }
+                for key, value in normalized_details
+            ],
+            "jump_list": [
+                {
+                    "type": 1,
+                    "title": normalized_action[:18],
+                    "url": normalized_url[:2_048],
+                }
+            ],
+            "card_action": {
+                "type": 1,
+                "url": normalized_url[:2_048],
+            },
         },
         "safe": 0,
         "enable_id_trans": 0,
@@ -221,14 +263,18 @@ class WeComClient:
         )
         return parse_wecom_message_result(payload)
 
-    async def send_text_card(
+    async def send_template_card(
         self,
         *,
         user_id: str,
         title: str,
-        description: str,
+        subtitle: str,
+        summary: str,
+        emphasis_title: str,
+        emphasis_description: str,
+        details: tuple[tuple[str, str], ...],
         url: str,
-        button_text: str = "查看报告",
+        action_text: str = "查看访问报告",
     ) -> WeComMessageResult:
         _corp_id, agent_id, _secret = self._credentials()
         token = await self.access_token()
@@ -236,13 +282,17 @@ class WeComClient:
             "POST",
             "/cgi-bin/message/send",
             params={"access_token": token},
-            json=build_wecom_text_card_payload(
+            json=build_wecom_template_card_payload(
                 user_id=user_id,
                 agent_id=agent_id,
                 title=title,
-                description=description,
+                subtitle=subtitle,
+                summary=summary,
+                emphasis_title=emphasis_title,
+                emphasis_description=emphasis_description,
+                details=details,
                 url=url,
-                button_text=button_text,
+                action_text=action_text,
             ),
         )
         return parse_wecom_message_result(payload)
@@ -415,5 +465,5 @@ __all__ = [
     "WeComProbeResult",
     "WeComProviderError",
     "WeComUserIdentity",
-    "build_wecom_text_card_payload",
+    "build_wecom_template_card_payload",
 ]

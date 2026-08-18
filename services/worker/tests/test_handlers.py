@@ -14,6 +14,7 @@ from cf_worker.domain import (
     OutboxRecord,
     PermanentEventError,
     VisitNotificationSnapshot,
+    WeComVisitCard,
 )
 from cf_worker.handlers import EventHandlerRegistry
 
@@ -23,7 +24,7 @@ class StubRepository:
     summary_owner = uuid.uuid4()
 
     def __init__(self) -> None:
-        self.wecom_messages: list[dict[str, str]] = []
+        self.wecom_messages: list[dict[str, Any]] = []
 
     def admin_base_url(self) -> str:
         return "https://example.test/c/admin"
@@ -79,15 +80,13 @@ class StubRepository:
         _event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        title: str,
-        description: str,
+        card: WeComVisitCard,
         report_url: str,
     ) -> int:
         assert recipient_user_ids == (self.summary_owner,)
         self.wecom_messages.append(
             {
-                "title": title,
-                "description": description,
+                "card": card,
                 "report_url": report_url,
             }
         )
@@ -243,8 +242,24 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
     assert "微信号" not in result.notifications[0].body
     assert repository.wecom_messages
     message = repository.wecom_messages[0]
-    assert message["title"] in {"有人正在查看名片", "新访问报告已生成"}
-    assert str(visit_id)[:8] in message["description"]
+    card = message["card"]
+    assert card.title in {"有人正在查看名片", "新访问报告已生成"}
+    assert card.subtitle == "拓浙AI生态"
+    assert str(visit_id)[:8] in dict(card.details)["编号"]
+    assert card.action_text in {"查看实时访问", "查看完整访问报告"}
+    if event_type == "visit.report.ready.v1":
+        assert card.emphasis_title == "中等"
+        assert dict(card.details) == {
+            "停留": "2 分 6 秒",
+            "页面": "4 个",
+            "AI提问": "2 次",
+            "分享": "1 次",
+            "来源": "微信",
+            "编号": str(visit_id)[:8],
+        }
+    else:
+        assert card.emphasis_title == "实时"
+        assert dict(card.details)["状态"] == "正在浏览"
     report_url = urlsplit(message["report_url"])
     assert report_url.path == "/c/admin/wecom/entry"
     assert parse_qs(report_url.query)["return_to"] == [

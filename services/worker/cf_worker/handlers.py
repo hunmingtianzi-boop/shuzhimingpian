@@ -14,6 +14,7 @@ from cf_worker.domain import (
     OutboxRepository,
     PermanentEventError,
     ReportIntent,
+    WeComVisitCard,
 )
 
 _UUID_KEYS_BY_EVENT: dict[str, frozenset[str]] = {
@@ -264,14 +265,31 @@ class EventHandlerRegistry:
                 snapshot.engagement_level,
                 "较低",
             )
+            duration_label = _duration_label(snapshot.duration_seconds)
             title = "新访问报告已生成"
             body = (
                 f"访客在“{snapshot.card_display_name}”停留 "
-                f"{_duration_label(snapshot.duration_seconds)}，"
+                f"{duration_label}，"
                 f"浏览 {snapshot.page_count} 个页面，向 AI 提问 {snapshot.question_count} 次，"
                 f"分享 {snapshot.share_count} 次，综合意向{level_label}。"
             )
             notification_type = "visit_report_ready"
+            wecom_card = WeComVisitCard(
+                title=title,
+                subtitle=snapshot.card_display_name,
+                summary=f"{snapshot.visitor_label}已完成本次访问，关键行为已汇总。",
+                emphasis_title=level_label,
+                emphasis_description="综合意向",
+                details=(
+                    ("停留", duration_label),
+                    ("页面", f"{snapshot.page_count} 个"),
+                    ("AI提问", f"{snapshot.question_count} 次"),
+                    ("分享", f"{snapshot.share_count} 次"),
+                    ("来源", channel_label),
+                    ("编号", str(visit_id)[:8]),
+                ),
+                action_text="查看完整访问报告",
+            )
         else:
             title = "有人正在查看名片"
             body = (
@@ -279,6 +297,20 @@ class EventHandlerRegistry:
                 f"来源：{channel_label}。"
             )
             notification_type = "visit_started"
+            wecom_card = WeComVisitCard(
+                title=title,
+                subtitle=snapshot.card_display_name,
+                summary=f"{snapshot.visitor_label}通过{channel_label}进入，建议及时关注。",
+                emphasis_title="实时",
+                emphasis_description="正在访问",
+                details=(
+                    ("名片", snapshot.card_display_name),
+                    ("来源", channel_label),
+                    ("状态", "正在浏览"),
+                    ("编号", str(visit_id)[:8]),
+                ),
+                action_text="查看实时访问",
+            )
 
         notifications = (
             tuple(
@@ -297,15 +329,11 @@ class EventHandlerRegistry:
         )
         admin_base_url = self._repository.admin_base_url()
         report_entry_url = _wecom_visit_report_entry_url(admin_base_url, visit_id)
-        # The visit identifier keeps different anonymous visits distinguishable
-        # without exposing personal data in the application message.
-        wecom_description = f"{body}\n访问编号：{str(visit_id)[:8]}"
         wecom_delivered = (
             await self._repository.send_wecom_visit_notification(
                 event,
                 recipient_user_ids=snapshot.recipient_user_ids,
-                title=title,
-                description=wecom_description,
+                card=wecom_card,
                 report_url=report_entry_url,
             )
             if snapshot.wecom_enabled and report_entry_url is not None
