@@ -522,10 +522,10 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 text(
                     "INSERT INTO content_import_candidates("
                     "id,tenant_id,company_id,run_id,category,payload,source_id,"
-                    "source_text,confidence,fingerprint,status,version) VALUES ("
+                    "source_text,confidence,fingerprint,status,enrichment_status,version) VALUES ("
                     ":id,:tenant_id,:company_id,:run_id,'products',"
                     "CAST(:payload AS jsonb),'selected-product','selected evidence',"
-                    "0.95,repeat('b',64),'pending_review',1)"
+                    "0.95,repeat('b',64),'pending_review','completed',1)"
                 ),
                 {
                     "id": selected_candidate_id,
@@ -543,10 +543,10 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 text(
                     "INSERT INTO content_import_candidates("
                     "id,tenant_id,company_id,run_id,category,payload,source_id,"
-                    "source_text,confidence,fingerprint,status,version) VALUES ("
+                    "source_text,confidence,fingerprint,status,enrichment_status,version) VALUES ("
                     ":id,:tenant_id,:company_id,:run_id,'faqs',"
                     "CAST(:payload AS jsonb),'selected-faq','selected FAQ evidence',"
-                    "0.9,repeat('c',64),'pending_review',1)"
+                    "0.9,repeat('c',64),'pending_review','completed',1)"
                 ),
                 {
                     "id": selected_faq_candidate_id,

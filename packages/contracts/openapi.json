@@ -16048,6 +16048,25 @@
             ],
             "title": "Status"
           },
+          "enrichment_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "needs_review"
+            ],
+            "title": "Enrichment Status",
+            "default": "completed"
+          },
+          "field_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Field Warnings"
+          },
           "target_resource_type": {
             "anyOf": [
               {
@@ -16193,12 +16212,67 @@
             "type": "object",
             "title": "Counts"
           },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "discovering",
+              "enriching",
+              "validating",
+              "finalizing",
+              "completed",
+              "failed"
+            ],
+            "title": "Stage",
+            "default": "completed"
+          },
+          "stage_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Message"
+          },
+          "progress_current": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Progress Current",
+            "default": 1
+          },
+          "progress_total": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Progress Total",
+            "default": 1
+          },
+          "job_attempts": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Job Attempts",
+            "default": 0
+          },
           "candidates": {
             "items": {
               "$ref": "#/components/schemas/ContentImportCandidateRecord"
             },
             "type": "array",
             "title": "Candidates"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
           },
           "completed_at": {
             "anyOf": [
