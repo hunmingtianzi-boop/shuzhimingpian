@@ -75,7 +75,11 @@ export function useVisitAnalytics({
     });
   }, [cardSlug, enqueue]);
 
-  const flushDuration = useCallback((eventType: "heartbeat" | "leave", keepalive = false) => {
+  const flushDuration = useCallback((
+    eventType: "heartbeat" | "leave",
+    keepalive = false,
+    lifecycleState?: "background",
+  ) => {
     const session = sessionRef.current;
     const page = activePageRef.current;
     if (!session || !page) return;
@@ -91,6 +95,7 @@ export function useVisitAnalytics({
         page_key: page.key,
         page_title: page.title,
         duration_ms: durationMs,
+        ...(lifecycleState ? { lifecycle_state: lifecycleState } : {}),
       },
       keepalive,
     });
@@ -156,7 +161,10 @@ export function useVisitAnalytics({
     if (!enabled) return undefined;
     const visibilityChanged = () => {
       if (document.visibilityState === "hidden") {
-        flushDuration("heartbeat", true);
+        // Enterprise WeChat commonly keeps the card WebView alive when the
+        // user switches back to the workbench, so pagehide never fires. Mark
+        // that transition explicitly while keeping the visit resumable.
+        flushDuration("heartbeat", true, "background");
       } else {
         const page = activePageRef.current;
         if (page) {

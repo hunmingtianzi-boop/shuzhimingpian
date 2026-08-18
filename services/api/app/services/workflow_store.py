@@ -98,7 +98,7 @@ _OPPORTUNITY_TERMS = (
     "budget",
     "demo",
 )
-_VISIT_ACTIVE_WINDOW = timedelta(minutes=5)
+_VISIT_ACTIVE_WINDOW = timedelta(seconds=45)
 _VISITOR_CHANNELS = {"web", "wechat", "wecom"}
 _VISITOR_IDENTITY_TYPES = {
     "anonymous",
@@ -200,6 +200,16 @@ def _visit_presentation(
             visitor_identity_type=identity_type,
             visitor_identity_label=identity_label,
         )
+    if context.get("activity_state") == "background":
+        return VisitPresentation(
+            activity_status="estimated",
+            last_activity_at=last_event_at,
+            duration_seconds=max(0, int((last_event_at - visit.started_at).total_seconds())),
+            duration_estimated=True,
+            visitor_channel=visitor_channel,
+            visitor_identity_type=identity_type,
+            visitor_identity_label=identity_label,
+        )
     if last_event_at >= now - _VISIT_ACTIVE_WINDOW:
         return VisitPresentation(
             activity_status="active",
@@ -291,8 +301,11 @@ def _page_timeline(
             segment = segments[matching_index]
             segment["duration_ms"] = float(segment["duration_ms"]) + duration_ms
             segment["last_activity_at"] = max(segment["last_activity_at"], event.occurred_at)
-        if event.event_type == "leave":
-            segments[matching_index]["exit_reason"] = "leave"
+        lifecycle_state = metadata.get("lifecycle_state")
+        if event.event_type == "leave" or lifecycle_state == "background":
+            segments[matching_index]["exit_reason"] = (
+                "leave" if event.event_type == "leave" else "background"
+            )
             active_index = None
 
     if active_index is not None:
@@ -1992,6 +2005,14 @@ class WorkflowStore:
                 metadata_json=request.metadata,
             )
             session.add(event)
+            context = visit.context if isinstance(visit.context, dict) else {}
+            activity_state = (
+                "background"
+                if request.event_type == "heartbeat"
+                and request.metadata.get("lifecycle_state") == "background"
+                else "active"
+            )
+            visit.context = {**context, "activity_state": activity_state}
             if visit_started_key:
                 visit_started_already_queued = bool(
                     await session.scalar(

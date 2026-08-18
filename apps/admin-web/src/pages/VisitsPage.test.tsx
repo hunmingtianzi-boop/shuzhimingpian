@@ -1,5 +1,5 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -112,5 +112,25 @@ describe("VisitsPage visit report", () => {
     expect(screen.getByText("请留下联系方式，我们会尽快联系。")).toBeInTheDocument();
     expect(screen.getAllByText("打开联系表单").length).toBeGreaterThan(0);
     expect(screen.getByText("实际记录")).toBeInTheDocument();
+  });
+
+  it("refreshes the visit status when the workbench becomes visible again", async () => {
+    const listVisits = vi.spyOn(workflowApi, "listVisits").mockResolvedValue({
+      items: [visit], total: 1, limit: 20, offset: 0,
+    });
+    render(
+      <FluentProvider theme={adminLightTheme}>
+        <VisitsPage />
+      </FluentProvider>,
+    );
+    expect(await screen.findByText("微信访客（未识别）")).toBeInTheDocument();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(listVisits).toHaveBeenCalledTimes(2));
   });
 });

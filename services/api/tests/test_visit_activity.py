@@ -85,6 +85,37 @@ def test_recent_wecom_visit_remains_active() -> None:
     assert result.visitor_identity_label == "企业微信访客（未识别）"
 
 
+def test_recent_background_transition_is_not_shown_as_active() -> None:
+    now = datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
+    started_at = now - timedelta(minutes=2)
+
+    result = _visit_presentation(
+        _visit(started_at=started_at, context={"activity_state": "background"}),
+        last_event_at=now - timedelta(seconds=2),
+        event_count=2,
+        now=now,
+    )
+
+    assert result.activity_status == "estimated"
+    assert result.duration_seconds == 118
+    assert result.duration_estimated is True
+
+
+def test_missing_leave_falls_back_after_heartbeat_grace_period() -> None:
+    now = datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
+    started_at = now - timedelta(minutes=2)
+
+    result = _visit_presentation(
+        _visit(started_at=started_at),
+        last_event_at=now - timedelta(seconds=46),
+        event_count=2,
+        now=now,
+    )
+
+    assert result.activity_status == "estimated"
+    assert result.duration_estimated is True
+
+
 def test_explicit_leave_is_not_estimated() -> None:
     now = datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
     started_at = now - timedelta(minutes=4)
@@ -196,6 +227,50 @@ def test_page_timeline_preserves_each_navigation_segment() -> None:
     ]
     assert timeline[0].exit_reason == "navigation"
     assert timeline[1].exit_reason == "leave"
+
+
+def test_page_timeline_marks_hidden_wecom_webview_as_background() -> None:
+    now = datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
+    visit = _visit(started_at=now, context={"activity_state": "background"})
+    events = [
+        VisitEvent(
+            id=uuid.uuid4(),
+            tenant_id=visit.tenant_id,
+            company_id=visit.company_id,
+            visit_id=visit.id,
+            event_type="page_view",
+            object_type="card",
+            occurred_at=now,
+            metadata_json={"page_key": "company:overview", "page_title": "企业首页"},
+        ),
+        VisitEvent(
+            id=uuid.uuid4(),
+            tenant_id=visit.tenant_id,
+            company_id=visit.company_id,
+            visit_id=visit.id,
+            event_type="heartbeat",
+            object_type="card",
+            occurred_at=now + timedelta(seconds=12),
+            metadata_json={
+                "page_key": "company:overview",
+                "page_title": "企业首页",
+                "duration_ms": 12_000,
+                "lifecycle_state": "background",
+            },
+        ),
+    ]
+    presentation = _visit_presentation(
+        visit,
+        last_event_at=events[-1].occurred_at,
+        event_count=len(events),
+        now=now + timedelta(seconds=13),
+    )
+
+    timeline = _page_timeline(events, presentation=presentation)
+
+    assert len(timeline) == 1
+    assert timeline[0].duration_seconds == 12.0
+    assert timeline[0].exit_reason == "background"
 
 
 def test_behavior_analysis_explains_score_with_observed_and_inferred_evidence() -> None:
