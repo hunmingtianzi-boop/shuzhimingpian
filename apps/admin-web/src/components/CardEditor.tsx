@@ -58,6 +58,13 @@ export async function syncEnterpriseLogo(logoUrl: string): Promise<CompanyProfil
     profileFacts: profile.profileFacts ?? [],
     profileTags: profile.profileTags ?? [],
     profilePersonalizationPolicyVersion: profile.profilePersonalizationPolicyVersion,
+    aiOffTopicAnswerMode: profile.aiOffTopicAnswerMode,
+    aiOffTopicQuestionLimit: profile.aiOffTopicQuestionLimit,
+    visitNotificationsEnabled: profile.visitNotificationsEnabled,
+    visitReportNotificationsEnabled: profile.visitReportNotificationsEnabled,
+    visitNotificationInAppEnabled: profile.visitNotificationInAppEnabled,
+    visitNotificationWecomEnabled: profile.visitNotificationWecomEnabled,
+    visitNotificationRecipientScope: profile.visitNotificationRecipientScope,
     version: profile.version,
   });
   return { ...profile, logoUrl, version: profile.version + 1 };

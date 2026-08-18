@@ -20,6 +20,7 @@ from app.ai import (
     OpenAICompatibleEmbeddingProvider,
     ProviderCredentials,
 )
+from app.ai.off_topic import OFF_TOPIC_POLICY_SETTINGS_KEY, OffTopicPolicy
 from app.ai.protocols import EmbeddingProvider
 from app.api.admin_schemas import (
     CardProfile,
@@ -171,13 +172,26 @@ class AdminStore:
             company.normalized_name = body.name.casefold()
             company.industry = body.industry
             settings = _dict_value(company.settings)
-            policy_versions = _dict_value(settings.get("policy_versions"))
-            previous_profile_policy = _string_value(
-                policy_versions.get("profile_personalization")
-            ) or "profile-personalization-v1"
-            policy_versions["profile_personalization"] = (
-                body.profile_personalization_policy_version
+            previous_visit_notifications = _dict_value(settings.get("visit_notifications"))
+            previous_off_topic_policy = OffTopicPolicy.from_company_settings(settings)
+            off_topic_policy = OffTopicPolicy(
+                answer_mode=(
+                    previous_off_topic_policy.answer_mode
+                    if body.ai_off_topic_answer_mode is None
+                    else body.ai_off_topic_answer_mode
+                ),
+                question_limit=(
+                    previous_off_topic_policy.question_limit
+                    if body.ai_off_topic_question_limit is None
+                    else body.ai_off_topic_question_limit
+                ),
             )
+            policy_versions = _dict_value(settings.get("policy_versions"))
+            previous_profile_policy = (
+                _string_value(policy_versions.get("profile_personalization"))
+                or "profile-personalization-v1"
+            )
+            policy_versions["profile_personalization"] = body.profile_personalization_policy_version
             settings.update(
                 {
                     "summary": body.summary,
@@ -188,6 +202,35 @@ class AdminStore:
                     "profile_facts": [fact.model_dump(mode="json") for fact in body.profile_facts],
                     "profile_tags": list(body.profile_tags),
                     "policy_versions": policy_versions,
+                    OFF_TOPIC_POLICY_SETTINGS_KEY: off_topic_policy.as_company_setting(),
+                    "visit_notifications": {
+                        "enabled": (
+                            previous_visit_notifications.get("enabled") is not False
+                            if body.visit_notifications_enabled is None
+                            else body.visit_notifications_enabled
+                        ),
+                        "report_enabled": (
+                            previous_visit_notifications.get("report_enabled") is not False
+                            if body.visit_report_notifications_enabled is None
+                            else body.visit_report_notifications_enabled
+                        ),
+                        "in_app_enabled": (
+                            previous_visit_notifications.get("in_app_enabled") is not False
+                            if body.visit_notification_in_app_enabled is None
+                            else body.visit_notification_in_app_enabled
+                        ),
+                        "wecom_enabled": (
+                            previous_visit_notifications.get("wecom_enabled") is not False
+                            if body.visit_notification_wecom_enabled is None
+                            else body.visit_notification_wecom_enabled
+                        ),
+                        "recipient_scope": (
+                            previous_visit_notifications.get("recipient_scope", "both")
+                            if body.visit_notification_recipient_scope is None
+                            else body.visit_notification_recipient_scope
+                        ),
+                        "idle_minutes": 5,
+                    },
                 }
             )
             company.settings = settings
@@ -202,9 +245,11 @@ class AdminStore:
                 event_data={
                     "version": company.version,
                     "profile_policy_changed": (
-                        previous_profile_policy
-                        != body.profile_personalization_policy_version
+                        previous_profile_policy != body.profile_personalization_policy_version
                     ),
+                    "ai_off_topic_policy_changed": (previous_off_topic_policy != off_topic_policy),
+                    "ai_off_topic_answer_mode": off_topic_policy.answer_mode.value,
+                    "ai_off_topic_question_limit": off_topic_policy.question_limit,
                 },
             )
             await session.flush()
@@ -1176,10 +1221,7 @@ class AdminStore:
         answer_parts: dict[uuid.UUID, list[str]] = {}
         for row in rows:
             answer_parts.setdefault(uuid.UUID(str(row.document_id)), []).append(str(row.text))
-        return {
-            document_id: "\n\n".join(parts)
-            for document_id, parts in answer_parts.items()
-        }
+        return {document_id: "\n\n".join(parts) for document_id, parts in answer_parts.items()}
 
     async def _version_summary(
         self,
@@ -1306,6 +1348,11 @@ def validate_embedding_vectors(
 def _company_profile(company: Company) -> CompanyProfile:
     settings = _dict_value(company.settings)
     policy_versions = _dict_value(settings.get("policy_versions"))
+    off_topic_policy = OffTopicPolicy.from_company_settings(settings)
+    visit_notifications = _dict_value(settings.get("visit_notifications"))
+    recipient_scope = _string_value(visit_notifications.get("recipient_scope"))
+    if recipient_scope not in {"admins", "responsible", "both"}:
+        recipient_scope = "both"
     return CompanyProfile(
         id=company.id,
         name=company.name,
@@ -1321,10 +1368,15 @@ def _company_profile(company: Company) -> CompanyProfile:
             _string_value(policy_versions.get("profile_personalization"))
             or "profile-personalization-v1"
         ),
+        ai_off_topic_answer_mode=off_topic_policy.answer_mode,
+        ai_off_topic_question_limit=off_topic_policy.question_limit,
+        visit_notifications_enabled=visit_notifications.get("enabled") is not False,
+        visit_report_notifications_enabled=visit_notifications.get("report_enabled") is not False,
+        visit_notification_in_app_enabled=visit_notifications.get("in_app_enabled") is not False,
+        visit_notification_wecom_enabled=visit_notifications.get("wecom_enabled") is not False,
+        visit_notification_recipient_scope=recipient_scope,
         status=company.status.value,
-        onboarding_status=(
-            _string_value(settings.get("onboarding_status")) or "content_pending"
-        ),
+        onboarding_status=(_string_value(settings.get("onboarding_status")) or "content_pending"),
         version=company.version,
         updated_at=company.updated_at,
     )
@@ -1355,9 +1407,7 @@ def _card_profile(card: Card) -> CardProfile:
             else {}
         ),
         status=card.status.value,
-        onboarding_status=(
-            _string_value(settings.get("onboarding_status")) or "content_pending"
-        ),
+        onboarding_status=(_string_value(settings.get("onboarding_status")) or "content_pending"),
         published_at=card.published_at,
         version=card.version,
         updated_at=card.updated_at,

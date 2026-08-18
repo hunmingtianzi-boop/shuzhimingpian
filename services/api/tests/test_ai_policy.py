@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.ai import ChatMessage, RefusalCode, RetrievedEvidence, StructuredModelAnswer
+from app.ai.off_topic import OffTopicAnswerMode, OffTopicPolicy
 from app.ai.policy import (
     EvidenceGate,
     EvidenceGateConfig,
@@ -22,6 +23,27 @@ def _evidence(text: str, *, evidence_id: str = "ev-1", score: float = 0.03) -> R
         score=score,
         metadata={"authoritative": True},
     )
+
+
+def test_off_topic_policy_defaults_and_clamps_company_settings() -> None:
+    assert OffTopicPolicy.from_company_settings({}) == OffTopicPolicy()
+    assert OffTopicPolicy.from_company_settings(
+        {
+            "ai_assistant_policy": {
+                "off_topic_answer_mode": "blocked",
+                "off_topic_question_limit": 99,
+            }
+        }
+    ) == OffTopicPolicy(answer_mode=OffTopicAnswerMode.BLOCKED, question_limit=10)
+    assert OffTopicPolicy.from_company_settings(
+        {"ai_assistant_policy": {"off_topic_question_limit": "invalid"}}
+    ) == OffTopicPolicy(answer_mode=OffTopicAnswerMode.LIMITED, question_limit=3)
+
+
+def test_off_topic_policy_reads_legacy_boolean_switch() -> None:
+    assert OffTopicPolicy.from_company_settings(
+        {"ai_assistant_policy": {"allow_off_topic_questions": False}}
+    ).answer_mode is OffTopicAnswerMode.BLOCKED
 
 
 def test_question_scope_keeps_enterprise_topics_inside_the_evidence_boundary() -> None:

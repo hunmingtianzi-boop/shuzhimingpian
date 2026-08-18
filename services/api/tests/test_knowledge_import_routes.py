@@ -133,6 +133,20 @@ def test_upload_accepts_display_name_and_batch_can_be_renamed(client) -> None:
     assert store.calls[-1][0] == "rename"
 
 
+def test_upload_accepts_more_than_five_files(client) -> None:
+    test_client, store, _ = client
+    files = [
+        ("files", (f"note-{index}.txt", f"资料 {index}", "text/plain"))
+        for index in range(8)
+    ]
+
+    response = test_client.post("/api/v1/admin/knowledge/imports", files=files)
+
+    assert response.status_code == 202
+    assert len(store.calls[0][1]["items"]) == 8
+    assert response.json()["data"]["total_items"] == 8
+
+
 def test_upload_rejects_unsupported_file_and_missing_permission(client) -> None:
     test_client, _, principal = client
     response = test_client.post(

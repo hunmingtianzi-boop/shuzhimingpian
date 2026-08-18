@@ -17,6 +17,7 @@ from app.api.admin_schemas import (
     KnowledgePublishResult,
     KnowledgeVersionSummary,
     SelectableFaqRecord,
+    UpdateCompanyProfileRequest,
 )
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError, api_error_handler
@@ -45,7 +46,12 @@ class RouteStore:
     async def update_company_profile(self, **kwargs: Any) -> CompanyProfile:
         self.calls.append(("update_company", kwargs))
         self.company = self.company.model_copy(
-            update={"name": kwargs["body"].name, "version": kwargs["expected_version"] + 1}
+            update={
+                "name": kwargs["body"].name,
+                "ai_off_topic_answer_mode": (kwargs["body"].ai_off_topic_answer_mode),
+                "ai_off_topic_question_limit": (kwargs["body"].ai_off_topic_question_limit),
+                "version": kwargs["expected_version"] + 1,
+            }
         )
         return self.company
 
@@ -63,9 +69,7 @@ class RouteStore:
         )
         return self.card
 
-    async def complete_enterprise_setup(
-        self, **kwargs: Any
-    ) -> tuple[CompanyProfile, CardProfile]:
+    async def complete_enterprise_setup(self, **kwargs: Any) -> tuple[CompanyProfile, CardProfile]:
         self.calls.append(("complete_setup", kwargs))
         self.company = self.company.model_copy(
             update={"onboarding_status": "completed", "version": self.company.version + 1}
@@ -269,6 +273,8 @@ def test_company_profile_uses_etag_and_if_match_version(
             "website": "https://example.org",
             "logo_url": "/api/v1/public/card-assets/company/logo.webp",
             "profile_personalization_policy_version": "profile-personalization-v2",
+            "ai_off_topic_answer_mode": "unlimited",
+            "ai_off_topic_question_limit": 6,
         },
     )
 
@@ -277,11 +283,29 @@ def test_company_profile_uses_etag_and_if_match_version(
     assert put_response.status_code == 200
     assert put_response.headers["etag"] == '"8"'
     assert put_response.json()["data"]["name"] == "更新后的企业"
+    assert put_response.json()["data"]["ai_off_topic_answer_mode"] == "unlimited"
+    assert put_response.json()["data"]["ai_off_topic_question_limit"] == 6
     update_call = next(payload for name, payload in store.calls if name == "update_company")
     assert update_call["expected_version"] == 7
-    assert update_call["body"].logo_url == (
-        "/api/v1/public/card-assets/company/logo.webp"
+    assert update_call["body"].logo_url == ("/api/v1/public/card-assets/company/logo.webp")
+    assert update_call["body"].ai_off_topic_answer_mode == "unlimited"
+    assert update_call["body"].ai_off_topic_question_limit == 6
+
+
+def test_legacy_company_update_does_not_reset_ai_answer_boundary() -> None:
+    body = UpdateCompanyProfileRequest(
+        name="示例企业",
+        summary="企业简介",
+        profile_personalization_policy_version="profile-personalization-v1",
     )
+
+    assert body.ai_off_topic_answer_mode is None
+    assert body.ai_off_topic_question_limit is None
+    assert body.visit_notifications_enabled is None
+    assert body.visit_report_notifications_enabled is None
+    assert body.visit_notification_in_app_enabled is None
+    assert body.visit_notification_wecom_enabled is None
+    assert body.visit_notification_recipient_scope is None
 
 
 def test_card_uses_etag_and_if_match_version(
@@ -314,9 +338,7 @@ def test_card_uses_etag_and_if_match_version(
     assert put_response.headers["etag"] == '"5"'
     update_call = next(payload for name, payload in store.calls if name == "update_card")
     assert update_call["expected_version"] == 4
-    assert update_call["body"].avatar_url == (
-        "/api/v1/public/card-assets/company/avatar.webp"
-    )
+    assert update_call["body"].avatar_url == ("/api/v1/public/card-assets/company/avatar.webp")
 
 
 def test_admin_asset_urls_reject_unsafe_remote_destinations(

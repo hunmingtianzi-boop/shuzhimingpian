@@ -1188,7 +1188,7 @@ export function PlatformOnboardingPage({
                   />
                 </Field>
                 <p>
-                  每批 1–5 个，单文件不超过 10 MiB、批次不超过 25 MiB。目标企业只由服务端会话推导。
+                  可一次选择多个文件，不限制单文件或批次大小。目标企业只由服务端会话推导。
                 </p>
                 <Button
                   appearance="primary"

@@ -15582,9 +15582,77 @@
             ],
             "title": "Logo Url"
           },
+          "positioning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positioning"
+          },
+          "profile_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyProfileFact"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Profile Facts"
+          },
+          "profile_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Profile Tags"
+          },
           "profile_personalization_policy_version": {
             "type": "string",
             "title": "Profile Personalization Policy Version"
+          },
+          "ai_off_topic_answer_mode": {
+            "$ref": "#/components/schemas/OffTopicAnswerMode",
+            "default": "limited"
+          },
+          "ai_off_topic_question_limit": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Ai Off Topic Question Limit",
+            "default": 3
+          },
+          "visit_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Notifications Enabled",
+            "default": true
+          },
+          "visit_report_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Report Notifications Enabled",
+            "default": true
+          },
+          "visit_notification_in_app_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification In App Enabled",
+            "default": true
+          },
+          "visit_notification_wecom_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification Wecom Enabled",
+            "default": true
+          },
+          "visit_notification_recipient_scope": {
+            "type": "string",
+            "enum": [
+              "admins",
+              "responsible",
+              "both"
+            ],
+            "title": "Visit Notification Recipient Scope",
+            "default": "both"
           },
           "status": {
             "type": "string",
@@ -15631,6 +15699,37 @@
           "data"
         ],
         "title": "CompanyProfileEnvelope"
+      },
+      "CompanyProfileFact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 24,
+            "minLength": 1,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "value"
+        ],
+        "title": "CompanyProfileFact"
       },
       "ConfirmPlatformOnboardingRequest": {
         "properties": {
@@ -16509,6 +16608,26 @@
             "maxItems": 8,
             "title": "Identity Titles"
           },
+          "identity_positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Positioning"
+          },
+          "identity_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Identity Tags"
+          },
           "contact_fields": {
             "items": {
               "$ref": "#/components/schemas/CardContactItem"
@@ -16995,6 +17114,34 @@
             ],
             "title": "Business Summary"
           },
+          "public_positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Positioning"
+          },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Identity Titles"
+          },
+          "professional_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Professional Tags"
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -17138,10 +17285,10 @@
           },
           "max_output_tokens": {
             "type": "integer",
-            "maximum": 8192.0,
+            "maximum": 65536.0,
             "minimum": 128.0,
             "title": "Max Output Tokens",
-            "default": 1000
+            "default": 32768
           },
           "temperature": {
             "type": "number",
@@ -18196,6 +18343,10 @@
                 "type": "string",
                 "enum": [
                   "external",
+                  "phone",
+                  "mail",
+                  "message",
+                  "map",
                   "building",
                   "calendar",
                   "file",
@@ -18493,6 +18644,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "quick",
                   "shortcuts",
                   "media",
                   "event",
@@ -18679,6 +18831,28 @@
               }
             ],
             "title": "Cta Url"
+          },
+          "cta_icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "external",
+                  "phone",
+                  "mail",
+                  "message",
+                  "map",
+                  "building",
+                  "calendar",
+                  "file",
+                  "play"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cta Icon"
           },
           "action_items": {
             "items": {
@@ -21889,6 +22063,26 @@
             "maxItems": 8,
             "title": "Identity Titles"
           },
+          "identity_positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Positioning"
+          },
+          "identity_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Identity Tags"
+          },
           "contact_fields": {
             "items": {
               "$ref": "#/components/schemas/CardContactItem"
@@ -22102,6 +22296,33 @@
               }
             ],
             "title": "Business Summary"
+          },
+          "public_positioning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Positioning"
+          },
+          "identity_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Identity Titles"
+          },
+          "professional_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Professional Tags"
           },
           "email": {
             "anyOf": [
@@ -22380,6 +22601,15 @@
           "created_at"
         ],
         "title": "NotificationView"
+      },
+      "OffTopicAnswerMode": {
+        "type": "string",
+        "enum": [
+          "blocked",
+          "limited",
+          "unlimited"
+        ],
+        "title": "OffTopicAnswerMode"
       },
       "OpportunityCandidateListEnvelope": {
         "properties": {
@@ -23363,7 +23593,7 @@
           "max_output_tokens": {
             "type": "integer",
             "title": "Max Output Tokens",
-            "default": 1000
+            "default": 32768
           },
           "temperature": {
             "type": "number",
@@ -24659,6 +24889,25 @@
             "maxItems": 8,
             "title": "Identity Titles"
           },
+          "identity_positioning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Positioning"
+          },
+          "identity_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Identity Tags"
+          },
           "contact_fields": {
             "items": {
               "additionalProperties": {
@@ -24937,6 +25186,36 @@
               }
             ],
             "title": "Logo Url"
+          },
+          "positioning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positioning"
+          },
+          "profile_facts": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Profile Facts"
+          },
+          "profile_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Profile Tags"
           },
           "official_card_slug": {
             "anyOf": [
@@ -26811,11 +27090,122 @@
             ],
             "title": "Logo Url"
           },
+          "positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positioning"
+          },
+          "profile_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyProfileFact"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Profile Facts"
+          },
+          "profile_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Profile Tags"
+          },
           "profile_personalization_policy_version": {
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
             "title": "Profile Personalization Policy Version"
+          },
+          "ai_off_topic_answer_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffTopicAnswerMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ai_off_topic_question_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Off Topic Question Limit"
+          },
+          "visit_notifications_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Notifications Enabled"
+          },
+          "visit_report_notifications_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Report Notifications Enabled"
+          },
+          "visit_notification_in_app_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Notification In App Enabled"
+          },
+          "visit_notification_wecom_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Notification Wecom Enabled"
+          },
+          "visit_notification_recipient_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "admins",
+                  "responsible",
+                  "both"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Notification Recipient Scope"
           }
         },
         "additionalProperties": false,
@@ -27058,6 +27448,26 @@
             "maxItems": 8,
             "title": "Identity Titles"
           },
+          "identity_positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Positioning"
+          },
+          "identity_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Identity Tags"
+          },
           "contact_fields": {
             "items": {
               "$ref": "#/components/schemas/CardContactItem"
@@ -27158,6 +27568,48 @@
               }
             ],
             "title": "Business Summary"
+          },
+          "public_positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Positioning"
+          },
+          "identity_titles": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Titles"
+          },
+          "professional_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Professional Tags"
           },
           "email": {
             "anyOf": [
@@ -27383,7 +27835,7 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 8192.0,
+                "maximum": 65536.0,
                 "minimum": 128.0
               },
               {

@@ -267,7 +267,10 @@ export function VisitsPage() {
   const [offset, setOffset] = useState(0);
   const [cardDraft, setCardDraft] = useState("");
   const [cardId, setCardId] = useState("");
-  const [selectedVisitId, setSelectedVisitId] = useState<string>();
+  const [selectedVisitId, setSelectedVisitId] = useState<string | undefined>(() => {
+    const value = new URLSearchParams(window.location.search).get("visitId")?.trim();
+    return value || undefined;
+  });
   const resource = useResource(
     () =>
       workflowApi.listVisits({

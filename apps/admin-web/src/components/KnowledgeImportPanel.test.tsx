@@ -24,12 +24,12 @@ function renderPanel(props: React.ComponentProps<typeof KnowledgeImportPanel> = 
 }
 
 describe("validateKnowledgeImportFiles", () => {
-  it("rejects unsupported, oversized and over-count selections before upload", () => {
+  it("rejects unsupported formats but accepts large and multi-file selections", () => {
     expect(validateKnowledgeImportFiles([new File(["x"], "unsafe.exe")])).toMatch(/不支持文件/);
     expect(validateKnowledgeImportFiles([new File(["x"], "deck.pptx")])).toBeUndefined();
     expect(validateKnowledgeImportFiles([new File(["x"], "scan.webp")])).toBeUndefined();
-    expect(validateKnowledgeImportFiles([new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.pdf")])).toMatch(/超过 10 MiB/);
-    expect(validateKnowledgeImportFiles(Array.from({ length: 6 }, (_, index) => new File(["x"], `${index}.csv`)))).toMatch(/最多/);
+    expect(validateKnowledgeImportFiles([new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.pdf")])).toBeUndefined();
+    expect(validateKnowledgeImportFiles(Array.from({ length: 8 }, (_, index) => new File(["x"], `${index}.csv`)))).toBeUndefined();
   });
 });
 
@@ -38,7 +38,10 @@ describe("KnowledgeImportPanel", () => {
     vi.spyOn(knowledgeImportsApi, "list").mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
     vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue({
       name: "拓浙 AI 集团", summary: "", industry: "AI", region: "杭州", website: "https://tuozhe.example.com",
-      logoUrl: "", profilePersonalizationPolicyVersion: "v1", version: 1,
+      logoUrl: "", profilePersonalizationPolicyVersion: "v1", aiOffTopicAnswerMode: "limited",
+      aiOffTopicQuestionLimit: 3, visitNotificationsEnabled: true,
+      visitReportNotificationsEnabled: true, visitNotificationInAppEnabled: true,
+      visitNotificationWecomEnabled: true, visitNotificationRecipientScope: "both", version: 1,
     });
   });
   afterEach(() => vi.restoreAllMocks());

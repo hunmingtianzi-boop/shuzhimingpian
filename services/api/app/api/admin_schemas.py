@@ -6,6 +6,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from app.ai.off_topic import (
+    DEFAULT_OFF_TOPIC_QUESTION_LIMIT,
+    MAX_OFF_TOPIC_QUESTION_LIMIT,
+    MIN_OFF_TOPIC_QUESTION_LIMIT,
+    OffTopicAnswerMode,
+)
 from app.api.catalog_schemas import validate_safe_asset_url
 from app.core.text_integrity import ensure_text_tree
 
@@ -44,6 +50,17 @@ class CompanyProfile(AdminStrictModel):
     profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
     profile_tags: list[str] = Field(default_factory=list, max_length=3)
     profile_personalization_policy_version: str
+    ai_off_topic_answer_mode: OffTopicAnswerMode = OffTopicAnswerMode.LIMITED
+    ai_off_topic_question_limit: int = Field(
+        default=DEFAULT_OFF_TOPIC_QUESTION_LIMIT,
+        ge=MIN_OFF_TOPIC_QUESTION_LIMIT,
+        le=MAX_OFF_TOPIC_QUESTION_LIMIT,
+    )
+    visit_notifications_enabled: bool = True
+    visit_report_notifications_enabled: bool = True
+    visit_notification_in_app_enabled: bool = True
+    visit_notification_wecom_enabled: bool = True
+    visit_notification_recipient_scope: Literal["admins", "responsible", "both"] = "both"
     status: str
     onboarding_status: str
     version: int = Field(ge=1)
@@ -65,6 +82,17 @@ class UpdateCompanyProfileRequest(AdminStrictModel):
     profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
     profile_tags: list[str] = Field(default_factory=list, max_length=3)
     profile_personalization_policy_version: str = Field(min_length=1, max_length=64)
+    ai_off_topic_answer_mode: OffTopicAnswerMode | None = None
+    ai_off_topic_question_limit: int | None = Field(
+        default=None,
+        ge=MIN_OFF_TOPIC_QUESTION_LIMIT,
+        le=MAX_OFF_TOPIC_QUESTION_LIMIT,
+    )
+    visit_notifications_enabled: bool | None = None
+    visit_report_notifications_enabled: bool | None = None
+    visit_notification_in_app_enabled: bool | None = None
+    visit_notification_wecom_enabled: bool | None = None
+    visit_notification_recipient_scope: Literal["admins", "responsible", "both"] | None = None
 
     _validate_logo_url = field_validator("logo_url")(validate_safe_asset_url)
 

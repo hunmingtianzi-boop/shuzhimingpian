@@ -180,6 +180,20 @@ def test_office_and_html_formats_extract_text_without_network_access() -> None:
     assert "ignore" not in parse_payload("html", "page.html", html)[0].raw_text
 
 
+def test_extracted_document_controls_are_normalized_instead_of_rejected() -> None:
+    draft = parse_payload("txt", "report.txt", b"first page\x0csecond page\x00end")[0]
+
+    assert draft.raw_text == "first page\nsecond page\nend"
+    assert "\x0c" not in draft.raw_text
+    assert "\x00" not in draft.raw_text
+
+
+def test_upload_validation_has_no_application_file_size_limit() -> None:
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+
+    assert validate_upload("large.txt", "text/plain", payload) == "txt"
+
+
 @pytest.mark.parametrize("name", ["../file.csv", "folder/file.csv", "folder\\file.csv", ""])
 def test_unsafe_file_names_are_rejected(name: str) -> None:
     with pytest.raises(KnowledgeImportError, match="IMPORT_UNSAFE_FILENAME"):

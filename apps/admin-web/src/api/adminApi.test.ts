@@ -370,6 +370,13 @@ describe("adminApi real contract", () => {
       profileFacts: [],
       profileTags: [],
       profilePersonalizationPolicyVersion: "profile-personalization-v2",
+      aiOffTopicAnswerMode: "unlimited",
+      aiOffTopicQuestionLimit: 5,
+      visitNotificationsEnabled: true,
+      visitReportNotificationsEnabled: true,
+      visitNotificationInAppEnabled: true,
+      visitNotificationWecomEnabled: false,
+      visitNotificationRecipientScope: "admins",
       version: 7,
     });
     await api.updateCard({
@@ -404,6 +411,13 @@ describe("adminApi real contract", () => {
       profile_facts: [],
       profile_tags: [],
       profile_personalization_policy_version: "profile-personalization-v2",
+      ai_off_topic_answer_mode: "unlimited",
+      ai_off_topic_question_limit: 5,
+      visit_notifications_enabled: true,
+      visit_report_notifications_enabled: true,
+      visit_notification_in_app_enabled: true,
+      visit_notification_wecom_enabled: false,
+      visit_notification_recipient_scope: "admins",
     });
 
     const cardRequest = fetcher.mock.calls[2];

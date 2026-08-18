@@ -1,5 +1,12 @@
 import { FluentProvider } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  waitForElementToBeRemoved,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adminApi } from "../api/adminApi";
 import type {
   CaseStudy,
+  CompanyProfile,
   EnterpriseTemplate,
   EnterpriseTemplateBlock,
   ManagedCard,
@@ -85,7 +93,7 @@ const publishedCase: CaseStudy = {
   version: 2,
 };
 
-const companyProfile = {
+const companyProfile: CompanyProfile = {
   id: "company-1",
   name: "拓途商务",
   summary: "企业数字化服务",
@@ -94,6 +102,13 @@ const companyProfile = {
   website: "https://tuotu.example.test",
   logoUrl: "/api/v1/public/card-assets/company-1/company-logo.webp",
   profilePersonalizationPolicyVersion: "profile-v1",
+  aiOffTopicAnswerMode: "limited",
+  aiOffTopicQuestionLimit: 3,
+  visitNotificationsEnabled: true,
+  visitReportNotificationsEnabled: true,
+  visitNotificationInAppEnabled: true,
+  visitNotificationWecomEnabled: true,
+  visitNotificationRecipientScope: "both",
   version: 3,
 };
 
@@ -468,7 +483,9 @@ describe("EnterpriseTemplateEditor", () => {
     expect(update.mock.calls[0][3].map((block) => block.sortOrder)).toEqual([0, 1]);
     expect(update.mock.calls[0][3][0]).toEqual(expect.objectContaining({ id: "rich-1", visible: false }));
     expect(update.mock.calls[0][3][1]).toEqual(expect.objectContaining({ id: "identity", visible: true }));
-    expect(await screen.findByText("草稿已保存，公开页仍保持上一次发布内容。")).toBeInTheDocument();
+    const savedNotice = await screen.findByText("草稿已保存，公开页仍保持上一次发布内容。");
+    expect(savedNotice).toBeInTheDocument();
+    await waitForElementToBeRemoved(savedNotice, { timeout: 5_000 });
   }, 15_000);
 
   it("uploads gallery images through the existing asset service before saving", async () => {

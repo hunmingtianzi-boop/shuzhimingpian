@@ -194,6 +194,16 @@ def classify_question_scope(
     return QuestionScope.AMBIGUOUS
 
 
+def is_social_message(text: str) -> bool:
+    """Return whether a general turn is a greeting or acknowledgement.
+
+    These lightweight social turns remain available after the off-topic
+    question allowance is exhausted and do not consume that allowance.
+    """
+
+    return bool(_GREETING_OR_ACK_PATTERN.fullmatch(_normalize_input(text)))
+
+
 def _classify_scope_without_history(text: str) -> QuestionScope:
     if _GREETING_OR_ACK_PATTERN.fullmatch(text):
         return QuestionScope.GENERAL

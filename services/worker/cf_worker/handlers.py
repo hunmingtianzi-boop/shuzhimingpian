@@ -21,12 +21,10 @@ _UUID_KEYS_BY_EVENT: dict[str, frozenset[str]] = {
     "lead.created.v1": frozenset({"lead_id", "card_id", "owner_user_id"}),
     "privacy_request.created.v1": frozenset({"privacy_request_id"}),
     "enterprise.created.v1": frozenset({"tenant_id", "company_id", "admin_user_id"}),
-    "visit_summary.ready.v1": frozenset(
-        {"summary_id", "conversation_id", "owner_user_id"}
-    ),
-    "visit_summary.generated.v1": frozenset(
-        {"summary_id", "conversation_id", "owner_user_id"}
-    ),
+    "visit_summary.ready.v1": frozenset({"summary_id", "conversation_id", "owner_user_id"}),
+    "visit_summary.generated.v1": frozenset({"summary_id", "conversation_id", "owner_user_id"}),
+    "visit.started.v1": frozenset({"visit_id", "card_id"}),
+    "visit.report.ready.v1": frozenset({"visit_id", "card_id"}),
 }
 _OPTIONAL_KEYS_BY_EVENT: dict[str, frozenset[str]] = {
     "privacy_request.created.v1": frozenset({"request_type"}),
@@ -55,6 +53,8 @@ class EventHandlerRegistry:
             return self._enterprise(event, payload)
         if event.event_type in {"visit_summary.ready.v1", "visit_summary.generated.v1"}:
             return await self._visit_summary(event, payload)
+        if event.event_type in {"visit.started.v1", "visit.report.ready.v1"}:
+            return await self._visit_notification(event, payload)
         raise PermanentEventError("unsupported_event_type")
 
     async def _data_export(
@@ -217,9 +217,7 @@ class EventHandlerRegistry:
         _uuid_value(payload, "conversation_id")
         raw_owner = payload.get("owner_user_id")
         recipient = (
-            _as_uuid(raw_owner)
-            if raw_owner
-            else await self._repository.summary_recipient(event)
+            _as_uuid(raw_owner) if raw_owner else await self._repository.summary_recipient(event)
         )
         if recipient is None:
             raise PermanentEventError("summary_recipient_not_found")
@@ -235,6 +233,92 @@ class EventHandlerRegistry:
                     resource_id=summary_id,
                 ),
             ),
+        )
+
+    async def _visit_notification(
+        self,
+        event: OutboxRecord,
+        payload: Mapping[str, Any],
+    ) -> HandlerResult:
+        visit_id = _uuid_value(payload, "visit_id")
+        _uuid_value(payload, "card_id")
+        if event.aggregate_type != "visit" or event.aggregate_id != visit_id:
+            raise PermanentEventError("payload_aggregate_mismatch")
+        report = event.event_type == "visit.report.ready.v1"
+        snapshot = await self._repository.visit_notification_snapshot(
+            event,
+            visit_id=visit_id,
+            report=report,
+        )
+        if snapshot is None:
+            raise PermanentEventError("visit_not_found")
+
+        channel_label = {
+            "web": "网页",
+            "wechat": "微信",
+            "wecom": "企业微信",
+        }.get(snapshot.visitor_channel, "网页")
+        if report:
+            level_label = {"low": "较低", "medium": "中等", "high": "较高"}.get(
+                snapshot.engagement_level,
+                "较低",
+            )
+            title = "新访问报告已生成"
+            body = (
+                f"访客在“{snapshot.card_display_name}”停留 "
+                f"{_duration_label(snapshot.duration_seconds)}，"
+                f"浏览 {snapshot.page_count} 个页面，向 AI 提问 {snapshot.question_count} 次，"
+                f"分享 {snapshot.share_count} 次，综合意向{level_label}。"
+            )
+            notification_type = "visit_report_ready"
+        else:
+            title = "有人正在查看名片"
+            body = (
+                f"{snapshot.visitor_label}正在查看“{snapshot.card_display_name}”，"
+                f"来源：{channel_label}。"
+            )
+            notification_type = "visit_started"
+
+        notifications = (
+            tuple(
+                NotificationIntent(
+                    recipient_user_id=recipient,
+                    notification_type=notification_type,
+                    title=title,
+                    body=body,
+                    resource_type="visit",
+                    resource_id=visit_id,
+                )
+                for recipient in snapshot.recipient_user_ids
+            )
+            if snapshot.in_app_enabled
+            else ()
+        )
+        # Including the visit identifier prevents WeCom from treating two different
+        # anonymous visitors as duplicate messages while keeping retries idempotent.
+        wecom_content = f"{title}\n{body}\n访问编号：{str(visit_id)[:8]}"
+        admin_base_url = self._repository.admin_base_url()
+        if admin_base_url:
+            wecom_content += f"\n查看报告：{admin_base_url.rstrip('/')}/visits?visitId={visit_id}"
+        wecom_delivered = (
+            await self._repository.send_wecom_visit_notification(
+                event,
+                recipient_user_ids=snapshot.recipient_user_ids,
+                content=wecom_content,
+            )
+            if snapshot.wecom_enabled
+            else 0
+        )
+        return HandlerResult(
+            handler_name=(
+                "visit-report-notification-v1" if report else "visit-started-notification-v1"
+            ),
+            notifications=notifications,
+            metadata={
+                "recipient_count": len(snapshot.recipient_user_ids),
+                "wecom_delivered": wecom_delivered,
+                "suppressed": not snapshot.in_app_enabled and not snapshot.wecom_enabled,
+            },
         )
 
 
@@ -254,6 +338,14 @@ def _validated_payload(event: OutboxRecord) -> dict[str, Any]:
     for key in required & set(event.payload):
         _uuid_value(event.payload, key)
     return dict(event.payload)
+
+
+def _duration_label(seconds: float) -> str:
+    rounded = max(0, round(seconds))
+    if rounded < 60:
+        return f"{rounded} 秒"
+    minutes, remaining = divmod(rounded, 60)
+    return f"{minutes} 分 {remaining} 秒" if remaining else f"{minutes} 分"
 
 
 def _uuid_value(payload: Mapping[str, Any], key: str) -> uuid.UUID:

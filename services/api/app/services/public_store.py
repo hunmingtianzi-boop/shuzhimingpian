@@ -15,6 +15,7 @@ from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.off_topic import OffTopicPolicy
 from app.ai.schemas import AIAnswer, ChatMessage, ForbiddenTopicPolicy, RefusalCode
 from app.api.catalog_schemas import EnterpriseTemplateDocument
 from app.api.errors import ApiError
@@ -153,6 +154,12 @@ class StoredAnswer:
     finish_reason: Literal["stop", "refusal", "length", "content_filter"]
     citations: tuple[StoredCitation, ...]
     lead_prompt: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CompanyChatContext:
+    company_name: str
+    off_topic_policy: OffTopicPolicy
 
 
 def canonical_request_hash(action: str, payload: dict[str, Any]) -> str:
@@ -1010,6 +1017,38 @@ class PublicStore:
             ChatMessage(role=item.role.value, content=item.content[:600]) for item in reversed(rows)
         )
 
+    async def load_off_topic_question_count(
+        self,
+        *,
+        prepared: PreparedMessage,
+        principal: VisitorPrincipal,
+    ) -> int:
+        """Count prior server-classified off-topic turns in this conversation."""
+
+        async with self._sessions() as session, session.begin():
+            await self._set_principal_scope(session, principal)
+            rows = (
+                (
+                    await session.execute(
+                        select(AIRun.retrieval_result)
+                        .join(Message, Message.id == AIRun.message_id)
+                        .where(
+                            Message.conversation_id == prepared.conversation_id,
+                            AIRun.status.in_(
+                                (MessageStatus.COMPLETED, MessageStatus.REFUSED)
+                            ),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return sum(
+            1
+            for result in rows
+            if isinstance(result, dict) and result.get("off_topic_question") is True
+        )
+
     async def persist_ai_answer(
         self,
         *,
@@ -1105,6 +1144,15 @@ class PublicStore:
                     "mode": result.trace.retrieval_mode,
                     "count": result.trace.retrieval_count,
                     "citation_count": result.trace.citation_count,
+                    "question_scope": result.trace.extra.get(
+                        "question_scope", "not_applicable"
+                    ),
+                    "off_topic_question": bool(
+                        result.trace.extra.get("off_topic_question", False)
+                    ),
+                    "prior_off_topic_question_count": int(
+                        result.trace.extra.get("prior_off_topic_question_count", 0)
+                    ),
                     "query_complexity": result.trace.extra.get(
                         "query_complexity", "not_applicable"
                     ),
@@ -1178,7 +1226,10 @@ class PublicStore:
             # Every answer that cannot be grounded should become an auditable
             # knowledge-operations item. Policy refusals are deliberately not
             # knowledge gaps: adding material must never bypass a forbidden-topic rule.
-            if result.refusal and result.refusal.code != RefusalCode.FORBIDDEN_TOPIC:
+            if result.refusal and result.refusal.code not in {
+                RefusalCode.FORBIDDEN_TOPIC,
+                RefusalCode.OFF_TOPIC_LIMIT,
+            }:
                 await self._upsert_knowledge_gap(
                     session,
                     principal=principal,
@@ -1201,7 +1252,9 @@ class PublicStore:
                 ),
             )
 
-    async def load_company_name(self, *, principal: VisitorPrincipal) -> str:
+    async def load_company_chat_context(
+        self, *, principal: VisitorPrincipal
+    ) -> CompanyChatContext:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal)
             company = await session.get(Company, principal.company_id)
@@ -1211,7 +1264,11 @@ class PublicStore:
                 or company.deleted_at is not None
             ):
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
-            return company.name
+            settings = company.settings if isinstance(company.settings, dict) else {}
+            return CompanyChatContext(
+                company_name=company.name,
+                off_topic_policy=OffTopicPolicy.from_company_settings(settings),
+            )
 
     async def persist_ai_failure(
         self,

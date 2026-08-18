@@ -4,9 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { adminApi } from "../api/adminApi";
+import type { CompanyProfile } from "../api/types";
 import { CompanySetupPage } from "./CompanySetupPage";
 
-const company = {
+const company: CompanyProfile = {
   id: "company-1",
   name: "拓浙 AI 集团",
   summary: "连接青年 AI 人才、高校创新资源与产业场景。",
@@ -15,6 +16,13 @@ const company = {
   website: "https://example.test",
   logoUrl: "",
   profilePersonalizationPolicyVersion: "profile-v1",
+  aiOffTopicAnswerMode: "limited",
+  aiOffTopicQuestionLimit: 3,
+  visitNotificationsEnabled: true,
+  visitReportNotificationsEnabled: true,
+  visitNotificationInAppEnabled: true,
+  visitNotificationWecomEnabled: true,
+  visitNotificationRecipientScope: "both",
   onboardingStatus: "content_pending",
   version: 2,
   updatedAt: "2026-08-07T00:00:00Z",

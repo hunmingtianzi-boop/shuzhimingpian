@@ -32,6 +32,7 @@ from cf_worker.domain import (
     HandlerResult,
     NotificationIntent,
     OutboxRecord,
+    VisitNotificationSnapshot,
 )
 from cf_worker.knowledge_imports import ClaimedKnowledgeImport, create_draft
 
@@ -61,6 +62,16 @@ _SET_SCOPE_SQL = text(
     """
 )
 
+_INVALID_WECOM_RECIPIENT_PROVIDER_CODES = frozenset({40003, 81013})
+
+
+def is_invalid_wecom_recipient_error(error: WeComProviderError) -> bool:
+    """Return whether WeCom rejected only the target member, not the channel."""
+    return (
+        error.code == "WECOM_INVALID_RECIPIENT"
+        or error.provider_code in _INVALID_WECOM_RECIPIENT_PROVIDER_CODES
+    )
+
 
 class PostgresOutboxRepository:
     def __init__(self, settings: WorkerSettings) -> None:
@@ -86,11 +97,26 @@ class PostgresOutboxRepository:
     def session_factory(self):
         return async_sessionmaker(self._engine, expire_on_commit=False)
 
+    def admin_base_url(self) -> str | None:
+        return self._settings.admin_base_url
+
     async def purge_expired_visitor_profiles(self) -> int:
         """Physically remove expired derived profile evidence without loading PII."""
         async with self._engine.begin() as connection:
             deleted = await connection.scalar(text("SELECT app.purge_expired_visitor_profiles()"))
             return max(int(deleted or 0), 0)
+
+    async def enqueue_inactive_visit_reports(self) -> int:
+        """Queue one report event for visits idle past the configured threshold."""
+        async with self._engine.begin() as connection:
+            inserted = await connection.scalar(
+                text("SELECT app.enqueue_inactive_visit_reports(:batch_size, :idle_seconds)"),
+                {
+                    "batch_size": self._settings.visit_report_batch_size,
+                    "idle_seconds": self._settings.visit_report_idle_seconds,
+                },
+            )
+            return max(int(inserted or 0), 0)
 
     async def purge_expired_platform_onboarding_sessions(self) -> int:
         """Purge expired platform onboarding sessions through the restricted function."""
@@ -782,15 +808,265 @@ class PostgresOutboxRepository:
                     http_client=client,
                 ).send_text(
                     user_id=wecom_user_id,
-                    content=(
-                        "数智名片收到一位新客户，请进入后台线索中心及时跟进。"
-                    ),
+                    content=("数智名片收到一位新客户，请进入后台线索中心及时跟进。"),
                 )
         except WeComConfigurationError:
             return False
         except WeComProviderError as exc:
             raise RuntimeError(exc.code) from exc
         return True
+
+    async def visit_notification_snapshot(
+        self,
+        event: OutboxRecord,
+        *,
+        visit_id: uuid.UUID,
+        report: bool,
+    ) -> VisitNotificationSnapshot | None:
+        if event.aggregate_type != "visit" or event.aggregate_id != visit_id:
+            raise RuntimeError("visit_notification_event_mismatch")
+        async with self._engine.begin() as connection:
+            await self._set_scope(connection, event.tenant_id, event.company_id)
+            row = (
+                (
+                    await connection.execute(
+                        text(
+                            """
+                        SELECT
+                          visit.id,
+                          visit.started_at,
+                          visit.context,
+                          card.display_name AS card_display_name,
+                          card.responsible_user_id,
+                          company.settings AS company_settings,
+                          (
+                            SELECT count(DISTINCT COALESCE(
+                              page.metadata ->> 'page_key',
+                              page.object_id,
+                              page.object_type,
+                              'card'
+                            ))
+                            FROM visit_events AS page
+                            WHERE page.tenant_id = visit.tenant_id
+                              AND page.company_id = visit.company_id
+                              AND page.visit_id = visit.id
+                              AND page.event_type = 'page_view'
+                          ) AS page_count,
+                          (
+                            SELECT COALESCE(sum(
+                              CASE
+                                WHEN activity.event_type IN ('heartbeat', 'leave')
+                                 AND activity.metadata ->> 'duration_ms'
+                                   ~ '^[0-9]+([.][0-9]+)?$'
+                                THEN (activity.metadata ->> 'duration_ms')::double precision
+                                ELSE 0
+                              END
+                            ), 0)
+                            FROM visit_events AS activity
+                            WHERE activity.tenant_id = visit.tenant_id
+                              AND activity.company_id = visit.company_id
+                              AND activity.visit_id = visit.id
+                          ) AS duration_ms,
+                          (
+                            SELECT count(message.id)
+                            FROM conversations AS conversation
+                            JOIN messages AS message
+                              ON message.conversation_id = conversation.id
+                             AND message.tenant_id = conversation.tenant_id
+                             AND message.company_id = conversation.company_id
+                            WHERE conversation.tenant_id = visit.tenant_id
+                              AND conversation.company_id = visit.company_id
+                              AND conversation.visit_id = visit.id
+                              AND message.role = 'user'
+                          ) AS question_count,
+                          (
+                            SELECT count(action.id)
+                            FROM visit_events AS action
+                            WHERE action.tenant_id = visit.tenant_id
+                              AND action.company_id = visit.company_id
+                              AND action.visit_id = visit.id
+                              AND action.event_type = 'share'
+                          ) AS share_count,
+                          (
+                            SELECT count(action.id)
+                            FROM visit_events AS action
+                            WHERE action.tenant_id = visit.tenant_id
+                              AND action.company_id = visit.company_id
+                              AND action.visit_id = visit.id
+                              AND action.event_type = 'cta_click'
+                          ) AS cta_count
+                        FROM visits AS visit
+                        JOIN cards AS card
+                          ON card.id = visit.card_id
+                         AND card.tenant_id = visit.tenant_id
+                         AND card.company_id = visit.company_id
+                        JOIN companies AS company
+                          ON company.id = visit.company_id
+                         AND company.tenant_id = visit.tenant_id
+                        WHERE visit.id = :visit_id
+                          AND visit.tenant_id = :tenant_id
+                          AND visit.company_id = :company_id
+                        LIMIT 1
+                        """
+                        ),
+                        {
+                            "visit_id": visit_id,
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                return None
+
+            company_settings = row["company_settings"]
+            if not isinstance(company_settings, dict):
+                company_settings = {}
+            preferences = company_settings.get("visit_notifications")
+            if not isinstance(preferences, dict):
+                preferences = {}
+            enabled = preferences.get("enabled") is not False
+            report_enabled = preferences.get("report_enabled") is not False
+            in_app_enabled = enabled and preferences.get("in_app_enabled") is not False
+            wecom_enabled = enabled and preferences.get("wecom_enabled") is not False
+            if report and not report_enabled:
+                in_app_enabled = False
+                wecom_enabled = False
+
+            recipient_scope = preferences.get("recipient_scope")
+            if recipient_scope not in {"admins", "responsible", "both"}:
+                recipient_scope = "both"
+            recipients: list[uuid.UUID] = []
+            responsible_user_id = row["responsible_user_id"]
+            if recipient_scope in {"responsible", "both"} and responsible_user_id:
+                recipients.append(responsible_user_id)
+            if recipient_scope in {"admins", "both"}:
+                admin_ids = (
+                    await connection.scalars(
+                        text(
+                            """
+                            SELECT user_id
+                            FROM memberships
+                            WHERE tenant_id = :tenant_id
+                              AND company_id = :company_id
+                              AND role = 'company_admin'
+                              AND status = 'active'
+                            ORDER BY created_at, id
+                            """
+                        ),
+                        {
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                        },
+                    )
+                ).all()
+                recipients.extend(admin_ids)
+
+        context = row["context"] if isinstance(row["context"], dict) else {}
+        channel = context.get("visitor_channel")
+        if channel not in {"web", "wechat", "wecom"}:
+            channel = "web"
+        visitor_label = context.get("visitor_identity_label")
+        if not isinstance(visitor_label, str) or not visitor_label.strip():
+            visitor_label = {
+                "web": "匿名网页访客",
+                "wechat": "微信访客（未识别）",
+                "wecom": "企业微信访客（未识别）",
+            }[channel]
+        page_count = int(row["page_count"] or 0)
+        question_count = int(row["question_count"] or 0)
+        share_count = int(row["share_count"] or 0)
+        cta_count = int(row["cta_count"] or 0)
+        engagement_level = (
+            "high"
+            if question_count >= 3 or cta_count > 0
+            else "medium"
+            if question_count > 0 or share_count > 0 or page_count >= 2
+            else "low"
+        )
+        return VisitNotificationSnapshot(
+            visit_id=visit_id,
+            recipient_user_ids=tuple(dict.fromkeys(recipients)),
+            in_app_enabled=in_app_enabled,
+            wecom_enabled=wecom_enabled,
+            card_display_name=str(row["card_display_name"]),
+            visitor_label=visitor_label.strip()[:120],
+            visitor_channel=channel,
+            started_at=row["started_at"],
+            duration_seconds=round(float(row["duration_ms"] or 0) / 1_000, 1),
+            page_count=page_count,
+            question_count=question_count,
+            share_count=share_count,
+            cta_count=cta_count,
+            engagement_level=engagement_level,
+        )
+
+    async def send_wecom_visit_notification(
+        self,
+        event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        content: str,
+    ) -> int:
+        if not recipient_user_ids or not (
+            self._settings.wecom_corp_id
+            and self._settings.wecom_agent_id
+            and self._settings.wecom_app_secret
+        ):
+            return 0
+        async with self._engine.begin() as connection:
+            await self._set_scope(connection, event.tenant_id, event.company_id)
+            rows = (
+                (
+                    await connection.execute(
+                        text(
+                            """
+                        SELECT DISTINCT ON (user_id)
+                          user_id, wecom_user_id_ciphertext
+                        FROM wecom_user_bindings
+                        WHERE tenant_id = :tenant_id
+                          AND company_id = :company_id
+                          AND user_id = ANY(CAST(:recipient_user_ids AS uuid[]))
+                          AND revoked_at IS NULL
+                        ORDER BY user_id, updated_at DESC
+                        """
+                        ),
+                        {
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                            "recipient_user_ids": list(recipient_user_ids),
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        delivered = 0
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(self._settings.wecom_timeout_seconds, connect=5.0),
+            follow_redirects=False,
+        ) as client:
+            wecom = WeComClient(
+                settings=self._settings,  # type: ignore[arg-type]
+                http_client=client,
+            )
+            for row in rows:
+                try:
+                    user_id = self._cipher.decrypt(bytes(row["wecom_user_id_ciphertext"]))
+                    await wecom.send_text(user_id=user_id, content=content[:2_000])
+                except PiiCipherError as exc:
+                    raise RuntimeError("wecom_binding_decryption_failed") from exc
+                except WeComConfigurationError:
+                    return delivered
+                except WeComProviderError as exc:
+                    if is_invalid_wecom_recipient_error(exc):
+                        continue
+                    raise RuntimeError(exc.code) from exc
+                delivered += 1
+        return delivered
 
     async def build_export(
         self,
@@ -1480,5 +1756,6 @@ def should_dead_letter(*, attempt: int, max_attempts: int, permanent: bool) -> b
 __all__ = [
     "PostgresOutboxRepository",
     "calculate_backoff_seconds",
+    "is_invalid_wecom_recipient_error",
     "should_dead_letter",
 ]

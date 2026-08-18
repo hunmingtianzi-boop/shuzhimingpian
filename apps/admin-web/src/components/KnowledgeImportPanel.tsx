@@ -39,9 +39,6 @@ import { ResourceState } from "./ResourceState";
 import { useResource } from "../hooks/useResource";
 import { formatTimestamp } from "../utils/format";
 
-export const KNOWLEDGE_IMPORT_MAX_FILES = 5;
-export const KNOWLEDGE_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024;
-export const KNOWLEDGE_IMPORT_MAX_BATCH_BYTES = 25 * 1024 * 1024;
 const allowedExtensions = new Set([
   "pdf", "docx", "pptx", "xlsx", "csv", "txt", "md", "html", "htm",
   "png", "jpg", "jpeg", "webp", "tiff", "bmp",
@@ -158,18 +155,11 @@ function stageCopy(label: string, status: KnowledgeImportStageStatus | undefined
 
 export function validateKnowledgeImportFiles(files: File[]): string | undefined {
   if (files.length === 0) return "请选择要导入的文件。";
-  if (files.length > KNOWLEDGE_IMPORT_MAX_FILES) return "每批最多选择 5 个文件。";
   for (const file of files) {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!allowedExtensions.has(extension)) {
       return `不支持文件“${file.name}”。可上传 PDF、Word、PPT、Excel、CSV、TXT/MD/HTML 或 PNG/JPG/WEBP/TIFF/BMP 图片。`;
     }
-    if (file.size > KNOWLEDGE_IMPORT_MAX_FILE_BYTES) {
-      return `文件“${file.name}”超过 10 MiB。`;
-    }
-  }
-  if (files.reduce((sum, file) => sum + file.size, 0) > KNOWLEDGE_IMPORT_MAX_BATCH_BYTES) {
-    return "本批文件总大小超过 25 MiB。";
   }
   return undefined;
 }
@@ -602,7 +592,7 @@ export function KnowledgeImportPanel({
         <div className="knowledge-import-picker">
           <label className="knowledge-import-name"><span>任务名称（可选）</span><Input value={displayName} onChange={(_, data) => setDisplayName(data.value)} placeholder="例如：星澜企业产品与案例资料" /></label>
           <input ref={inputRef} aria-label="选择知识文件" type="file" accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.webp,.tiff,.bmp" multiple disabled={uploading} onChange={(event) => chooseFiles(Array.from(event.target.files ?? []))} />
-          <span>{selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} 个文件` : "每批 1–5 个；单文件不超过 10 MiB，批次不超过 25 MiB。"}</span>
+          <span>{selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} 个文件` : "可一次选择多个文件，不限制单文件或批次大小。"}</span>
           {canAutoPublish && (
             <div className="knowledge-import-autopublish">
               <Switch

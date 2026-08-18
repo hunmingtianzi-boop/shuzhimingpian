@@ -2,6 +2,10 @@ import {
   Button,
   Field,
   Input,
+  Radio,
+  RadioGroup,
+  Slider,
+  Switch,
   Textarea,
 } from "@fluentui/react-components";
 import { Add24Regular, ArrowDown24Regular, ArrowUp24Regular, Delete24Regular, Save24Regular } from "@fluentui/react-icons";
@@ -30,6 +34,13 @@ const emptyProfile: CompanyProfileInput = {
   profileFacts: [],
   profileTags: [],
   profilePersonalizationPolicyVersion: "profile-personalization-v1",
+  aiOffTopicAnswerMode: "limited",
+  aiOffTopicQuestionLimit: 3,
+  visitNotificationsEnabled: true,
+  visitReportNotificationsEnabled: true,
+  visitNotificationInAppEnabled: true,
+  visitNotificationWecomEnabled: true,
+  visitNotificationRecipientScope: "both",
   version: undefined,
 };
 
@@ -68,7 +79,10 @@ export function CompanyProfilePage() {
     });
   }, [resource.data, resource.status]);
 
-  const update = (field: keyof CompanyProfileInput, value: string) => {
+  const update = <FieldName extends keyof CompanyProfileInput>(
+    field: FieldName,
+    value: CompanyProfileInput[FieldName],
+  ) => {
     setForm((current) => ({ ...current, [field]: value }));
     setSuccess(undefined);
   };
@@ -245,6 +259,105 @@ export function CompanyProfilePage() {
               maxLength={64}
               disabled={saving}
             />
+          </Field>
+
+          <div className="form-section-heading">
+            <div>
+              <h2>AI 助手回答边界</h2>
+              <p>这项设置只控制与本企业无关的普通问题，不会放宽价格、敏感信息和企业知识来源等安全限制。</p>
+            </div>
+          </div>
+
+          <RadioGroup
+            value={form.aiOffTopicAnswerMode}
+            aria-label="无关问题回答尺度"
+            onChange={(_, data) =>
+              update(
+                "aiOffTopicAnswerMode",
+                data.value as CompanyProfileInput["aiOffTopicAnswerMode"],
+              )
+            }
+            disabled={saving}
+          >
+            <Radio
+              value="blocked"
+              label="完全不回答——从第 1 个企业无关问题起拒答"
+            />
+            <Radio
+              value="limited"
+              label="限量回答——达到自定义次数后拒答"
+            />
+            <Radio
+              value="unlimited"
+              label="完全允许——不按次数限制普通无关问题"
+            />
+          </RadioGroup>
+
+          {form.aiOffTopicAnswerMode === "limited" && (
+            <Field
+              label={`每段对话最多回答 ${form.aiOffTopicQuestionLimit} 个无关问题`}
+              hint="达到上限后，后续无关问题会被拒答；企业相关问题和普通问候仍可继续。"
+            >
+              <Slider
+                min={1}
+                max={10}
+                step={1}
+                value={form.aiOffTopicQuestionLimit}
+                aria-label="无关问题回答上限"
+                onChange={(_, data) =>
+                  update("aiOffTopicQuestionLimit", data.value)
+                }
+                disabled={saving}
+              />
+            </Field>
+          )}
+
+          <div className="form-section-heading">
+            <div>
+              <h2>访客通知</h2>
+              <p>访客首次真实浏览时立即提醒；离开或连续 5 分钟无活动后发送访问报告。</p>
+            </div>
+          </div>
+
+          <Switch
+            checked={form.visitNotificationsEnabled}
+            label="有人打开名片时立即通知"
+            onChange={(_, data) => update("visitNotificationsEnabled", data.checked)}
+            disabled={saving}
+          />
+          <Switch
+            checked={form.visitReportNotificationsEnabled}
+            label="访问结束后发送行为报告"
+            onChange={(_, data) => update("visitReportNotificationsEnabled", data.checked)}
+            disabled={saving || !form.visitNotificationsEnabled}
+          />
+          <div className="form-grid two-columns">
+            <Switch
+              checked={form.visitNotificationInAppEnabled}
+              label="后台站内通知"
+              onChange={(_, data) => update("visitNotificationInAppEnabled", data.checked)}
+              disabled={saving || !form.visitNotificationsEnabled}
+            />
+            <Switch
+              checked={form.visitNotificationWecomEnabled}
+              label="企业微信应用消息"
+              onChange={(_, data) => update("visitNotificationWecomEnabled", data.checked)}
+              disabled={saving || !form.visitNotificationsEnabled}
+            />
+          </div>
+          <Field label="通知接收人" hint="名片负责人适用于员工名片；企业名片由负责人或企业管理员接收。">
+            <RadioGroup
+              value={form.visitNotificationRecipientScope}
+              onChange={(_, data) => update(
+                "visitNotificationRecipientScope",
+                data.value as CompanyProfileInput["visitNotificationRecipientScope"],
+              )}
+              disabled={saving || !form.visitNotificationsEnabled}
+            >
+              <Radio value="admins" label="所有企业管理员" />
+              <Radio value="responsible" label="仅名片负责人" />
+              <Radio value="both" label="名片负责人和企业管理员" />
+            </RadioGroup>
           </Field>
 
           <div className="form-actions">

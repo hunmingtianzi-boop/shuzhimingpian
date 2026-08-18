@@ -198,6 +198,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://${WORKER_DB_USER:?required}:${WORKER_DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
       WORKER_DATABASE_URL: postgresql+asyncpg://${WORKER_DB_USER:?required}:${WORKER_DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:?required}
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?required}@redis:6379/1
+      ADMIN_BASE_URL: ${ADMIN_BASE_URL:-https://yeshuangxixue.cn/c/admin}
+      WECOM_CORP_ID: ${WECOM_CORP_ID:-}
+      WECOM_AGENT_ID: ${WECOM_AGENT_ID:-}
+      WECOM_APP_SECRET: ${WECOM_APP_SECRET:-}
+      WECOM_API_BASE_URL: ${WECOM_API_BASE_URL:-https://qyapi.weixin.qq.com}
+      WECOM_TIMEOUT_SECONDS: ${WECOM_TIMEOUT_SECONDS:-8}
     depends_on:
       embedding:
         condition: service_healthy

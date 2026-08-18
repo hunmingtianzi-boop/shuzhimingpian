@@ -44,9 +44,10 @@ class WorkerSettings(BaseSettings):
     export_retention_hours: int = Field(default=24, ge=1, le=168)
     export_max_rows: int = Field(default=100_000, ge=1, le=1_000_000)
     profile_retention_purge_seconds: int = Field(default=3_600, ge=60, le=86_400)
-    platform_onboarding_retention_purge_seconds: int = Field(
-        default=3_600, ge=60, le=86_400
-    )
+    visit_report_poll_seconds: float = Field(default=60.0, ge=10, le=600)
+    visit_report_idle_seconds: int = Field(default=300, ge=60, le=86_400)
+    visit_report_batch_size: int = Field(default=100, ge=1, le=500)
+    platform_onboarding_retention_purge_seconds: int = Field(default=3_600, ge=60, le=86_400)
     scheduled_publish_poll_seconds: float = Field(default=5.0, ge=1, le=300)
     scheduled_publish_batch_size: int = Field(default=10, ge=1, le=100)
     scheduled_publish_lease_seconds: int = Field(default=900, ge=30, le=3_600)
@@ -68,6 +69,7 @@ class WorkerSettings(BaseSettings):
     wecom_app_secret: SecretStr | None = None
     wecom_api_base_url: str = "https://qyapi.weixin.qq.com"
     wecom_timeout_seconds: float = Field(default=8.0, ge=1, le=30)
+    admin_base_url: str | None = None
 
     worker_health_host: str = "0.0.0.0"  # noqa: S104 - container health endpoint
     worker_health_port: int = Field(default=8020, ge=1, le=65_535)
@@ -84,7 +86,13 @@ class WorkerSettings(BaseSettings):
             raise ValueError("worker setting cannot be blank")
         return normalized
 
-    @field_validator("wecom_corp_id", "wecom_agent_id", "wecom_app_secret", mode="before")
+    @field_validator(
+        "wecom_corp_id",
+        "wecom_agent_id",
+        "wecom_app_secret",
+        "admin_base_url",
+        mode="before",
+    )
     @classmethod
     def blank_wecom_values_are_unconfigured(cls, value: object) -> object | None:
         if value is None:
@@ -102,8 +110,7 @@ class WorkerSettings(BaseSettings):
         configured = (
             bool(self.wecom_corp_id),
             self.wecom_agent_id is not None,
-            self.wecom_app_secret is not None
-            and bool(self.wecom_app_secret.get_secret_value()),
+            self.wecom_app_secret is not None and bool(self.wecom_app_secret.get_secret_value()),
         )
         if any(configured) and not all(configured):
             raise ValueError(

@@ -11,11 +11,13 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Sequence
 
 from .errors import AIErrorCategory, AIProviderError, AIServiceError
+from .off_topic import OffTopicAnswerMode
 from .policy import (
     EvidenceGate,
     InputSecurityPolicy,
     QuestionScope,
     classify_question_scope,
+    is_social_message,
 )
 from .prompts import DEFAULT_PROMPT_VERSION, PromptRegistry, conversation_mode
 from .protocols import (
@@ -312,6 +314,15 @@ class RAGOrchestrator:
             trace.extra["question_scope"] = question_scope.value
             return _scope_clarification(trace)
 
+        off_topic_refusal = self._off_topic_refusal(
+            request=request,
+            normalized=normalized,
+            question_scope=question_scope,
+            trace=trace,
+        )
+        if off_topic_refusal is not None:
+            return _refused(off_topic_refusal, trace)
+
         skip_retrieval = question_scope is QuestionScope.GENERAL
         trace.extra["query_complexity"] = (
             "skipped" if skip_retrieval else "compound" if len(retrieval_texts) > 1 else "single"
@@ -461,6 +472,16 @@ class RAGOrchestrator:
                 # evidence and must not leak into an open-domain prompt.
                 evidence = ()
 
+        if initial_question_scope is QuestionScope.UNRESOLVED:
+            off_topic_refusal = self._off_topic_refusal(
+                request=request,
+                normalized=normalized,
+                question_scope=question_scope,
+                trace=trace,
+            )
+            if off_topic_refusal is not None:
+                return _refused(off_topic_refusal, trace)
+
         uncovered_questions = (
             tuple(
                 question
@@ -582,6 +603,48 @@ class RAGOrchestrator:
             citations=citations,
             refusal=None,
             trace=trace.finish(citations),
+        )
+
+    def _off_topic_refusal(
+        self,
+        *,
+        request: RAGRequest,
+        normalized: str,
+        question_scope: QuestionScope,
+        trace: _TraceState,
+    ) -> Refusal | None:
+        if question_scope is not QuestionScope.GENERAL or is_social_message(normalized):
+            return None
+
+        prior_count = max(0, request.prior_off_topic_question_count)
+        policy = request.off_topic_policy
+        trace.extra["question_scope"] = question_scope.value
+        trace.extra["off_topic_question"] = True
+        trace.extra["prior_off_topic_question_count"] = prior_count
+        trace.extra["off_topic_answer_mode"] = policy.answer_mode.value
+        trace.extra["off_topic_question_limit"] = policy.question_limit
+        if policy.answer_mode is OffTopicAnswerMode.UNLIMITED:
+            return None
+        if (
+            policy.answer_mode is OffTopicAnswerMode.LIMITED
+            and prior_count < policy.question_limit
+        ):
+            return None
+
+        trace.policy_flags += ("off_topic_limit",)
+        trace.error_category = AIErrorCategory.SAFETY.value
+        reason = (
+            "本企业的 AI 助手已关闭企业无关问题的回答。"
+            if policy.answer_mode is OffTopicAnswerMode.BLOCKED
+            else (
+                f"本次对话已经询问了 {policy.question_limit} 个"
+                "与企业无关的问题，接下来我将不再回答无关内容。"
+            )
+        )
+        return Refusal(
+            code=RefusalCode.OFF_TOPIC_LIMIT,
+            reason=reason,
+            safe_alternative="可以继续询问本企业的业务、产品、服务、案例或合作方式。",
         )
 
     async def _find_fast_faq_evidence(

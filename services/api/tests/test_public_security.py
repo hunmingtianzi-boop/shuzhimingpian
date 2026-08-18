@@ -486,6 +486,35 @@ async def test_conversation_history_keeps_user_before_assistant_when_timestamps_
 
 
 @pytest.mark.asyncio
+async def test_off_topic_count_uses_server_classification_from_prior_ai_runs(
+    monkeypatch: Any,
+) -> None:
+    card = _card()
+    principal = _principal(card)
+    session = _Session(
+        result=[
+            {"off_topic_question": True},
+            {"off_topic_question": False},
+            {},
+            {"off_topic_question": True},
+        ]
+    )
+    store = PublicStore(_SessionFactory(session), _settings())  # type: ignore[arg-type]
+    monkeypatch.setattr(store, "_set_principal_scope", AsyncMock())
+    prepared = SimpleNamespace(conversation_id=uuid.uuid4())
+
+    count = await store.load_off_topic_question_count(
+        prepared=prepared,  # type: ignore[arg-type]
+        principal=principal,
+    )
+
+    assert count == 2
+    statement = str(session.executed[-1])
+    assert "ai_runs" in statement
+    assert "messages" in statement
+
+
+@pytest.mark.asyncio
 async def test_chat_ip_card_limit_cannot_be_bypassed_by_rotating_visitor_tokens() -> None:
     class BlockingRedis:
         def __init__(self) -> None:

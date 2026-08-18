@@ -123,6 +123,13 @@ export type CompanyProfile = {
   profileFacts?: IdentityProfileFact[];
   profileTags?: string[];
   profilePersonalizationPolicyVersion: string;
+  aiOffTopicAnswerMode: "blocked" | "limited" | "unlimited";
+  aiOffTopicQuestionLimit: number;
+  visitNotificationsEnabled: boolean;
+  visitReportNotificationsEnabled: boolean;
+  visitNotificationInAppEnabled: boolean;
+  visitNotificationWecomEnabled: boolean;
+  visitNotificationRecipientScope: "admins" | "responsible" | "both";
   onboardingStatus?: string;
   version?: number;
   updatedAt?: string;

@@ -28,8 +28,6 @@ from app.core.tokens import StaffPrincipal
 from app.services.admin_store import AdminStore
 from app.services.catalog_store import CatalogStore
 from app.services.knowledge_import import (
-    MAX_BATCH_BYTES,
-    MAX_FILES,
     KnowledgeImportError,
     safe_file_name,
     validate_upload,
@@ -243,17 +241,13 @@ async def upload_onboarding_documents(
     files: Annotated[list[UploadFile], File(...)],
 ) -> PlatformOnboardingSessionEnvelope:
     actor = _actor(principal)
-    if not files or len(files) > MAX_FILES:
-        raise ApiError(400, "IMPORT_FILE_COUNT", "每批仅允许上传 1 至 5 个文件")
+    if not files:
+        raise ApiError(400, "IMPORT_FILE_COUNT", "请至少上传一个文件")
     pending: list[PendingImport] = []
-    total_bytes = 0
     try:
         for upload in files:
             file_name = safe_file_name(upload.filename)
-            payload = await upload.read(10 * 1024 * 1024 + 1)
-            total_bytes += len(payload)
-            if total_bytes > MAX_BATCH_BYTES:
-                raise KnowledgeImportError("IMPORT_BATCH_TOO_LARGE")
+            payload = await upload.read()
             pending.append(
                 PendingImport(
                     file_name=file_name,

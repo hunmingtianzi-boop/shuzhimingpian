@@ -132,7 +132,7 @@ describe("BusinessCardPrototypeApp", () => {
       directoryLabel: "员工名片内容导航",
       contentLabel: "员工名片内容",
       identityName: "示例顾问",
-      identityKind: "员工名片 · 资料已同步",
+      identityKind: "员工数字名片",
     },
     {
       kind: "enterprise" as const,

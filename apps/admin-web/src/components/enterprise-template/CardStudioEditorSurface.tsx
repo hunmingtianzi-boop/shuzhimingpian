@@ -55,9 +55,27 @@ const editorAdapterStyles = `
   .studio-inspector-content .fui-Textarea { width: 100%; }
   .template-identity-source-summary { margin-top: 20px; }
   .template-composer-context,
-  .template-save-notice,
   .template-composer-dialog-content > .feedback,
   .template-composer-dialog-content > .form-feedback { position: absolute; z-index: 30; top: 74px; left: 50%; max-width: 680px; transform: translateX(-50%); box-shadow: 0 10px 30px rgb(24 48 62 / 12%); }
+  .template-save-notice {
+    position: fixed;
+    z-index: 60;
+    top: auto;
+    right: 24px;
+    bottom: 24px;
+    left: auto;
+    width: min(420px, calc(100vw - 48px));
+    max-width: none;
+    margin: 0 !important;
+    transform: none;
+    pointer-events: none;
+    box-shadow: 0 14px 36px rgb(24 48 62 / 18%);
+    animation: template-save-notice-enter 180ms ease-out;
+  }
+  @keyframes template-save-notice-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   @media (max-width: 1180px) {
     .card-studio-editor-scope .template-studio-shell { min-width: 0 !important; max-width: 100vw; }
     .template-composer-dialog-content,
@@ -77,6 +95,7 @@ const editorAdapterStyles = `
     .template-composer-title .document-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .template-studio-actions .toolbar-button.primary { min-height: 34px; padding: 0 10px; font-size: 11px; }
     .template-canvas-toolbar { padding: 8px; gap: 6px; overflow-x: auto; }
+    .template-save-notice { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
     .card-studio-editor-scope .canvas-stage { padding: 16px 0 !important; }
     .card-studio-editor-scope .editor-preview,
     .card-studio-editor-scope .editor-preview .public-frame { width: min(390px, 100%) !important; }

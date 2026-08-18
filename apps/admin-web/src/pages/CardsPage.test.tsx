@@ -520,6 +520,13 @@ describe("CardsPage", () => {
       profileFacts: [],
       profileTags: [],
       profilePersonalizationPolicyVersion: "profile-v1",
+      aiOffTopicAnswerMode: "limited" as const,
+      aiOffTopicQuestionLimit: 3,
+      visitNotificationsEnabled: true,
+      visitReportNotificationsEnabled: true,
+      visitNotificationInAppEnabled: true,
+      visitNotificationWecomEnabled: true,
+      visitNotificationRecipientScope: "both" as const,
       version: 3,
     };
     const uploadedUrl = "/api/v1/public/card-assets/company-1/new-logo.webp";

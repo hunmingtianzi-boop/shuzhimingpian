@@ -61,6 +61,8 @@ from app.db.models import (
     MessageStatus,
     ModelConfig,
     Notification,
+    OutboxEvent,
+    OutboxStatus,
     PromptStatus,
     PromptVersion,
     User,
@@ -1938,6 +1940,21 @@ class WorkflowStore:
                     event_type=existing.event_type,
                     occurred_at=existing.occurred_at,
                 )
+            has_page_view = False
+            if request.event_type in {"page_view", "leave"}:
+                has_page_view = bool(
+                    await session.scalar(
+                        select(
+                            exists().where(
+                                VisitEvent.visit_id == visit.id,
+                                VisitEvent.tenant_id == principal_tenant_id,
+                                VisitEvent.company_id == principal_company_id,
+                                VisitEvent.event_type == "page_view",
+                            )
+                        )
+                    )
+                )
+            first_page_view = request.event_type == "page_view" and not has_page_view
             event = VisitEvent(
                 id=request.event_id,
                 tenant_id=principal_tenant_id,
@@ -1949,8 +1966,62 @@ class WorkflowStore:
                 metadata_json=request.metadata,
             )
             session.add(event)
-            if request.event_type == "leave":
+            if first_page_view:
+                session.add(
+                    OutboxEvent(
+                        id=uuid.uuid4(),
+                        tenant_id=principal_tenant_id,
+                        company_id=principal_company_id,
+                        aggregate_type="visit",
+                        aggregate_id=visit.id,
+                        aggregate_version=1,
+                        event_type="visit.started.v1",
+                        payload={
+                            "visit_id": str(visit.id),
+                            "card_id": str(visit.card_id),
+                        },
+                        headers={"contains_pii": False},
+                        deduplication_key=f"visit-started:{visit.id}",
+                        status=OutboxStatus.PENDING,
+                    )
+                )
+            if request.event_type == "leave" and visit.ended_at is None:
                 visit.ended_at = datetime.now(UTC)
+            should_queue_report = (request.event_type == "leave" and has_page_view) or (
+                request.event_type == "page_view" and visit.ended_at is not None
+            )
+            if should_queue_report:
+                report_deduplication_key = f"visit-report:{visit.id}"
+                report_already_queued = bool(
+                    await session.scalar(
+                        select(
+                            exists().where(
+                                OutboxEvent.tenant_id == principal_tenant_id,
+                                OutboxEvent.company_id == principal_company_id,
+                                OutboxEvent.deduplication_key == report_deduplication_key,
+                            )
+                        )
+                    )
+                )
+                if not report_already_queued:
+                    session.add(
+                        OutboxEvent(
+                            id=uuid.uuid4(),
+                            tenant_id=principal_tenant_id,
+                            company_id=principal_company_id,
+                            aggregate_type="visit",
+                            aggregate_id=visit.id,
+                            aggregate_version=1,
+                            event_type="visit.report.ready.v1",
+                            payload={
+                                "visit_id": str(visit.id),
+                                "card_id": str(visit.card_id),
+                            },
+                            headers={"contains_pii": False},
+                            deduplication_key=report_deduplication_key,
+                            status=OutboxStatus.PENDING,
+                        )
+                    )
             await session.execute(
                 update(Visitor)
                 .where(

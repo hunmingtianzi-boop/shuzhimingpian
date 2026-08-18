@@ -12,6 +12,7 @@ from cf_worker.domain import (
     HandlerResult,
     OutboxRecord,
     PermanentEventError,
+    VisitNotificationSnapshot,
 )
 from cf_worker.handlers import EventHandlerRegistry
 
@@ -19,6 +20,12 @@ from cf_worker.handlers import EventHandlerRegistry
 class StubRepository:
     privacy_owner = uuid.uuid4()
     summary_owner = uuid.uuid4()
+
+    def __init__(self) -> None:
+        self.wecom_messages: list[str] = []
+
+    def admin_base_url(self) -> str:
+        return "https://example.test/c/admin"
 
     async def tenant_slug(self, _event: OutboxRecord) -> str:
         return "tuotu"
@@ -39,6 +46,43 @@ class StubRepository:
         assert lead_id
         assert owner_user_id
         return True
+
+    async def visit_notification_snapshot(
+        self,
+        event: OutboxRecord,
+        *,
+        visit_id: uuid.UUID,
+        report: bool,
+    ) -> VisitNotificationSnapshot:
+        assert event.aggregate_type == "visit"
+        assert event.aggregate_id == visit_id
+        return VisitNotificationSnapshot(
+            visit_id=visit_id,
+            recipient_user_ids=(self.summary_owner,),
+            in_app_enabled=True,
+            wecom_enabled=True,
+            card_display_name="拓浙AI生态",
+            visitor_label="微信访客（未识别）",
+            visitor_channel="wechat",
+            started_at=datetime.now(UTC),
+            duration_seconds=126.0 if report else 0.0,
+            page_count=4 if report else 1,
+            question_count=2 if report else 0,
+            share_count=1 if report else 0,
+            cta_count=0,
+            engagement_level="medium",
+        )
+
+    async def send_wecom_visit_notification(
+        self,
+        _event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        content: str,
+    ) -> int:
+        assert recipient_user_ids == (self.summary_owner,)
+        self.wecom_messages.append(content)
+        return 1
 
     async def build_export(
         self,
@@ -154,6 +198,42 @@ async def test_payload_with_pii_marker_or_extra_field_is_rejected() -> None:
         await registry.handle(event("lead.created.v1", base, headers={"contains_pii": True}))
     with pytest.raises(PermanentEventError, match="unexpected_payload_field"):
         await registry.handle(event("lead.created.v1", {**base, "mobile": "13800000000"}))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("event_type", "expected_handler", "expected_copy"),
+    [
+        ("visit.started.v1", "visit-started-notification-v1", "正在查看"),
+        ("visit.report.ready.v1", "visit-report-notification-v1", "2 分 6 秒"),
+    ],
+)
+async def test_visit_notifications_are_non_pii_and_link_to_the_report(
+    event_type: str,
+    expected_handler: str,
+    expected_copy: str,
+) -> None:
+    visit_id = uuid.uuid4()
+    card_id = uuid.uuid4()
+    base = event(
+        event_type,
+        {"visit_id": str(visit_id), "card_id": str(card_id)},
+    )
+    record = OutboxRecord(
+        **{
+            **{field: getattr(base, field) for field in base.__dataclass_fields__},
+            "aggregate_type": "visit",
+            "aggregate_id": visit_id,
+        }
+    )
+    repository = StubRepository()
+    result = await EventHandlerRegistry(repository, StubEvaluator()).handle(record)
+    assert result.handler_name == expected_handler
+    assert len(result.notifications) == 1
+    assert expected_copy in result.notifications[0].body
+    assert "微信号" not in result.notifications[0].body
+    assert repository.wecom_messages
+    assert f"/visits?visitId={visit_id}" in repository.wecom_messages[0]
 
 
 @pytest.mark.asyncio

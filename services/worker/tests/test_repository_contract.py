@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cf_worker.repository import calculate_backoff_seconds, should_dead_letter
+from app.integrations.wecom import WeComProviderError
+
+from cf_worker.repository import (
+    calculate_backoff_seconds,
+    is_invalid_wecom_recipient_error,
+    should_dead_letter,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATION = ROOT / "services/api/migrations/versions/20260711_0007_worker_outbox.py"
@@ -10,6 +16,12 @@ SCHEDULED_MIGRATION = ROOT / "services/api/migrations/versions/20260712_0011_sch
 IMPORT_MIGRATION = ROOT / "services/api/migrations/versions/20260712_0012_knowledge_imports.py"
 ROLE_GRANT_MIGRATION = (
     ROOT / "services/api/migrations/versions/20260715_0015_repair_database_role_grants.py"
+)
+VISIT_NOTIFICATION_MIGRATION = (
+    ROOT / "services/api/migrations/versions/20260818_0040_visit_notifications.py"
+)
+VISIT_ROLLOUT_GUARD_MIGRATION = (
+    ROOT / "services/api/migrations/versions/20260818_0042_visit_notification_rollout_guard.py"
 )
 
 
@@ -23,6 +35,16 @@ def test_dead_letter_policy_handles_permanent_and_exhausted_events() -> None:
     assert should_dead_letter(attempt=1, max_attempts=6, permanent=True)
     assert should_dead_letter(attempt=6, max_attempts=6, permanent=False)
     assert not should_dead_letter(attempt=5, max_attempts=6, permanent=False)
+
+
+def test_wecom_invalid_or_out_of_scope_members_do_not_fail_in_app_delivery() -> None:
+    assert is_invalid_wecom_recipient_error(WeComProviderError("WECOM_INVALID_RECIPIENT"))
+    assert is_invalid_wecom_recipient_error(
+        WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=81013)
+    )
+    assert not is_invalid_wecom_recipient_error(
+        WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=60020)
+    )
 
 
 def test_migration_enforces_skip_locked_leases_rls_and_worker_identity() -> None:
@@ -70,3 +92,24 @@ def test_role_repair_migration_restores_app_and_worker_least_privileges() -> Non
     assert "grant select, insert on lead_followups" in sql
     assert "grant insert on security_events" in sql
     assert "bypassrls" not in sql
+
+
+def test_inactive_visit_report_scheduler_is_deduplicated_and_least_privilege() -> None:
+    sql = VISIT_NOTIFICATION_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "security definer" in sql
+    assert "set search_path = pg_catalog, public, app" in sql
+    assert "for update of visit skip locked" in sql
+    assert "visit-report:" in sql
+    assert "on conflict (tenant_id, company_id, deduplication_key) do nothing" in sql
+    assert "revoke all on function app.enqueue_inactive_visit_reports" in sql
+    assert "grant execute on function" in sql
+    assert "cf_ai_card_worker" in sql
+    assert "bypassrls" not in sql
+
+
+def test_visit_report_rollout_does_not_notify_for_historical_visits() -> None:
+    sql = VISIT_ROLLOUT_GUARD_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "visit-started:" in sql
+    assert "visit-report-legacy-suppressed-v1" in sql
+    assert "on conflict (event_id, handler_name) do nothing" in sql
+    assert "status = 'published'" in sql

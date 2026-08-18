@@ -22,9 +22,6 @@ from PIL import Image, UnidentifiedImageError
 from pptx import Presentation
 from pypdf import PdfReader
 
-MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_BATCH_BYTES = 25 * 1024 * 1024
-MAX_FILES = 5
 MAX_CSV_ROWS = 1_000
 MAX_CSV_COLUMNS = 16
 MAX_CSV_CELL_CHARS = 100_000
@@ -89,8 +86,6 @@ def safe_file_name(value: str | None) -> str:
 def validate_upload(name: str, content_type: str | None, payload: bytes) -> str:
     if not payload:
         raise KnowledgeImportError("IMPORT_EMPTY_FILE")
-    if len(payload) > MAX_FILE_BYTES:
-        raise KnowledgeImportError("IMPORT_FILE_TOO_LARGE")
     extension = name.rsplit(".", 1)[-1].casefold() if "." in name else ""
     if extension not in _MIMES:
         raise KnowledgeImportError("IMPORT_UNSUPPORTED_TYPE")
@@ -325,8 +320,12 @@ def _parse_csv(file_name: str, payload: bytes) -> ImportDraft:
 def _validated_draft(
     title: str, raw_text: str, visibility: str, *, auto_publish: bool = False
 ) -> ImportDraft:
-    normalized_title = str(title).strip()
-    normalized_text = str(raw_text).strip()
+    # PDF/Office extractors commonly emit page separators such as form-feed
+    # (\x0c). Treat parser-produced control characters as document whitespace
+    # instead of rejecting an otherwise valid business document. CSV formula
+    # injection is still rejected explicitly while parsing individual cells.
+    normalized_title = _normalize_extracted_controls(str(title), replacement=" ").strip()
+    normalized_text = _normalize_extracted_controls(str(raw_text), replacement="\n").strip()
     normalized_visibility = str(visibility).strip().casefold()
     if not normalized_title or len(normalized_title) > 500:
         raise KnowledgeImportError("IMPORT_TITLE_INVALID")
@@ -334,8 +333,6 @@ def _validated_draft(
         raise KnowledgeImportError("IMPORT_EMPTY_TEXT")
     if len(normalized_text) > MAX_TEXT_CHARS:
         raise KnowledgeImportError("IMPORT_TEXT_TOO_LARGE")
-    if _CONTROL_RE.search(normalized_title) or _CONTROL_RE.search(normalized_text):
-        raise KnowledgeImportError("IMPORT_DANGEROUS_VALUE")
     if normalized_title.lstrip().startswith(_DANGEROUS_PREFIXES):
         raise KnowledgeImportError("IMPORT_DANGEROUS_VALUE")
     if normalized_visibility not in {"public", "authenticated", "internal"}:
@@ -343,6 +340,10 @@ def _validated_draft(
     return ImportDraft(  # type: ignore[arg-type]
         normalized_title, normalized_text, normalized_visibility, auto_publish=auto_publish
     )
+
+
+def _normalize_extracted_controls(value: str, *, replacement: str) -> str:
+    return _CONTROL_RE.sub(replacement, value)
 
 
 def _validate_office_archive(payload: bytes, *, required_entry: str, error: str) -> None:
@@ -556,8 +557,6 @@ def _html_to_text(value: str) -> str:
 __all__ = [
     "ImportDraft",
     "KnowledgeImportError",
-    "MAX_BATCH_BYTES",
-    "MAX_FILES",
     "decode_draft",
     "encode_draft",
     "parse_payload",

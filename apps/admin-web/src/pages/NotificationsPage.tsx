@@ -20,6 +20,7 @@ import { OperationFeedback } from "../components/OperationFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import { useResource } from "../hooks/useResource";
+import { APP_PATHS, appHref } from "../routing";
 import { formatTimestamp } from "../utils/format";
 
 export function NotificationsPage() {
@@ -60,7 +61,7 @@ export function NotificationsPage() {
     <main className="page-stack">
       <PageHeader
         title="通知中心"
-        description="集中处理线索、知识缺口和业务异常通知，已读状态由服务端保存。"
+        description="集中处理访问报告、线索、知识缺口和业务异常通知，已读状态由服务端保存。"
         actions={
           <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
         }
@@ -116,6 +117,13 @@ export function NotificationsPage() {
                       <TableCell>{item.resourceType || "通用"}</TableCell>
                       <TableCell className="updated-column">{formatTimestamp(item.createdAt)}</TableCell>
                       <TableCell className="actions-column">
+                        {item.resourceType === "visit" && item.resourceId && (
+                          <a
+                            href={appHref(`${APP_PATHS.visits}?visitId=${encodeURIComponent(item.resourceId)}`)}
+                          >
+                            查看报告
+                          </a>
+                        )}
                         {!item.readAt ? (
                           <Button
                             appearance="subtle"

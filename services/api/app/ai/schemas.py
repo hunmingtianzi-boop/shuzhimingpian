@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .off_topic import OffTopicPolicy
+
 
 class StructuredOutputMode(StrEnum):
     """OpenAI-compatible structured-output dialect."""
@@ -30,6 +32,7 @@ class RefusalCode(StrEnum):
     PROVIDER_ERROR = "provider_error"
     RETRIEVAL_ERROR = "retrieval_error"
     FORBIDDEN_TOPIC = "forbidden_topic"
+    OFF_TOPIC_LIMIT = "off_topic_limit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +277,8 @@ class RAGRequest:
     history: tuple[ChatMessage, ...] = ()
     forbidden_topics: tuple[ForbiddenTopicPolicy, ...] = ()
     card_id: str | None = None
+    prior_off_topic_question_count: int = 0
+    off_topic_policy: OffTopicPolicy = OffTopicPolicy()
 
 
 @dataclass(frozen=True, slots=True)

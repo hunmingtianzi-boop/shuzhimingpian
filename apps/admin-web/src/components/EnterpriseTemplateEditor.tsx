@@ -593,6 +593,14 @@ export function EnterpriseTemplateEditor({
     };
   }, [dataSource, editorSourceKey, open]);
 
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timeoutId = window.setTimeout(() => {
+      setSavedNotice(undefined);
+    }, 3_500);
+    return () => window.clearTimeout(timeoutId);
+  }, [savedNotice]);
+
   const mutateBlocks = (
     updater: (current: EnterpriseTemplateBlock[]) => EnterpriseTemplateBlock[],
   ) => {

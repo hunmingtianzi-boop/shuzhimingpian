@@ -114,6 +114,22 @@ function normalizeCompany(payload: unknown): CompanyProfile {
     profilePersonalizationPolicyVersion:
       optionalString(raw.profile_personalization_policy_version) ||
       "profile-personalization-v1",
+    aiOffTopicAnswerMode:
+      raw.ai_off_topic_answer_mode === "blocked" ||
+      raw.ai_off_topic_answer_mode === "unlimited"
+        ? raw.ai_off_topic_answer_mode
+        : "limited",
+    aiOffTopicQuestionLimit:
+      optionalNumber(raw.ai_off_topic_question_limit) ?? 3,
+    visitNotificationsEnabled: raw.visit_notifications_enabled !== false,
+    visitReportNotificationsEnabled: raw.visit_report_notifications_enabled !== false,
+    visitNotificationInAppEnabled: raw.visit_notification_in_app_enabled !== false,
+    visitNotificationWecomEnabled: raw.visit_notification_wecom_enabled !== false,
+    visitNotificationRecipientScope:
+      raw.visit_notification_recipient_scope === "admins" ||
+      raw.visit_notification_recipient_scope === "responsible"
+        ? raw.visit_notification_recipient_scope
+        : "both",
     onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
@@ -844,6 +860,13 @@ function companyPayload(input: CompanyProfileInput) {
     profile_tags: input.profileTags.map((value) => value.trim()).filter(Boolean).slice(0, 3),
     profile_personalization_policy_version:
       input.profilePersonalizationPolicyVersion.trim(),
+    ai_off_topic_answer_mode: input.aiOffTopicAnswerMode,
+    ai_off_topic_question_limit: input.aiOffTopicQuestionLimit,
+    visit_notifications_enabled: input.visitNotificationsEnabled,
+    visit_report_notifications_enabled: input.visitReportNotificationsEnabled,
+    visit_notification_in_app_enabled: input.visitNotificationInAppEnabled,
+    visit_notification_wecom_enabled: input.visitNotificationWecomEnabled,
+    visit_notification_recipient_scope: input.visitNotificationRecipientScope,
   };
 }
 

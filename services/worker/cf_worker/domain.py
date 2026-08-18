@@ -39,6 +39,24 @@ class NotificationIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class VisitNotificationSnapshot:
+    visit_id: uuid.UUID
+    recipient_user_ids: tuple[uuid.UUID, ...]
+    in_app_enabled: bool
+    wecom_enabled: bool
+    card_display_name: str
+    visitor_label: str
+    visitor_channel: str
+    started_at: datetime
+    duration_seconds: float
+    page_count: int
+    question_count: int
+    share_count: int
+    cta_count: int
+    engagement_level: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReportIntent:
     result_type: str
     schema_version: int
@@ -141,6 +159,8 @@ class OutboxRepository(Protocol):
 
     async def summary_recipient(self, event: OutboxRecord) -> uuid.UUID | None: ...
 
+    def admin_base_url(self) -> str | None: ...
+
     async def send_wecom_lead_notification(
         self,
         event: OutboxRecord,
@@ -148,6 +168,22 @@ class OutboxRepository(Protocol):
         lead_id: uuid.UUID,
         owner_user_id: uuid.UUID,
     ) -> bool: ...
+
+    async def visit_notification_snapshot(
+        self,
+        event: OutboxRecord,
+        *,
+        visit_id: uuid.UUID,
+        report: bool,
+    ) -> VisitNotificationSnapshot | None: ...
+
+    async def send_wecom_visit_notification(
+        self,
+        event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        content: str,
+    ) -> int: ...
 
     async def build_export(
         self,
@@ -172,4 +208,5 @@ __all__ = [
     "OutboxRepository",
     "PermanentEventError",
     "ReportIntent",
+    "VisitNotificationSnapshot",
 ]

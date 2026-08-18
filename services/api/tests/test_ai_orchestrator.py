@@ -22,6 +22,7 @@ from app.ai import (
     StructuredModelAnswer,
     TokenUsage,
 )
+from app.ai.off_topic import OffTopicAnswerMode, OffTopicPolicy
 from app.ai.policy import EvidenceGate, EvidenceGateConfig
 from app.ai.protocols import TextDeltaCallback
 from app.ai.schemas import RetrievalQuery
@@ -644,6 +645,165 @@ async def test_new_general_question_breaks_out_of_enterprise_context() -> None:
     assert result.refusal is None
     assert result.answer == "我是一个 AI 助手。"
     assert result.trace.extra["question_scope"] == "general"
+    assert len(chat.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_third_off_topic_question_is_still_answered() -> None:
+    chat = FakeChatProvider(StructuredModelAnswer(answer="The meeting starts at three."))
+    repository = FakeRepository([])
+    orchestrator = RAGOrchestrator(
+        chat,
+        repository,
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="请把‘会议三点开始’翻译成英文",
+            prior_off_topic_question_count=2,
+            off_topic_policy=OffTopicPolicy(
+                answer_mode=OffTopicAnswerMode.LIMITED,
+                question_limit=3,
+            ),
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert len(chat.calls) == 1
+    assert result.trace.extra["off_topic_question"] is True
+    assert result.trace.extra["prior_off_topic_question_count"] == 2
+    assert result.trace.extra["off_topic_question_limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_fourth_off_topic_question_is_refused_before_retrieval_or_model() -> None:
+    chat = FakeChatProvider(StructuredModelAnswer(answer="unused"))
+    repository = FakeRepository([])
+    orchestrator = RAGOrchestrator(chat, repository)
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="请帮我写一句天气文案",
+            prior_off_topic_question_count=3,
+            off_topic_policy=OffTopicPolicy(
+                answer_mode=OffTopicAnswerMode.LIMITED,
+                question_limit=3,
+            ),
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is not None
+    assert result.refusal.code is RefusalCode.OFF_TOPIC_LIMIT
+    assert chat.calls == []
+    assert repository.calls == []
+    assert result.trace.extra["off_topic_answer_mode"] == "limited"
+
+
+@pytest.mark.asyncio
+async def test_unlimited_mode_keeps_answering_off_topic_questions() -> None:
+    chat = FakeChatProvider(StructuredModelAnswer(answer="可以先明确会议议程。"))
+    orchestrator = RAGOrchestrator(
+        chat,
+        FakeRepository([]),
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="请帮我写一句会议邀请",
+            prior_off_topic_question_count=99,
+            off_topic_policy=OffTopicPolicy(
+                answer_mode=OffTopicAnswerMode.UNLIMITED,
+                question_limit=1,
+            ),
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
+    assert len(chat.calls) == 1
+    assert result.trace.extra["off_topic_answer_mode"] == "unlimited"
+
+
+@pytest.mark.asyncio
+async def test_disabled_off_topic_answers_reject_general_question_but_allow_greeting() -> None:
+    chat = FakeChatProvider(StructuredModelAnswer(answer="你好，我可以帮你了解企业信息。"))
+    orchestrator = RAGOrchestrator(
+        chat,
+        FakeRepository([]),
+        evidence_gate=EvidenceGate(
+            EvidenceGateConfig(allow_general_answers_without_evidence=True)
+        ),
+    )
+    policy = OffTopicPolicy(
+        answer_mode=OffTopicAnswerMode.BLOCKED,
+        question_limit=3,
+    )
+
+    blocked = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="帮我写一句生日祝福",
+            off_topic_policy=policy,
+        ),
+        chat_credentials=_credentials(),
+    )
+    greeting = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="你好",
+            off_topic_policy=policy,
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert blocked.refusal is not None
+    assert blocked.refusal.code is RefusalCode.OFF_TOPIC_LIMIT
+    assert greeting.refusal is None
+    assert len(chat.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_off_topic_limit_never_blocks_enterprise_question() -> None:
+    evidence = _evidence("夜霜曦雪提供企业数智名片服务。")
+    chat = FakeChatProvider(
+        StructuredModelAnswer(
+            answer="夜霜曦雪提供企业数智名片服务。",
+            cited_evidence_ids=[evidence.evidence_id],
+        )
+    )
+    orchestrator = RAGOrchestrator(chat, FakeRepository([evidence]))
+
+    result = await orchestrator.answer(
+        RAGRequest(
+            tenant_id="tenant-1",
+            company_id="company-1",
+            question="夜霜曦雪提供什么服务？",
+            prior_off_topic_question_count=10,
+            off_topic_policy=OffTopicPolicy(
+                answer_mode=OffTopicAnswerMode.BLOCKED,
+                question_limit=1,
+            ),
+        ),
+        chat_credentials=_credentials(),
+    )
+
+    assert result.refusal is None
     assert len(chat.calls) == 1
 
 
