@@ -59,6 +59,13 @@ def test_profile_retention_purge_interval_is_bounded() -> None:
         WorkerSettings(profile_retention_purge_seconds=59)
 
 
+def test_visit_report_follows_the_activity_timeout_without_a_five_minute_gap() -> None:
+    settings = WorkerSettings(_env_file=None)
+
+    assert settings.visit_report_idle_seconds == 60
+    assert settings.visit_report_poll_seconds == 15
+
+
 def test_platform_onboarding_retention_purge_interval_is_bounded() -> None:
     assert (
         WorkerSettings(_env_file=None).platform_onboarding_retention_purge_seconds
