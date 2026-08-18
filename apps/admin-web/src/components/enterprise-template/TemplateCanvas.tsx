@@ -99,18 +99,21 @@ function CanvasDragHandle({ block }: { block: CardPageBlock }) {
 function CanvasDetailView({
   view,
   onBack,
+  onAssistant,
 }: {
   view: Exclude<DraftCanvasView, null | { kind: "assistant" }>;
   onBack: () => void;
+  onAssistant: (question: string) => void;
 }) {
   const isProduct = view.kind === "product";
   const title = isProduct ? view.item.name : view.item.title;
   const category = isProduct ? view.item.category : view.item.industry;
-  const summary = isProduct
-    ? view.item.summary
-    : view.item.solution || view.item.background;
-  const detail = isProduct ? view.item.detail : view.item.result;
   const imageUrl = resolveApiResourceUrl(view.item.imageUrl) ?? view.item.imageUrl;
+  const caseStory = !isProduct ? [
+    ["01", "项目背景", view.item.background],
+    ["02", "解决方案", view.item.solution],
+    ["03", "项目成果", view.item.result],
+  ] : [];
 
   return (
     <article
@@ -130,13 +133,27 @@ function CanvasDetailView({
       <div className="template-canvas-detail-copy">
         <small>{category || (isProduct ? "产品与服务" : "公开案例")}</small>
         <h1>{title}</h1>
-        {summary ? <p>{summary}</p> : null}
-        {detail ? (
+        {isProduct && view.item.summary ? <p>{view.item.summary}</p> : null}
+        {isProduct && view.item.detail ? (
           <section>
-            <span>{isProduct ? "详细介绍" : "项目成效"}</span>
-            <p>{detail}</p>
+            <span>详细介绍</span>
+            <p>{view.item.detail}</p>
           </section>
         ) : null}
+        {!isProduct ? (
+          <div className="template-canvas-case-story">
+            {caseStory.map(([number, label, content]) => (
+              <article key={label}>
+                <strong>{number}</strong>
+                <div><span>{label}</span><p>{content || "待补充"}</p></div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        <section className="template-canvas-detail-assistant">
+          <div><i aria-hidden="true">AI</i><span><strong>拓浙 AI 资料助手</strong><small>继续了解</small></span></div>
+          <button type="button" onClick={() => onAssistant(`请详细介绍${title}`)}>向 AI 继续提问 <span aria-hidden="true">→</span></button>
+        </section>
       </div>
     </article>
   );
@@ -205,7 +222,11 @@ function TemplateCanvasComponent({
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
         {draftView?.kind === "product" || draftView?.kind === "case" ? (
-          <CanvasDetailView view={draftView} onBack={() => setDraftView(null)} />
+          <CanvasDetailView
+            view={draftView}
+            onBack={() => setDraftView(null)}
+            onAssistant={(question) => setDraftView({ kind: "assistant", question })}
+          />
         ) : draftView?.kind === "assistant" ? (
           <CanvasAssistantView question={draftView.question} onBack={() => setDraftView(null)} />
         ) : (

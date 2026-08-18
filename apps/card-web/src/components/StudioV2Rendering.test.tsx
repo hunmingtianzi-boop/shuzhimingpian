@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { StudioCardPage, type StudioModule } from "@cf/card-page-renderer";
+import { CardPageExperience, StudioCardPage, type StudioModule } from "@cf/card-page-renderer";
 import { describe, expect, it } from "vitest";
 
 function renderModules(modules: StudioModule[]) {
@@ -94,5 +94,22 @@ describe("Studio V2 production components", () => {
     fireEvent.click(screen.getByRole("button", { name: /更多/ }));
     expect(screen.getByText("入口 4")).toBeInTheDocument();
     expect(screen.getByText("入口 6")).toBeInTheDocument();
+  });
+
+  it("maps business and case layout choices to distinct renderer classes", () => {
+    const { container } = render(<CardPageExperience blocks={[
+      { id: "identity", type: "identity", sortOrder: 0 },
+      { id: "services-auto", type: "business_collection", sortOrder: 1, layoutVariant: "auto", productItems: [{ id: "product-1", name: "业务一" }] },
+      { id: "services-grid", type: "business_collection", sortOrder: 2, layoutVariant: "grid", productItems: [{ id: "product-2", name: "业务二" }] },
+      { id: "cases-list", type: "case_collection", sortOrder: 3, layoutVariant: "list", caseItems: [{ id: "case-1", title: "案例一" }] },
+      { id: "cases-grid", type: "case_collection", sortOrder: 4, layoutVariant: "grid", caseItems: [{ id: "case-2", title: "案例二" }] },
+      { id: "cases-rail", type: "case_collection", sortOrder: 5, layoutVariant: "carousel", caseItems: [{ id: "case-3", title: "案例三" }] },
+    ]}/>);
+
+    expect(container.querySelector("#bp-template-block-services-auto .service-grid.layout-auto")).toBeInTheDocument();
+    expect(container.querySelector("#bp-template-block-services-grid .service-grid.layout-grid")).toBeInTheDocument();
+    expect(container.querySelector("#bp-template-block-cases-list .case-collection.layout-vertical")).toBeInTheDocument();
+    expect(container.querySelector("#bp-template-block-cases-grid .case-collection.layout-grid")).toBeInTheDocument();
+    expect(container.querySelector("#bp-template-block-cases-rail .case-collection.layout-rail")).toBeInTheDocument();
   });
 });

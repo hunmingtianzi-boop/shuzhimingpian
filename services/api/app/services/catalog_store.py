@@ -2620,7 +2620,7 @@ def _require_complete_template_blocks(document: EnterpriseTemplateDocument) -> N
             incomplete.append(block.id)
         elif block.type == "faq" and block.faq_mode == "selected" and not block.faq_document_ids:
             incomplete.append(block.id)
-        elif block.type == "cta" and (not block.cta_label or not block.cta_url):
+        elif block.type == "cta" and not block.cta_url:
             incomplete.append(block.id)
         elif block.type == "action_collection" and not block.action_items:
             incomplete.append(block.id)

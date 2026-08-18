@@ -509,6 +509,25 @@ def test_action_collection_must_have_at_least_one_item_to_publish() -> None:
     assert error.value.code == "TEMPLATE_BLOCK_INCOMPLETE"
 
 
+def test_action_button_uses_public_default_label_when_url_is_present() -> None:
+    document = EnterpriseTemplateDocument.model_validate(
+        {
+            "blocks": [
+                _identity(),
+                {
+                    "id": "cta",
+                    "type": "cta",
+                    "sort_order": 1,
+                    "title": "行动按钮",
+                    "cta_url": "https://example.com/contact",
+                },
+            ]
+        }
+    )
+
+    _require_complete_template_blocks(document)
+
+
 def test_identity_contact_item_accepts_real_actions_and_rejects_script_urls() -> None:
     phone = CardContactItem(
         id="work-phone",

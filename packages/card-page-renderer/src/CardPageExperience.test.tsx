@@ -101,4 +101,5 @@ describe("CardPageExperience production presentation", () => {
     expect(markup).toContain("service-card text-only");
     expect(markup).not.toContain("service-placeholder");
   });
+
 });

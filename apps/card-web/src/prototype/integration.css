@@ -708,19 +708,16 @@ textarea {
   line-height: 1.75;
 }
 
-.bp-case-story article.result {
-  color: #eef7f5;
-  background: #1b2c2f;
-  border-color: #1b2c2f;
+.bp-detail-page .bp-ai-card.is-disabled {
+  border-color: #d9e4e6;
+  background: #fbfcfc;
 }
 
-.bp-case-story article.result > span,
-.bp-case-story article.result small {
-  color: #7fc9c6;
-}
-
-.bp-case-story article.result p {
-  color: #d2dfdd;
+.bp-detail-page .bp-ai-card.is-disabled button {
+  color: #78878e;
+  border-color: #dfe6e8;
+  background: #f3f6f7;
+  cursor: not-allowed;
 }
 
 .bp-card-actions {

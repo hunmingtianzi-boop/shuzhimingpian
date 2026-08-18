@@ -92,7 +92,12 @@ function withOverrides<T extends { id: string }>(items: T[], overrides: Array<Pa
   const byId = new Map((overrides || []).map((item) => [item.id, item]));
   return items.map((item) => ({ ...item, ...byId.get(item.id) }));
 }
-function simulatorLayout(variant?: CardPageLayoutVariant, listAlias = "stack") { return ({ carousel: "rail", list: listAlias } as Record<string, string>)[variant || "auto"] || variant || "auto"; }
+function simulatorLayout(variant: CardPageLayoutVariant | undefined, type: CardPageBlockType) {
+  const selected = variant || "auto";
+  if (selected === "carousel") return "rail";
+  if (selected === "list") return type === "case_collection" ? "vertical" : "stack";
+  return selected;
+}
 function isOverview(block: CardPageBlock) { return block.type === "rich_text" && (block.id === "overview" || block.id.endsWith("-overview") || block.title?.trim() === "概览"); }
 function moduleTitle(block: CardPageBlock, identityKind?: CardPageIdentity["kind"]) {
   const configured = block.title?.trim();
@@ -109,7 +114,7 @@ function positionValue(value?: CardPageIdentityPresentation["background"] extend
 
 export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceUrl = (url) => url }: Pick<CardPageExperienceProps, "blocks" | "data" | "resolveResourceUrl">): StudioModule[] {
   return orderVisibleCardPageBlocks(blocks, blockSelector).map((block): StudioModule => {
-    const base: StudioModule = { id: block.id, type: studioType(block), title: moduleTitle(block, data.identity?.kind), source: moduleSource(block, data.identity?.kind), visible: block.type === "identity" ? true : block.visible !== false, directoryEnabled: block.directoryEnabled, showTitle: block.showTitle !== false && block.type !== "identity" && !isOverview(block), layout: simulatorLayout(block.layoutVariant), body: block.body, actionTemplate: block.actionTemplate };
+    const base: StudioModule = { id: block.id, type: studioType(block), title: moduleTitle(block, data.identity?.kind), source: moduleSource(block, data.identity?.kind), visible: block.type === "identity" ? true : block.visible !== false, directoryEnabled: block.directoryEnabled, showTitle: block.showTitle !== false && block.type !== "identity" && !isOverview(block), layout: simulatorLayout(block.layoutVariant, block.type), body: block.body, actionTemplate: block.actionTemplate };
     if (block.type === "identity") {
       const identity = data.identity;
       base.identity = identity ? { ...identity, imageUrl: identity.imageUrl ? resolveResourceUrl(identity.imageUrl) : undefined, layout: block.presentation?.identityLayout || (block.layoutVariant === "vertical" ? "vertical" : "horizontal"), background: { imageUrl: block.presentation?.background?.assetUrl ? resolveResourceUrl(block.presentation.background.assetUrl) : undefined, fit: block.presentation?.background?.fit, position: positionValue(block.presentation?.background?.position) as string, aspectRatio: block.presentation?.background?.aspectRatio, focalX: block.presentation?.background?.focalX, focalY: block.presentation?.background?.focalY, scale: block.presentation?.background?.scale, opacity: block.presentation?.background?.opacity, overlay: block.presentation?.background?.overlay } } : undefined;

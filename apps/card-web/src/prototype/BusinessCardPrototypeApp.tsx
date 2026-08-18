@@ -1709,15 +1709,22 @@ export const BusinessCardPrototypeApp = forwardRef<
             {[
               ["01", "项目背景", detail.item.background],
               ["02", "解决方案", detail.item.solution],
-              ["03", "项目结果", detail.item.result],
-            ].map(([number, label, content], index) => (
-              <article className={index === 2 ? "result" : ""} key={label}>
+              ["03", "项目成果", detail.item.result],
+            ].map(([number, label, content]) => (
+              <article key={label}>
                 <span>{number}</span><div><small>{label}</small><p>{content}</p></div>
               </article>
             ))}
           </div>
         </>}
-        {assistantAvailable && <section className="bp-ai-card"><div><i>AI</i><span><strong>{assistantName}</strong><small>继续了解</small></span></div><button type="button" onClick={() => onAssistant(`请详细介绍${detail.kind === "product" ? detail.item.name : detail.item.title}`)}>向 AI 继续提问 <Arrow /></button></section>}
+        <section className={`bp-ai-card ${assistantAvailable ? "" : "is-disabled"}`}>
+          <div><i>AI</i><span><strong>{assistantName}</strong><small>{assistantAvailable ? "继续了解" : "暂未开放"}</small></span></div>
+          <button
+            type="button"
+            disabled={!assistantAvailable}
+            onClick={() => onAssistant(`请详细介绍${detail.kind === "product" ? detail.item.name : detail.item.title}`)}
+          >{assistantAvailable ? "向 AI 继续提问" : "AI 暂未开放"} <Arrow /></button>
+        </section>
       </main>
       <div className="bp-sticky-actions bp-detail-actions"><button type="button" onClick={returnFromDetail}>返回</button><button className="primary" type="button" onClick={onLead}>留下合作需求</button></div>
     </>

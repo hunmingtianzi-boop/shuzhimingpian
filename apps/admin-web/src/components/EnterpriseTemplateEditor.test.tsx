@@ -190,6 +190,18 @@ describe("EnterpriseTemplateEditor", () => {
     } satisfies EnterpriseTemplateBlock;
     expect(getEnterpriseTemplateBlockIssue(block)).toBeUndefined();
   });
+  it("allows an action button to use the public default label", () => {
+    const block = {
+      id: "cta-test",
+      type: "cta",
+      visible: true,
+      sortOrder: 0,
+      title: "行动按钮",
+      ctaUrl: "https://example.com/contact",
+    } satisfies EnterpriseTemplateBlock;
+
+    expect(getEnterpriseTemplateBlockIssue(block)).toBeUndefined();
+  });
   it("uses the exact simulator editor shell and shared panel primitives", async () => {
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([publishedCase]);
@@ -229,6 +241,41 @@ describe("EnterpriseTemplateEditor", () => {
 
     await user.click(screen.getByRole("tab", { name: "线上" }));
     expect(await screen.findByTitle("实际公开名片页面")).toHaveAttribute("src", card.shareUrl);
+  }, 15_000);
+
+  it("previews the complete case story and its contextual AI entry", async () => {
+    const user = userEvent.setup();
+    const storyCase: CaseStudy = {
+      ...publishedCase,
+      background: "项目背景完整内容",
+      solution: "解决方案完整内容",
+      result: "项目成果完整内容",
+    };
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [identityBlock, {
+          id: "cases",
+          type: "case_collection",
+          visible: true,
+          sortOrder: 1,
+          title: "代表案例",
+          caseIds: [storyCase.id],
+        }],
+      },
+    }));
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([storyCase]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+
+    await user.click((await screen.findAllByRole("button", { name: /零售增长案例/ }))[0]);
+
+    expect(await screen.findByRole("article", { name: "案例详情预览" })).toBeInTheDocument();
+    expect(screen.getByText("项目背景完整内容")).toBeInTheDocument();
+    expect(screen.getByText("解决方案完整内容")).toBeInTheDocument();
+    expect(screen.getByText("项目成果完整内容")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /向 AI 继续提问/ })).toBeInTheDocument();
   }, 15_000);
 
   it("keeps empty and in-progress input values when the parent recreates equivalent props", async () => {
@@ -292,20 +339,19 @@ describe("EnterpriseTemplateEditor", () => {
     fireEvent.change(bodyInput, { target: { value: "中文输入法组词中" } });
     expect(bodyInput).toHaveValue("中文输入法组词中");
     fireEvent.compositionEnd(bodyInput, { data: "中" });
-    fireEvent.change(bodyInput, { target: { value: "中文输入法组词完成" } });
-    await waitFor(() => expect(bodyInput).toHaveValue("中文输入法组词完成"));
+    await waitFor(() => expect(bodyInput).toHaveValue("中文输入法组词中"));
 
     await user.click(screen.getByRole("button", { name: "父层刷新" }));
     expect(titleInput).toHaveValue("");
-    expect(bodyInput).toHaveValue("中文输入法组词完成");
+    expect(bodyInput).toHaveValue("中文输入法组词中");
     expect(load).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(load).toHaveBeenCalledTimes(1);
-    expect(bodyInput).toHaveValue("中文输入法组词完成");
+    expect(bodyInput).toHaveValue("中文输入法组词中");
     expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "rich-new", title: "", body: "中文输入法组词完成", showTitle: false }),
+      expect.objectContaining({ id: "rich-new", title: "", body: "中文输入法组词中", showTitle: false }),
     ]));
   }, 15_000);
 
@@ -314,7 +360,12 @@ describe("EnterpriseTemplateEditor", () => {
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
     vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
     vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
-    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate");
+    const update = vi.spyOn(adminApi, "updateEnterpriseTemplate").mockImplementation(
+      async (_id, _version, themeKey, blocks) => template({
+        version: 8,
+        draft: { schemaVersion: 1, themeKey, blocks },
+      }),
+    );
     renderEditor();
 
     await user.click(await screen.findByRole("tab", { name: "添加模块" }));
@@ -322,9 +373,17 @@ describe("EnterpriseTemplateEditor", () => {
 
     const labelInput = await screen.findByRole("textbox", { name: "按钮文案", hidden: true });
     expect(labelInput).toBeEnabled();
-    await user.type(labelInput, "预约交流");
+    fireEvent.compositionStart(labelInput);
+    fireEvent.change(labelInput, { target: { value: "预约交流" } });
+    fireEvent.compositionEnd(labelInput, { data: "流" });
     expect(labelInput).toHaveValue("预约交流");
     expect(update).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "保存草稿", hidden: true }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][3]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "cta", ctaLabel: "预约交流" }),
+    ]));
 
   }, 15_000);
 

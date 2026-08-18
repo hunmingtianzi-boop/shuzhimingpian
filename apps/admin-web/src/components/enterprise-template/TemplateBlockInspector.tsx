@@ -134,13 +134,19 @@ function Input({ value, onChange, onCompositionStart, onCompositionEnd, ...props
     }}
     onCompositionEnd={(event) => {
       composing.current = false;
-      lastCommitted.current = event.currentTarget.value;
-      setDraft(event.currentTarget.value);
+      const nextValue = event.currentTarget.value;
+      lastCommitted.current = nextValue;
+      setDraft(nextValue);
+      onChange?.(
+        event as unknown as Parameters<NonNullable<StableInputProps["onChange"]>>[0],
+        { value: nextValue } as Parameters<NonNullable<StableInputProps["onChange"]>>[1],
+      );
       onCompositionEnd?.(event);
     }}
     onChange={(event, data) => {
       setDraft(data.value);
       if (composing.current) return;
+      if (data.value === lastCommitted.current) return;
       lastCommitted.current = data.value;
       onChange?.(event, data);
     }}
@@ -170,13 +176,19 @@ function Textarea({ value, onChange, onCompositionStart, onCompositionEnd, ...pr
     }}
     onCompositionEnd={(event) => {
       composing.current = false;
-      lastCommitted.current = event.currentTarget.value;
-      setDraft(event.currentTarget.value);
+      const nextValue = event.currentTarget.value;
+      lastCommitted.current = nextValue;
+      setDraft(nextValue);
+      onChange?.(
+        event as unknown as Parameters<NonNullable<StableTextareaProps["onChange"]>>[0],
+        { value: nextValue } as Parameters<NonNullable<StableTextareaProps["onChange"]>>[1],
+      );
       onCompositionEnd?.(event);
     }}
     onChange={(event, data) => {
       setDraft(data.value);
       if (composing.current) return;
+      if (data.value === lastCommitted.current) return;
       lastCommitted.current = data.value;
       onChange?.(event, data);
     }}
@@ -1445,7 +1457,7 @@ export function TemplateBlockInspector({
 
       {block.type === "cta" ? (
         <div className="template-inspector-fields">
-          <Field label="按钮文案" required>
+          <Field label="按钮文案" hint="可选；留空时公开页显示“查看详情”。">
             <Input
               value={block.ctaLabel ?? ""}
               disabled={busy}

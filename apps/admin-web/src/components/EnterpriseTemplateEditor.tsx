@@ -221,7 +221,6 @@ export function getEnterpriseTemplateBlockIssue(
       return undefined;
     }
     case "cta":
-      if (!block.ctaLabel?.trim()) return "请输入按钮文案。";
       return isHttpsUrl(block.ctaUrl) ? undefined : "请输入有效的 HTTPS 跳转地址。";
     case "action_collection":
       if (!block.actionItems?.length) return "请至少添加一个快捷入口。";

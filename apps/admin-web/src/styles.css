@@ -5570,7 +5570,8 @@ a:hover {
   gap: 7px;
   margin-top: 4px;
   padding: 15px;
-  border-left: 3px solid #72aeb0;
+  border: 1px solid #dce7e8;
+  border-radius: 12px;
   background: #fff;
 }
 
@@ -5578,6 +5579,85 @@ a:hover {
   color: #315e62;
   font-size: 11px;
   font-weight: 780;
+}
+
+.template-canvas-case-story {
+  display: grid;
+  gap: 10px;
+}
+
+.template-canvas-case-story article {
+  display: grid;
+  padding: 15px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  border: 1px solid #dce7e8;
+  border-radius: 12px;
+  background: #fbfdfd;
+}
+
+.template-canvas-case-story article > strong {
+  color: #347f84;
+  font-size: 15px;
+}
+
+.template-canvas-case-story article > div {
+  display: grid;
+  gap: 5px;
+}
+
+.template-canvas-case-story article span {
+  color: #536b73;
+  font-size: 10px;
+  font-weight: 780;
+}
+
+.template-canvas-detail-assistant {
+  gap: 12px !important;
+  margin-top: 12px !important;
+  padding: 16px !important;
+  border-color: #b8c9f5 !important;
+  background: #fff !important;
+}
+
+.template-canvas-detail-assistant > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.template-canvas-detail-assistant i {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #fff;
+  border-radius: 11px;
+  background: #416ed8;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.template-canvas-detail-assistant span {
+  display: grid;
+  gap: 2px;
+}
+
+.template-canvas-detail-assistant small {
+  color: #7784a5;
+  font-size: 9px;
+}
+
+.template-canvas-detail-assistant button {
+  min-height: 42px;
+  color: #274db0;
+  border: 1px solid #d3dcf7;
+  border-radius: 10px;
+  background: #fbfcff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 720;
+  cursor: pointer;
 }
 
 .template-canvas-assistant-copy {

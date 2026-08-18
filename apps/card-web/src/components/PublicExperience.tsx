@@ -321,7 +321,7 @@ function DetailContent({
             {[
               ["项目背景", caseStudy.background],
               ["解决方案", caseStudy.solution],
-              ["项目结果", caseStudy.result],
+              ["项目成果", caseStudy.result],
             ].map(([label, value]) => (
               <section key={label}>
                 <h3>{label}</h3>

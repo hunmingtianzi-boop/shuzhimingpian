@@ -616,6 +616,20 @@ input.sr-only {
 .case-collection.layout-featured .case-story:not(:first-child) .case-results { display: none; }
 .case-collection.layout-featured .case-story:not(:first-child) h3 { font-size: 12px; line-height: 1.45; }
 
+.case-collection.layout-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.case-collection.layout-grid .case-story {
+  min-width: 0;
+  height: 100%;
+}
+
+.case-collection.layout-grid .case-cover { height: 118px; }
+.case-collection.layout-grid .case-body { padding: 12px; }
+.case-collection.layout-grid .case-results { grid-template-columns: 1fr; }
+
 .case-collection.layout-horizontal,
 .case-collection.layout-rail { display: flex; margin-right: -16px; overflow-x: auto; gap: 12px; padding: 1px 16px 10px 1px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .case-collection.layout-horizontal::-webkit-scrollbar,
