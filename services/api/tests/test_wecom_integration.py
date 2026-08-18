@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import struct
 import uuid
 
@@ -226,6 +227,60 @@ async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> Non
 
 
 @pytest.mark.asyncio
+async def test_wecom_suite_text_card_opens_the_application_report() -> None:
+    async def provider(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload == {
+            "touser": "suite-user-id",
+            "msgtype": "textcard",
+            "agentid": 1000002,
+            "textcard": {
+                "title": "新访问报告已生成",
+                "description": "访客浏览了企业名片。",
+                "url": "https://card.example.test/c/admin/wecom/entry?return_to=report",
+                "btntxt": "查看报告",
+            },
+            "safe": 0,
+            "enable_id_trans": 0,
+            "enable_duplicate_check": 1,
+            "duplicate_check_interval": 1800,
+        }
+        return httpx.Response(
+            200,
+            json={"errcode": 0, "errmsg": "ok", "msgid": "message-card-1"},
+        )
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+    )
+    redis = MemoryRedis()
+    suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
+    corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}"
+    ] = "corp-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result = await WeComSuiteClient(
+            settings=settings,
+            http_client=client,
+            redis=redis,
+        ).send_text_card(
+            auth_corpid="wwcorp123456",
+            permanent_code="permanent-code",
+            agent_id=1000002,
+            user_id="suite-user-id",
+            title="新访问报告已生成",
+            description="访客浏览了企业名片。",
+            url="https://card.example.test/c/admin/wecom/entry?return_to=report",
+        )
+
+    assert result.message_id == "message-card-1"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "provider_payload",
     [
@@ -315,6 +370,37 @@ async def test_wecom_test_message_uses_cached_token_and_rejects_invalid_user() -
         connector = WeComClient(settings=_settings(), http_client=client, redis=redis)
         with pytest.raises(WeComProviderError, match="WECOM_INVALID_RECIPIENT"):
             await connector.send_text(user_id="test-user", content="连接测试")
+
+
+@pytest.mark.asyncio
+async def test_wecom_self_built_text_card_uses_the_application_agent() -> None:
+    async def provider(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["msgtype"] == "textcard"
+        assert payload["agentid"] == 1000002
+        assert payload["textcard"]["btntxt"] == "查看报告"
+        assert payload["textcard"]["url"].endswith("/wecom/entry?return_to=report")
+        return httpx.Response(
+            200,
+            json={"errcode": 0, "errmsg": "ok", "msgid": "message-card-2"},
+        )
+
+    redis = MemoryRedis()
+    digest = hashlib.sha256(b"ww1234567890abcdef").hexdigest()[:20]
+    redis.values[f"wecom:access-token:{digest}"] = "cached-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        result = await WeComClient(
+            settings=_settings(),
+            http_client=client,
+            redis=redis,
+        ).send_text_card(
+            user_id="test-user",
+            title="有人正在查看名片",
+            description="访客正在查看企业名片。",
+            url="https://card.example.test/c/admin/wecom/entry?return_to=report",
+        )
+
+    assert result.message_id == "message-card-2"
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -22,7 +23,7 @@ class StubRepository:
     summary_owner = uuid.uuid4()
 
     def __init__(self) -> None:
-        self.wecom_messages: list[str] = []
+        self.wecom_messages: list[dict[str, str]] = []
 
     def admin_base_url(self) -> str:
         return "https://example.test/c/admin"
@@ -78,10 +79,18 @@ class StubRepository:
         _event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        content: str,
+        title: str,
+        description: str,
+        report_url: str,
     ) -> int:
         assert recipient_user_ids == (self.summary_owner,)
-        self.wecom_messages.append(content)
+        self.wecom_messages.append(
+            {
+                "title": title,
+                "description": description,
+                "report_url": report_url,
+            }
+        )
         return 1
 
     async def build_export(
@@ -233,7 +242,14 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
     assert expected_copy in result.notifications[0].body
     assert "微信号" not in result.notifications[0].body
     assert repository.wecom_messages
-    assert f"/visits?visitId={visit_id}" in repository.wecom_messages[0]
+    message = repository.wecom_messages[0]
+    assert message["title"] in {"有人正在查看名片", "新访问报告已生成"}
+    assert str(visit_id)[:8] in message["description"]
+    report_url = urlsplit(message["report_url"])
+    assert report_url.path == "/c/admin/wecom/entry"
+    assert parse_qs(report_url.query)["return_to"] == [
+        f"/c/admin/visits?visitId={visit_id}"
+    ]
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,16 @@ describe("admin subpath routing", () => {
     );
     expect(routing.appPathFromBrowser("/c/admin/")).toBe("/");
     expect(routing.appPathFromBrowser("/unrelated")).toBe("/unrelated");
+    expect(
+      routing.wecomEntryReturnTo(
+        `?return_to=${encodeURIComponent("/c/admin/visits?visitId=visit-1")}`,
+      ),
+    ).toBe("/c/admin/visits?visitId=visit-1");
+    expect(
+      routing.wecomEntryReturnTo(
+        `?return_to=${encodeURIComponent("https://attacker.example/report")}`,
+      ),
+    ).toBe("/c/admin/setup");
   });
 
   it("classifies every platform shell without changing base-path link generation", async () => {

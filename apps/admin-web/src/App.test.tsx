@@ -138,6 +138,29 @@ describe("CurrentPage workspace routing", () => {
     },
   );
 
+  it("opens the requested visit report when an authenticated member clicks a WeCom card", async () => {
+    const reportPath = appHref(`${APP_PATHS.visits}?visitId=visit-1`);
+    window.history.replaceState(
+      {},
+      "",
+      `${appHref(WECOM_ENTRY_PATH)}?return_to=${encodeURIComponent(reportPath)}`,
+    );
+
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <AuthContext.Provider value={authValue("company_admin")}>
+          <SessionGate />
+        </AuthContext.Provider>
+      </FluentProvider>,
+    );
+
+    await waitFor(() => {
+      expect(`${window.location.pathname}${window.location.search}`).toBe(
+        reportPath,
+      );
+    });
+  });
+
   it("returns a 403 surface before an enterprise account can mount platform data", () => {
     const listProfiles = vi.spyOn(platformApi, "listLlmProfiles");
     window.history.replaceState(

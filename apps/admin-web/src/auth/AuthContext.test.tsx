@@ -51,6 +51,39 @@ describe("WeCom workbench authentication entry", () => {
     expect(screen.getByText("bootstrapping")).toBeInTheDocument();
   });
 
+  it("preserves the requested visit report through automatic OAuth", async () => {
+    const authorizeUrl =
+      "https://open.weixin.qq.com/connect/oauth2/authorize?state=report-state";
+    const redirect = vi.fn();
+    vi.spyOn(apiClient, "isConfigured").mockReturnValue(true);
+    vi.spyOn(apiClient, "refreshSession").mockRejectedValue(
+      new ApiError("没有可用的安全会话", {
+        code: "CSRF_TOKEN_MISSING",
+        status: 403,
+      }),
+    );
+    const createLoginUrl = vi
+      .spyOn(apiClient, "createWeComLoginUrl")
+      .mockResolvedValue(authorizeUrl);
+    const reportPath = appHref(`${APP_PATHS.visits}?visitId=visit-1`);
+    window.history.replaceState(
+      {},
+      "",
+      `${appHref(WECOM_ENTRY_PATH)}?return_to=${encodeURIComponent(reportPath)}`,
+    );
+
+    render(
+      <AuthProvider externalRedirect={redirect}>
+        <AuthProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(createLoginUrl).toHaveBeenCalledWith(reportPath);
+      expect(redirect).toHaveBeenCalledWith(authorizeUrl);
+    });
+  });
+
   it("shows a recoverable error when the workbench OAuth start is unavailable", async () => {
     vi.spyOn(apiClient, "isConfigured").mockReturnValue(true);
     vi.spyOn(apiClient, "refreshSession").mockRejectedValue(

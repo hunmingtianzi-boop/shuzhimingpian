@@ -100,6 +100,36 @@ export function adminWorkspaceForPath(path: string): AdminWorkspace | undefined 
   return platformPaths.has(path) ? "platform" : "enterprise";
 }
 
+export function wecomEntryReturnTo(search: string): string {
+  const fallback = appHref(APP_PATHS.setup);
+  const candidate = new URLSearchParams(search).get("return_to")?.trim();
+  if (
+    !candidate ||
+    !candidate.startsWith("/") ||
+    candidate.startsWith("//") ||
+    candidate.includes("\\") ||
+    candidate.includes("\r") ||
+    candidate.includes("\n")
+  ) {
+    return fallback;
+  }
+  const parsed = new URL(candidate, "https://wecom-entry.invalid");
+  if (
+    parsed.origin !== "https://wecom-entry.invalid" ||
+    (APP_BASE_PATH !== "/" && !parsed.pathname.startsWith(APP_BASE_PATH))
+  ) {
+    return fallback;
+  }
+  const appPath = appPathFromBrowser(parsed.pathname);
+  if (adminWorkspaceForPath(appPath) !== "enterprise") return fallback;
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+export function replaceBrowserHref(href: string): void {
+  window.history.replaceState({}, "", href);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 export function navigate(path: AppPath): void {
   const browserPath = appHref(path);
   if (window.location.pathname === browserPath) return;

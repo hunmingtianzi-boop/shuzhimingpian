@@ -14,6 +14,7 @@ from app.integrations.wecom import (
     WeComMember,
     WeComMessageResult,
     WeComProviderError,
+    build_wecom_text_card_payload,
     parse_wecom_message_result,
 )
 
@@ -317,6 +318,39 @@ class WeComSuiteClient:
                 "enable_duplicate_check": 1,
                 "duplicate_check_interval": 1800,
             },
+        )
+        return parse_wecom_message_result(payload)
+
+    async def send_text_card(
+        self,
+        *,
+        auth_corpid: str,
+        permanent_code: str,
+        agent_id: int,
+        user_id: str,
+        title: str,
+        description: str,
+        url: str,
+        button_text: str = "查看报告",
+    ) -> WeComMessageResult:
+        if agent_id <= 0:
+            raise WeComConfigurationError("wecom_suite_agent_not_configured")
+        token = await self.corp_access_token(
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+        )
+        payload = await self._request_json(
+            "POST",
+            "/cgi-bin/message/send",
+            params={"access_token": token},
+            json=build_wecom_text_card_payload(
+                user_id=user_id,
+                agent_id=agent_id,
+                title=title,
+                description=description,
+                url=url,
+                button_text=button_text,
+            ),
         )
         return parse_wecom_message_result(payload)
 

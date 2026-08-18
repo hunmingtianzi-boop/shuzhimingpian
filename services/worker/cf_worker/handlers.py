@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from cf_worker.domain import (
     EvaluationRunner,
@@ -294,19 +295,20 @@ class EventHandlerRegistry:
             if snapshot.in_app_enabled
             else ()
         )
-        # Including the visit identifier prevents WeCom from treating two different
-        # anonymous visitors as duplicate messages while keeping retries idempotent.
-        wecom_content = f"{title}\n{body}\n访问编号：{str(visit_id)[:8]}"
         admin_base_url = self._repository.admin_base_url()
-        if admin_base_url:
-            wecom_content += f"\n查看报告：{admin_base_url.rstrip('/')}/visits?visitId={visit_id}"
+        report_entry_url = _wecom_visit_report_entry_url(admin_base_url, visit_id)
+        # The visit identifier keeps different anonymous visits distinguishable
+        # without exposing personal data in the application message.
+        wecom_description = f"{body}\n访问编号：{str(visit_id)[:8]}"
         wecom_delivered = (
             await self._repository.send_wecom_visit_notification(
                 event,
                 recipient_user_ids=snapshot.recipient_user_ids,
-                content=wecom_content,
+                title=title,
+                description=wecom_description,
+                report_url=report_entry_url,
             )
-            if snapshot.wecom_enabled
+            if snapshot.wecom_enabled and report_entry_url is not None
             else 0
         )
         return HandlerResult(
@@ -346,6 +348,30 @@ def _duration_label(seconds: float) -> str:
         return f"{rounded} 秒"
     minutes, remaining = divmod(rounded, 60)
     return f"{minutes} 分 {remaining} 秒" if remaining else f"{minutes} 分"
+
+
+def _wecom_visit_report_entry_url(
+    admin_base_url: str | None,
+    visit_id: uuid.UUID,
+) -> str | None:
+    """Route a WeCom card through the app entry so OAuth returns to the report."""
+
+    if not admin_base_url:
+        return None
+    parsed = urlsplit(admin_base_url.strip())
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return None
+    base_path = parsed.path.rstrip("/")
+    report_path = f"{base_path}/visits?visitId={visit_id}"
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"{base_path}/wecom/entry",
+            urlencode({"return_to": report_path}),
+            "",
+        )
+    )
 
 
 def _uuid_value(payload: Mapping[str, Any], key: str) -> uuid.UUID:

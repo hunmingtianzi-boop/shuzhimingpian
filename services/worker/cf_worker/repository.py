@@ -200,6 +200,47 @@ class PostgresOutboxRepository:
                 http_client=client,
             ).send_text(user_id=user_id, content=content)
 
+    async def _send_wecom_text_card(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        description: str,
+        report_url: str,
+        suite_context: tuple[str, str, int] | None,
+    ) -> None:
+        async with httpx.AsyncClient(
+            **wecom_http_client_kwargs(
+                self._settings,
+                use_proxy=suite_context is not None,
+            )
+        ) as client:
+            if suite_context is not None:
+                auth_corpid, permanent_code, agent_id = suite_context
+                await WeComSuiteClient(
+                    settings=self._settings,  # type: ignore[arg-type]
+                    http_client=client,
+                    redis=self._redis,
+                ).send_text_card(
+                    auth_corpid=auth_corpid,
+                    permanent_code=permanent_code,
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    title=title,
+                    description=description,
+                    url=report_url,
+                )
+                return
+            await WeComClient(
+                settings=self._settings,  # type: ignore[arg-type]
+                http_client=client,
+            ).send_text_card(
+                user_id=user_id,
+                title=title,
+                description=description,
+                url=report_url,
+            )
+
     async def purge_expired_visitor_profiles(self) -> int:
         """Physically remove expired derived profile evidence without loading PII."""
         async with self._engine.begin() as connection:
@@ -1108,7 +1149,9 @@ class PostgresOutboxRepository:
         event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        content: str,
+        title: str,
+        description: str,
+        report_url: str,
     ) -> int:
         self_built_configured = bool(
             self._settings.wecom_corp_id
@@ -1152,9 +1195,11 @@ class PostgresOutboxRepository:
         for row in rows:
             try:
                 user_id = self._cipher.decrypt(bytes(row["wecom_user_id_ciphertext"]))
-                await self._send_wecom_text(
+                await self._send_wecom_text_card(
                     user_id=user_id,
-                    content=content[:2_000],
+                    title=title,
+                    description=description,
+                    report_url=report_url,
                     suite_context=suite_context,
                 )
             except PiiCipherError as exc:

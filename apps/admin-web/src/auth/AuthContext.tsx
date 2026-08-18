@@ -19,6 +19,7 @@ import {
   APP_PATHS,
   appHref,
   appPathFromBrowser,
+  wecomEntryReturnTo,
   WECOM_CALLBACK_PATH,
   WECOM_ENTRY_PATH,
 } from "../routing";
@@ -137,7 +138,9 @@ export function AuthProvider({
           // this state on the boot screen avoids flashing the password form
           // between the session probe and the WeCom authorization redirect.
           setStatus("bootstrapping");
-          await beginWeComLogin(appHref(APP_PATHS.setup)).catch(() => undefined);
+          await beginWeComLogin(
+            wecomEntryReturnTo(globalThis.location.search),
+          ).catch(() => undefined);
           return;
         }
         if (appPath === WECOM_CALLBACK_PATH) {

@@ -38,9 +38,12 @@ import type {
 import {
   adminWorkspaceForPath,
   APP_PATHS,
+  appHref,
   navigate,
+  replaceBrowserHref,
   type AppPath,
   usePathname,
+  wecomEntryReturnTo,
   WECOM_ENTRY_PATH,
 } from "./routing";
 import { confirmOnboardingWithRecovery } from "./utils/platformOnboarding";
@@ -941,14 +944,14 @@ export function SessionGate() {
     workspace === "platform" ? APP_PATHS.platformOverview : APP_PATHS.overview;
   const authenticationLandingPath =
     pathname === WECOM_ENTRY_PATH && workspace === "enterprise"
-      ? APP_PATHS.setup
-      : landingPath;
+      ? wecomEntryReturnTo(globalThis.location.search)
+      : appHref(landingPath);
   const isAuthenticationEntry =
     pathname === "/login" || pathname === WECOM_ENTRY_PATH;
 
   useEffect(() => {
     if (auth.status === "authenticated" && isAuthenticationEntry && workspace) {
-      navigate(authenticationLandingPath);
+      replaceBrowserHref(authenticationLandingPath);
     }
   }, [auth.status, authenticationLandingPath, isAuthenticationEntry, workspace]);
 

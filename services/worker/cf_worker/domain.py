@@ -182,7 +182,9 @@ class OutboxRepository(Protocol):
         event: OutboxRecord,
         *,
         recipient_user_ids: tuple[uuid.UUID, ...],
-        content: str,
+        title: str,
+        description: str,
+        report_url: str,
     ) -> int: ...
 
     async def build_export(

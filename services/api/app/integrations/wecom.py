@@ -34,6 +34,46 @@ class WeComMessageResult:
     message_id: str | None
 
 
+def build_wecom_text_card_payload(
+    *,
+    user_id: str,
+    agent_id: int,
+    title: str,
+    description: str,
+    url: str,
+    button_text: str = "查看报告",
+) -> dict[str, object]:
+    """Build a clickable application card accepted by the WeCom message API."""
+
+    normalized_title = title.strip()
+    normalized_description = description.strip()
+    normalized_url = url.strip()
+    normalized_button = button_text.strip() or "查看报告"
+    if (
+        not user_id.strip()
+        or agent_id <= 0
+        or not normalized_title
+        or not normalized_description
+        or not normalized_url.startswith(("https://", "http://"))
+    ):
+        raise WeComConfigurationError("wecom_text_card_invalid")
+    return {
+        "touser": user_id,
+        "msgtype": "textcard",
+        "agentid": agent_id,
+        "textcard": {
+            "title": normalized_title[:128],
+            "description": normalized_description[:512],
+            "url": normalized_url[:2_048],
+            "btntxt": normalized_button[:4],
+        },
+        "safe": 0,
+        "enable_id_trans": 0,
+        "enable_duplicate_check": 1,
+        "duplicate_check_interval": 1_800,
+    }
+
+
 def parse_wecom_message_result(payload: dict[str, object]) -> WeComMessageResult:
     """Reject provider acknowledgements that did not accept the target member."""
 
@@ -178,6 +218,32 @@ class WeComClient:
                 "enable_duplicate_check": 1,
                 "duplicate_check_interval": 1800,
             },
+        )
+        return parse_wecom_message_result(payload)
+
+    async def send_text_card(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        description: str,
+        url: str,
+        button_text: str = "查看报告",
+    ) -> WeComMessageResult:
+        _corp_id, agent_id, _secret = self._credentials()
+        token = await self.access_token()
+        payload = await self._request_json(
+            "POST",
+            "/cgi-bin/message/send",
+            params={"access_token": token},
+            json=build_wecom_text_card_payload(
+                user_id=user_id,
+                agent_id=agent_id,
+                title=title,
+                description=description,
+                url=url,
+                button_text=button_text,
+            ),
         )
         return parse_wecom_message_result(payload)
 
@@ -349,4 +415,5 @@ __all__ = [
     "WeComProbeResult",
     "WeComProviderError",
     "WeComUserIdentity",
+    "build_wecom_text_card_payload",
 ]
