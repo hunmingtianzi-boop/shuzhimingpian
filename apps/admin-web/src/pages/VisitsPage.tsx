@@ -279,7 +279,7 @@ export function VisitsPage() {
         cardId: cardId || undefined,
       }),
     `${offset}:${cardId}`,
-    { refreshIntervalMs: 15_000, refreshOnVisible: true },
+    { refreshIntervalMs: 5_000, refreshOnVisible: true },
   );
 
   const applyFilter = () => {

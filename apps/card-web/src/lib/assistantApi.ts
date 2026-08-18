@@ -52,7 +52,9 @@ type StreamAssistantMessageOptions = {
 };
 
 const SESSION_PREFIX = "cf-card-assistant-session:";
+const SESSION_BACKGROUND_PREFIX = "cf-card-visit-backgrounded-at:";
 const EXPIRY_SAFETY_WINDOW_MS = 30_000;
+export const VISIT_SESSION_INACTIVE_MS = 35_000;
 const visitorSessionPromises = new Map<string, Promise<VisitorSession>>();
 const assistantSessionPromises = new Map<string, Promise<VisitorSession>>();
 
@@ -93,6 +95,10 @@ export function isAssistantApiConfigured() {
 
 export function getAssistantSessionStorageKey(cardSlug: string) {
   return `${SESSION_PREFIX}${cardSlug}`;
+}
+
+function getVisitBackgroundStorageKey(cardSlug: string) {
+  return `${SESSION_BACKGROUND_PREFIX}${cardSlug}`;
 }
 
 export function createAssistantIdempotencyKey() {
@@ -159,6 +165,15 @@ function readSession(cardSlug: string): VisitorSession | undefined {
   if (!storage) return undefined;
 
   try {
+    const backgroundedAt = Number(storage.getItem(getVisitBackgroundStorageKey(cardSlug)));
+    if (
+      Number.isFinite(backgroundedAt)
+      && backgroundedAt > 0
+      && Date.now() - backgroundedAt >= VISIT_SESSION_INACTIVE_MS
+    ) {
+      clearAssistantSession(cardSlug);
+      return undefined;
+    }
     const raw = storage.getItem(getAssistantSessionStorageKey(cardSlug));
     if (!raw) return undefined;
     const parsed: unknown = JSON.parse(raw);
@@ -210,8 +225,34 @@ export function clearAssistantSession(cardSlug: string) {
   assistantSessionPromises.delete(cardSlug.trim());
   try {
     getSessionStorage()?.removeItem(getAssistantSessionStorageKey(cardSlug));
+    getSessionStorage()?.removeItem(getVisitBackgroundStorageKey(cardSlug));
   } catch {
     // Ignore unavailable or blocked session storage.
+  }
+}
+
+export function markVisitorSessionBackground(cardSlug: string, at = Date.now()) {
+  try {
+    getSessionStorage()?.setItem(getVisitBackgroundStorageKey(cardSlug), String(at));
+  } catch {
+    // The server-side heartbeat timeout remains the fallback when storage is blocked.
+  }
+}
+
+export function resumeVisitorSession(cardSlug: string, at = Date.now()) {
+  const storage = getSessionStorage();
+  if (!storage) return false;
+  try {
+    const key = getVisitBackgroundStorageKey(cardSlug);
+    const backgroundedAt = Number(storage.getItem(key));
+    storage.removeItem(key);
+    const shouldRotate = Number.isFinite(backgroundedAt)
+      && backgroundedAt > 0
+      && at - backgroundedAt >= VISIT_SESSION_INACTIVE_MS;
+    if (shouldRotate) clearAssistantSession(cardSlug);
+    return shouldRotate;
+  } catch {
+    return false;
   }
 }
 

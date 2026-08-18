@@ -6,7 +6,9 @@ import {
   ensurePublicVisitorSession,
   parseAssistantEventStream,
   prewarmAssistantSession,
+  markVisitorSessionBackground,
   recordPublicCardAction,
+  resumeVisitorSession,
   streamAssistantMessage,
   type AssistantStreamEvent,
 } from "./assistantApi";
@@ -110,6 +112,19 @@ describe("assistant API", () => {
       "00010203-0405-4607-8809-0a0b0c0d0e0f",
     );
     expect(getRandomValues).toHaveBeenCalledOnce();
+  });
+
+  it("rotates the persisted visit only after the background grace window", () => {
+    const sessionKey = getAssistantSessionStorageKey("tuozhe");
+    sessionStorage.setItem(sessionKey, JSON.stringify({ visitId: "visit-1" }));
+
+    markVisitorSessionBackground("tuozhe", 1_000);
+    expect(resumeVisitorSession("tuozhe", 10_999)).toBe(false);
+    expect(sessionStorage.getItem(sessionKey)).not.toBeNull();
+
+    markVisitorSessionBackground("tuozhe", 20_000);
+    expect(resumeVisitorSession("tuozhe", 55_000)).toBe(true);
+    expect(sessionStorage.getItem(sessionKey)).toBeNull();
   });
 
   it("records a real cta click against the current public visit", async () => {

@@ -98,7 +98,7 @@ _OPPORTUNITY_TERMS = (
     "budget",
     "demo",
 )
-_VISIT_ACTIVE_WINDOW = timedelta(seconds=45)
+_VISIT_ACTIVE_WINDOW = timedelta(seconds=35)
 _VISITOR_CHANNELS = {"web", "wechat", "wecom"}
 _VISITOR_IDENTITY_TYPES = {
     "anonymous",
@@ -2094,8 +2094,11 @@ class WorkflowStore:
             context = visit.context if isinstance(visit.context, dict) else {}
             activity_state = (
                 "background"
-                if request.event_type == "heartbeat"
-                and request.metadata.get("lifecycle_state") == "background"
+                if request.event_type == "leave"
+                or (
+                    request.event_type == "heartbeat"
+                    and request.metadata.get("lifecycle_state") == "background"
+                )
                 else "active"
             )
             visit.context = {**context, "activity_state": activity_state}
@@ -2134,41 +2137,11 @@ class WorkflowStore:
                 )
             if request.event_type == "leave" and visit.ended_at is None:
                 visit.ended_at = datetime.now(UTC)
-            should_queue_report = (request.event_type == "leave" and has_page_view) or (
-                request.event_type == "page_view" and visit.ended_at is not None
-            )
-            if should_queue_report:
-                report_deduplication_key = f"visit-report:{visit.id}"
-                report_already_queued = bool(
-                    await session.scalar(
-                        select(
-                            exists().where(
-                                OutboxEvent.tenant_id == principal_tenant_id,
-                                OutboxEvent.company_id == principal_company_id,
-                                OutboxEvent.deduplication_key == report_deduplication_key,
-                            )
-                        )
-                    )
-                )
-                if not report_already_queued:
-                    session.add(
-                        OutboxEvent(
-                            id=uuid.uuid4(),
-                            tenant_id=principal_tenant_id,
-                            company_id=principal_company_id,
-                            aggregate_type="visit",
-                            aggregate_id=visit.id,
-                            aggregate_version=1,
-                            event_type="visit.report.ready.v1",
-                            payload={
-                                "visit_id": str(visit.id),
-                                "card_id": str(visit.card_id),
-                            },
-                            headers={"contains_pii": False},
-                            deduplication_key=report_deduplication_key,
-                            status=OutboxStatus.PENDING,
-                        )
-                    )
+            elif request.event_type == "page_view" and visit.ended_at is not None:
+                # A WebView restored from the back-forward cache can emit pagehide
+                # and then become visible again. Treat that as a resumed visit when
+                # it happens before the inactivity scheduler has closed the episode.
+                visit.ended_at = None
             await session.execute(
                 update(Visitor)
                 .where(

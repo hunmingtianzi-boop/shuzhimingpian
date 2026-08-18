@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   createAssistantIdempotencyKey,
   ensureVisitSession,
+  markVisitorSessionBackground,
   recordVisitEvent,
+  resumeVisitorSession,
   type PublicPolicyVersions,
   type VisitorSession,
 } from "./assistantApi";
@@ -75,6 +77,21 @@ export function useVisitAnalytics({
     });
   }, [cardSlug, enqueue]);
 
+  const beginSession = useCallback((signal?: AbortSignal) => {
+    if (!policyVersions) return Promise.resolve();
+    return ensureVisitSession({
+      cardSlug,
+      companyId,
+      policyVersions,
+      signal,
+    }).then((session) => {
+      if (signal?.aborted) return;
+      sessionRef.current = session;
+      const page = activePageRef.current;
+      if (page) sendPageView(page);
+    }).catch(() => undefined);
+  }, [cardSlug, companyId, policyVersions, sendPageView]);
+
   const flushDuration = useCallback((
     eventType: "heartbeat" | "leave",
     keepalive = false,
@@ -133,19 +150,9 @@ export function useVisitAnalytics({
   useEffect(() => {
     if (!enabled || !policyVersions) return undefined;
     const controller = new AbortController();
-    void ensureVisitSession({
-      cardSlug,
-      companyId,
-      policyVersions,
-      signal: controller.signal,
-    }).then((session) => {
-      if (controller.signal.aborted) return;
-      sessionRef.current = session;
-      const page = activePageRef.current;
-      if (page) sendPageView(page);
-    }).catch(() => undefined);
+    void beginSession(controller.signal);
     return () => controller.abort();
-  }, [cardSlug, companyId, enabled, policyVersions, sendPageView]);
+  }, [beginSession, enabled, policyVersions]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -153,7 +160,7 @@ export function useVisitAnalytics({
       if (document.visibilityState === "visible") {
         flushDuration("heartbeat");
       }
-    }, 15_000);
+    }, 10_000);
     return () => window.clearInterval(intervalId);
   }, [enabled, flushDuration]);
 
@@ -164,16 +171,29 @@ export function useVisitAnalytics({
         // Enterprise WeChat commonly keeps the card WebView alive when the
         // user switches back to the workbench, so pagehide never fires. Mark
         // that transition explicitly while keeping the visit resumable.
+        markVisitorSessionBackground(cardSlug);
         flushDuration("heartbeat", true, "background");
       } else {
+        const shouldStartNewVisit = resumeVisitorSession(cardSlug);
         const page = activePageRef.current;
-        if (page) {
-          page.enteredAt = performance.now();
+        if (page) page.enteredAt = performance.now();
+        if (shouldStartNewVisit) {
+          sessionRef.current = undefined;
+          entryRef.current = {
+            cardSlug,
+            id: createAssistantIdempotencyKey(),
+            acknowledged: false,
+          };
+          void beginSession();
+        } else if (page) {
           sendPageView(page);
         }
       }
     };
-    const pageHidden = () => flushDuration("leave", true);
+    const pageHidden = () => {
+      markVisitorSessionBackground(cardSlug);
+      flushDuration("leave", true);
+    };
     document.addEventListener("visibilitychange", visibilityChanged);
     window.addEventListener("pagehide", pageHidden);
     return () => {
@@ -181,7 +201,7 @@ export function useVisitAnalytics({
       window.removeEventListener("pagehide", pageHidden);
       pageHidden();
     };
-  }, [enabled, flushDuration, sendPageView]);
+  }, [beginSession, cardSlug, enabled, flushDuration, sendPageView]);
 
   return { trackPage, trackAction };
 }
