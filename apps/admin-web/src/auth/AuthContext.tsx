@@ -14,7 +14,7 @@ import {
   apiClient,
   ApiError,
 } from "../api/client";
-import type { AdminUser, LoginInput } from "../api/types";
+import type { AdminUser, CommercialEntitlements, LoginInput } from "../api/types";
 import {
   APP_PATHS,
   appHref,
@@ -29,6 +29,7 @@ type AuthStatus = "bootstrapping" | "unauthenticated" | "authenticated";
 export type AuthContextValue = {
   status: AuthStatus;
   user?: AdminUser;
+  entitlements?: CommercialEntitlements;
   error?: ApiError;
   loginPending: boolean;
   apiConfigured: boolean;
@@ -62,6 +63,7 @@ export function AuthProvider({
 }: AuthProviderProps) {
   const [status, setStatus] = useState<AuthStatus>("bootstrapping");
   const [user, setUser] = useState<AdminUser>();
+  const [entitlements, setEntitlements] = useState<CommercialEntitlements>();
   const [error, setError] = useState<ApiError>();
   const [loginPending, setLoginPending] = useState(false);
 
@@ -88,6 +90,7 @@ export function AuthProvider({
     let active = true;
     const handleExpired = () => {
       setUser(undefined);
+      setEntitlements(undefined);
       setStatus("unauthenticated");
     };
     globalThis.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleExpired);
@@ -126,8 +129,12 @@ export function AuthProvider({
           await apiClient.refreshSession();
         }
         const currentUser = await adminApi.me();
+        const currentEntitlements = currentUser.role === "platform_admin"
+          ? undefined
+          : await adminApi.getCommercialEntitlements().catch(() => undefined);
         if (!active) return;
         setUser(currentUser);
+        setEntitlements(currentEntitlements);
         setStatus("authenticated");
       } catch (caught) {
         apiClient.clearSession();
@@ -163,7 +170,11 @@ export function AuthProvider({
     try {
       await apiClient.login(account.trim(), credential);
       const currentUser = await adminApi.me();
+      const currentEntitlements = currentUser.role === "platform_admin"
+        ? undefined
+        : await adminApi.getCommercialEntitlements().catch(() => undefined);
       setUser(currentUser);
+      setEntitlements(currentEntitlements);
       setStatus("authenticated");
     } catch (caught) {
       apiClient.clearSession();
@@ -184,6 +195,7 @@ export function AuthProvider({
       setError(asApiError(caught));
     } finally {
       setUser(undefined);
+      setEntitlements(undefined);
       setStatus("unauthenticated");
     }
   }, []);
@@ -194,7 +206,13 @@ export function AuthProvider({
     try {
       await adminApi.changePassword(currentPassword, newPassword);
       await apiClient.refreshSession();
-      setUser(await adminApi.me());
+      const currentUser = await adminApi.me();
+      setUser(currentUser);
+      setEntitlements(
+        currentUser.role === "platform_admin"
+          ? undefined
+          : await adminApi.getCommercialEntitlements().catch(() => undefined),
+      );
     } catch (caught) {
       const apiError = asApiError(caught);
       setError(apiError);
@@ -228,6 +246,7 @@ export function AuthProvider({
     () => ({
       status,
       user,
+      entitlements,
       error,
       loginPending,
       apiConfigured: apiClient.isConfigured(),
@@ -237,7 +256,7 @@ export function AuthProvider({
       logout,
       changePassword,
     }),
-    [changePassword, error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
+    [changePassword, entitlements, error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

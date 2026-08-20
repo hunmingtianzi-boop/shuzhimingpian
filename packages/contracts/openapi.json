@@ -318,6 +318,55 @@
         }
       }
     },
+    "/admin/entitlements": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Commercial Entitlements",
+        "operationId": "getAdminCommercialEntitlements",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialEntitlementEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/company/profile": {
       "get": {
         "tags": [
@@ -4939,6 +4988,132 @@
         }
       }
     },
+    "/admin/card-plugins": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "List Card Plugins",
+        "operationId": "listAdminCardPlugins",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPluginCatalogEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/card-plugins/{plugin_id}": {
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Card Plugin",
+        "operationId": "updateAdminCardPlugin",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plugin Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyCardPluginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPluginCatalogEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/card-composer/defaults/{card_kind}": {
       "get": {
         "tags": [
@@ -8521,6 +8696,132 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlatformEnterpriseLifecycleEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/enterprises/{company_id}/entitlements": {
+      "get": {
+        "tags": [
+          "Platform Administration"
+        ],
+        "summary": "Get Enterprise Entitlements",
+        "operationId": "getPlatformEnterpriseEntitlements",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialEntitlementEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Platform Administration"
+        ],
+        "summary": "Update Enterprise Entitlements",
+        "operationId": "updatePlatformEnterpriseEntitlements",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommercialEntitlementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialEntitlementEnvelope"
                 }
               }
             }
@@ -15032,6 +15333,148 @@
         ],
         "title": "CardKind"
       },
+      "CardPluginCatalogEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CardPluginCatalogRecord"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CardPluginCatalogEnvelope"
+      },
+      "CardPluginCatalogRecord": {
+        "properties": {
+          "company_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Company Version"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/CardPluginReleaseRecord"
+            },
+            "type": "array",
+            "title": "Releases"
+          },
+          "installations": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyCardPluginInstallation"
+            },
+            "type": "array",
+            "title": "Installations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_version",
+          "releases",
+          "installations"
+        ],
+        "title": "CardPluginCatalogRecord"
+      },
+      "CardPluginContributionRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "legacy_type": {
+            "type": "string",
+            "title": "Legacy Type"
+          },
+          "config_schema": {
+            "type": "string",
+            "title": "Config Schema"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "legacy_type",
+          "config_schema"
+        ],
+        "title": "CardPluginContributionRecord"
+      },
+      "CardPluginReleaseRecord": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "host_api": {
+            "type": "string",
+            "title": "Host Api"
+          },
+          "trust": {
+            "type": "string",
+            "enum": [
+              "system",
+              "builtin"
+            ],
+            "title": "Trust"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          },
+          "commercial_feature_id": {
+            "type": "string",
+            "title": "Commercial Feature Id"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "killed"
+            ],
+            "title": "Status"
+          },
+          "contributions": {
+            "items": {
+              "$ref": "#/components/schemas/CardPluginContributionRecord"
+            },
+            "type": "array",
+            "title": "Contributions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "host_api",
+          "trust",
+          "required",
+          "commercial_feature_id",
+          "permissions",
+          "status",
+          "contributions"
+        ],
+        "title": "CardPluginReleaseRecord"
+      },
       "CardProfile": {
         "properties": {
           "id": {
@@ -15522,6 +15965,303 @@
           "snapshot_text"
         ],
         "title": "CitationView"
+      },
+      "CommercialEntitlementEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CommercialEntitlementRecord"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CommercialEntitlementEnvelope"
+      },
+      "CommercialEntitlementRecord": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "company_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Company Version"
+          },
+          "plan_code": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "professional",
+              "enterprise"
+            ],
+            "title": "Plan Code"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "yearly",
+              "contract"
+            ],
+            "title": "Billing Cycle"
+          },
+          "contract_price_cny": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Price Cny"
+          },
+          "feature_overrides": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Feature Overrides"
+          },
+          "features": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Features"
+          },
+          "limit_overrides": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Limit Overrides"
+          },
+          "limits": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Limits"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/CommercialPlanRecord"
+            },
+            "type": "array",
+            "title": "Plans"
+          },
+          "feature_catalog": {
+            "items": {
+              "$ref": "#/components/schemas/CommercialFeatureRecord"
+            },
+            "type": "array",
+            "title": "Feature Catalog"
+          },
+          "limit_catalog": {
+            "items": {
+              "$ref": "#/components/schemas/CommercialLimitRecord"
+            },
+            "type": "array",
+            "title": "Limit Catalog"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id",
+          "company_version",
+          "plan_code",
+          "billing_cycle",
+          "feature_overrides",
+          "features",
+          "limit_overrides",
+          "limits",
+          "plans",
+          "feature_catalog",
+          "limit_catalog"
+        ],
+        "title": "CommercialEntitlementRecord"
+      },
+      "CommercialFeatureRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "minimum_plan": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "professional",
+              "enterprise"
+            ],
+            "title": "Minimum Plan"
+          },
+          "overrideable": {
+            "type": "boolean",
+            "title": "Overrideable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "group",
+          "description",
+          "minimum_plan",
+          "overrideable"
+        ],
+        "title": "CommercialFeatureRecord"
+      },
+      "CommercialLimitRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "plan_defaults": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "starter",
+                "professional",
+                "enterprise"
+              ]
+            },
+            "type": "object",
+            "title": "Plan Defaults"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "group",
+          "description",
+          "unit",
+          "plan_defaults"
+        ],
+        "title": "CommercialLimitRecord"
+      },
+      "CommercialPlanRecord": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "professional",
+              "enterprise"
+            ],
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "description"
+        ],
+        "title": "CommercialPlanRecord"
+      },
+      "CompanyCardPluginInstallation": {
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "title": "Plugin Id"
+          },
+          "plugin_version": {
+            "type": "string",
+            "title": "Plugin Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "grants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Grants"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "plugin_version",
+          "enabled",
+          "grants"
+        ],
+        "title": "CompanyCardPluginInstallation"
       },
       "CompanyProfile": {
         "properties": {
@@ -18663,6 +19403,53 @@
             ],
             "title": "Type"
           },
+          "plugin_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 3,
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9_-]*)+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Id"
+          },
+          "plugin_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 5,
+                "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Version"
+          },
+          "contribution_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contribution Id"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
           "visible": {
             "type": "boolean",
             "title": "Visible",
@@ -19214,7 +20001,10 @@
         "properties": {
           "schema_version": {
             "type": "integer",
-            "const": 1,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Schema Version",
             "default": 1
           },
@@ -26889,7 +27679,10 @@
         "properties": {
           "schema_version": {
             "type": "integer",
-            "const": 1,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Schema Version",
             "default": 1
           },
@@ -27100,6 +27893,100 @@
           "result"
         ],
         "title": "UpdateCaseStudyRequest"
+      },
+      "UpdateCommercialEntitlementRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "plan_code": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "professional",
+              "enterprise"
+            ],
+            "title": "Plan Code"
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "yearly",
+              "contract"
+            ],
+            "title": "Billing Cycle",
+            "default": "contract"
+          },
+          "contract_price_cny": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Price Cny"
+          },
+          "feature_overrides": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Feature Overrides"
+          },
+          "limit_overrides": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Limit Overrides"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "plan_code"
+        ],
+        "title": "UpdateCommercialEntitlementRequest"
+      },
+      "UpdateCompanyCardPluginRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "grants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Grants"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "UpdateCompanyCardPluginRequest"
       },
       "UpdateCompanyProfileRequest": {
         "properties": {
@@ -27328,7 +28215,10 @@
         "properties": {
           "schema_version": {
             "type": "integer",
-            "const": 1,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Schema Version",
             "default": 1
           },

@@ -159,6 +159,126 @@
 .profileList article span, .profileList article small { color: var(--colorNeutralForeground3); font-size: 12px; }
 .profileList article p { margin: 0; line-height: 1.55; }
 
+.entitlementPanel,
+.entitlementGroups,
+.entitlementGroup {
+  display: grid;
+  gap: 14px;
+}
+
+.entitlementFields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.entitlementSectionHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.entitlementSectionHeading h3,
+.entitlementSectionHeading p {
+  margin: 0;
+}
+
+.entitlementSectionHeading p,
+.entitlementSectionHeading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entitlementGroup {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.entitlementGroup h4 {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--colorNeutralBackground2);
+  font-size: 13px;
+}
+
+.entitlementFeature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.entitlementFeature:last-child {
+  border-bottom: 0;
+}
+
+.entitlementFeature p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entitlementFeature small {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+.entitlementControl,
+.entitlementLimitControl,
+.entitlementActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entitlementLimitControl {
+  display: grid;
+  grid-template-columns: 118px 112px auto;
+  min-width: 250px;
+}
+
+.entitlementLimitControl > span {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.entitlementLimitInput {
+  min-width: 0;
+}
+
+.entitlementActions {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .entitlementFields {
+    grid-template-columns: 1fr;
+  }
+
+  .entitlementActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .entitlementFeature {
+    grid-template-columns: 1fr;
+  }
+
+  .entitlementLimitControl {
+    grid-template-columns: 1fr 1fr auto;
+    min-width: 0;
+  }
+}
+
 .mobileRecords {
   display: none;
 }

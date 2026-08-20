@@ -841,6 +841,43 @@ function WorkspaceForbidden({ destination }: { destination: AppPath }) {
   );
 }
 
+const commercialFeatureByPath = new Map<string, string>([
+  [APP_PATHS.visits, "customer.visits"],
+  [APP_PATHS.visitorProfiles, "customer.profiles"],
+  [APP_PATHS.conversations, "ai.conversations"],
+  [APP_PATHS.opportunities, "customer.opportunities"],
+  [APP_PATHS.leads, "customer.leads"],
+  [APP_PATHS.exports, "data.exports"],
+  [APP_PATHS.knowledgeGaps, "knowledge.manage"],
+  [APP_PATHS.knowledge, "knowledge.manage"],
+  [APP_PATHS.imports, "knowledge.import"],
+  [APP_PATHS.forbiddenTopics, "knowledge.manage"],
+  [APP_PATHS.cards, "card.core"],
+  [APP_PATHS.card, "card.core"],
+  [APP_PATHS.products, "catalog.manage"],
+  [APP_PATHS.cases, "catalog.manage"],
+  [APP_PATHS.members, "team.members"],
+  [APP_PATHS.company, "company.profile"],
+  [APP_PATHS.privacyRequests, "privacy.manage"],
+]);
+
+function CommercialFeatureUnavailable() {
+  return (
+    <main className="page-stack">
+      <section className="content-panel">
+        <ResourceState
+          status="permission"
+          title="当前套餐未开通此功能"
+          description="请联系平台运营调整企业套餐或单独开通该能力。"
+        />
+        <Button appearance="primary" onClick={() => navigate(APP_PATHS.overview)}>
+          返回业务概览
+        </Button>
+      </section>
+    </main>
+  );
+}
+
 export function CurrentPage() {
   const pathname = usePathname();
   const auth = useAuth();
@@ -863,6 +900,15 @@ export function CurrentPage() {
         }
       />
     );
+  }
+  const requiredFeature = commercialFeatureByPath.get(pathname);
+  if (
+    userWorkspace === "enterprise"
+    && requiredFeature
+    && auth.entitlements
+    && auth.entitlements.features[requiredFeature] !== true
+  ) {
+    return <CommercialFeatureUnavailable />;
   }
   if (pathname === APP_PATHS.platformOverview) return <PlatformOverviewPage />;
   if (pathname === APP_PATHS.platformLlmSettings) {

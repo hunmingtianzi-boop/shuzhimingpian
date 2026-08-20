@@ -57,6 +57,10 @@ export function toCardPageBlock(block: PublicEnterpriseTemplateBlock): CardPageB
   return {
     id: block.id,
     type: block.type,
+    pluginId: block.plugin_id,
+    pluginVersion: block.plugin_version,
+    contributionId: block.contribution_id,
+    pluginConfig: block.config,
     title: block.title,
     body: block.body,
     visible: block.visible,

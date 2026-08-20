@@ -10,6 +10,12 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.plugins.card_blocks import (
+    expand_block_plugin_config,
+    normalize_block_plugin_config,
+    validate_block_plugin_reference,
+)
+
 ContentStatusValue = Literal["draft", "review_pending", "published", "archived"]
 CardKindValue = Literal["enterprise", "employee"]
 VisibilityValue = Literal["public", "authenticated", "internal"]
@@ -656,6 +662,25 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
 
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     type: EnterpriseTemplateBlockType
+    plugin_id: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=120,
+        pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_-]*)+$",
+    )
+    plugin_version: str | None = Field(
+        default=None,
+        min_length=5,
+        max_length=32,
+        pattern=r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$",
+    )
+    contribution_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        pattern=r"^[a-z][a-z0-9_-]*$",
+    )
+    config: dict[str, Any] = Field(default_factory=dict)
     visible: bool = True
     show_title: bool = True
     directory_enabled: bool = True
@@ -693,6 +718,14 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
         lambda values: [validate_safe_asset_url(value) for value in values]
     )
     _validate_cover = field_validator("video_cover_url")(validate_safe_asset_url)
+    _validate_config = field_validator("config")(validate_json_settings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def expand_plugin_config(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        return expand_block_plugin_config(value)
 
     @field_validator("cta_url")
     @classmethod
@@ -761,11 +794,24 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
             raise ValueError("action_template is only valid for action_collection blocks")
         if self.type != "identity" and self.presentation is not None:
             raise ValueError("presentation is only valid for identity blocks")
+        reference = validate_block_plugin_reference(
+            block_type=self.type,
+            plugin_id=self.plugin_id,
+            plugin_version=self.plugin_version,
+            contribution_id=self.contribution_id,
+        )
+        self.plugin_id = reference.plugin_id
+        self.plugin_version = reference.plugin_version
+        self.contribution_id = reference.contribution_id
+        self.config = normalize_block_plugin_config(
+            self.type,
+            self.model_dump(mode="json", exclude={"config"}),
+        )
         return self
 
 
 class EnterpriseTemplateDocument(CatalogStrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     theme_key: Literal["brand", "clean", "warm"] = "brand"
     blocks: list[EnterpriseTemplateBlock] = Field(default_factory=list, max_length=24)
 
@@ -830,6 +876,55 @@ class UpdateCardComposerDefaultRequest(EnterpriseTemplateDocument):
     pass
 
 
+class CardPluginContributionRecord(CatalogStrictModel):
+    id: str
+    legacy_type: str
+    config_schema: str
+
+
+class CardPluginReleaseRecord(CatalogStrictModel):
+    schema_version: Literal[1] = 1
+    id: str
+    version: str
+    host_api: str
+    trust: Literal["system", "builtin"]
+    required: bool
+    commercial_feature_id: str
+    permissions: list[str]
+    status: Literal["available", "killed"]
+    contributions: list[CardPluginContributionRecord]
+
+
+class CompanyCardPluginInstallation(CatalogStrictModel):
+    plugin_id: str
+    plugin_version: str
+    enabled: bool
+    grants: list[str]
+
+
+class CardPluginCatalogRecord(CatalogStrictModel):
+    company_version: int = Field(ge=1)
+    releases: list[CardPluginReleaseRecord]
+    installations: list[CompanyCardPluginInstallation]
+
+
+class CardPluginCatalogEnvelope(CatalogStrictModel):
+    data: CardPluginCatalogRecord
+
+
+class UpdateCompanyCardPluginRequest(CatalogStrictModel):
+    enabled: bool
+    grants: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("grants")
+    @classmethod
+    def validate_unique_grants(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values if value.strip()]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("plugin grants must be unique")
+        return normalized
+
+
 class ManagedCardRecord(CardWriteFields):
     id: uuid.UUID
     card_kind: CardKindValue
@@ -856,6 +951,10 @@ class ManagedCardListEnvelope(CatalogStrictModel):
 
 
 __all__ = [
+    "CardPluginCatalogEnvelope",
+    "CardPluginCatalogRecord",
+    "CardPluginContributionRecord",
+    "CardPluginReleaseRecord",
     "CaseStudyEnvelope",
     "CaseStudyListEnvelope",
     "CaseStudyRecord",
@@ -863,6 +962,7 @@ __all__ = [
     "CreateCaseStudyRequest",
     "CreateForbiddenTopicRequest",
     "CreateProductRequest",
+    "CompanyCardPluginInstallation",
     "ForbiddenTopicEnvelope",
     "ForbiddenTopicListEnvelope",
     "ForbiddenTopicRecord",
@@ -887,6 +987,7 @@ __all__ = [
     "PublicProductListEnvelope",
     "PublicProductRecord",
     "UpdateCaseStudyRequest",
+    "UpdateCompanyCardPluginRequest",
     "UpdateForbiddenTopicRequest",
     "UpdateManagedCardRequest",
     "UpdateEnterpriseTemplateRequest",

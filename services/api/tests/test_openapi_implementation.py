@@ -20,6 +20,15 @@ def test_implemented_vertical_slice_uses_contract_operation_ids() -> None:
         ("/api/v1/auth/refresh", "post"): "refreshStaffSession",
         ("/api/v1/auth/logout", "post"): "logoutStaffSession",
         ("/api/v1/auth/me", "get"): "getCurrentUser",
+        ("/api/v1/admin/entitlements", "get"): "getAdminCommercialEntitlements",
+        (
+            "/api/v1/platform/enterprises/{company_id}/entitlements",
+            "get",
+        ): "getPlatformEnterpriseEntitlements",
+        (
+            "/api/v1/platform/enterprises/{company_id}/entitlements",
+            "put",
+        ): "updatePlatformEnterpriseEntitlements",
         ("/api/v1/admin/company/profile", "get"): "getCompanyProfile",
         ("/api/v1/admin/company/profile", "put"): "updateCompanyProfile",
         ("/api/v1/admin/card", "get"): "getAdminCard",

@@ -6756,3 +6756,29 @@ div.template-inspector-empty {
     grid-column: 2 / 3;
   }
 }
+.card-plugin-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.card-plugin-item {
+  align-items: center;
+  background: var(--colorNeutralBackground2);
+  border: 1px solid var(--colorNeutralStroke2);
+  border-radius: 12px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.card-plugin-item > div {
+  display: grid;
+  gap: 3px;
+}
+
+.card-plugin-item span,
+.card-plugin-item small {
+  color: var(--colorNeutralForeground3);
+}

@@ -1,6 +1,9 @@
 import { apiClient, ApiClient, ApiError } from "./client";
 import type {
   ActivatePlatformLlmProfileInput,
+  CommercialBillingCycle,
+  CommercialEntitlements,
+  CommercialPlanCode,
   CreatePlatformLlmProfileInput,
   CreatePlatformEnterpriseInput,
   CreatedPlatformEnterprise,
@@ -143,6 +146,88 @@ function enterpriseLifecycle(value: unknown): PlatformEnterpriseLifecycle {
     version: nonNegativeInteger(value.version, "lifecycle.version"),
     changed: requiredBoolean(value.changed, "lifecycle.changed"),
     updatedAt: requiredString(value.updated_at, "lifecycle.updated_at"),
+  };
+}
+
+function commercialEntitlements(value: unknown): CommercialEntitlements {
+  if (!isRecord(value)) invalid("商业授权");
+  const plansValue = value.plans;
+  const featuresValue = value.feature_catalog;
+  const limitsValue = value.limit_catalog;
+  if (!Array.isArray(plansValue) || !Array.isArray(featuresValue) || !Array.isArray(limitsValue)) invalid("商业授权目录");
+  const booleanRecord = (candidate: unknown): Record<string, boolean> => {
+    if (!isRecord(candidate)) return {};
+    return Object.fromEntries(
+      Object.entries(candidate).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"),
+    );
+  };
+  const rawPrice = value.contract_price_cny;
+  const limitRecord = (candidate: unknown): Record<string, number | null> => {
+    if (!isRecord(candidate)) return {};
+    return Object.fromEntries(
+      Object.entries(candidate).filter((entry): entry is [string, number | null] =>
+        entry[1] === null || (typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1] >= 0),
+      ),
+    );
+  };
+  const contractPriceCny = typeof rawPrice === "number"
+    ? rawPrice
+    : typeof rawPrice === "string" && Number.isFinite(Number(rawPrice))
+      ? Number(rawPrice)
+      : undefined;
+  return {
+    companyId: requiredString(value.company_id, "商业授权 company_id"),
+    companyVersion: nonNegativeInteger(value.company_version, "商业授权 company_version"),
+    planCode: oneOf(
+      value.plan_code,
+      ["starter", "professional", "enterprise"] as const,
+      "商业授权 plan_code",
+    ),
+    billingCycle: oneOf(
+      value.billing_cycle,
+      ["monthly", "yearly", "contract"] as const,
+      "商业授权 billing_cycle",
+    ),
+    ...(contractPriceCny !== undefined ? { contractPriceCny } : {}),
+    featureOverrides: booleanRecord(value.feature_overrides),
+    features: booleanRecord(value.features),
+    limitOverrides: limitRecord(value.limit_overrides),
+    limits: limitRecord(value.limits),
+    plans: plansValue.map((item) => {
+      if (!isRecord(item)) invalid("商业套餐");
+      return {
+        code: oneOf(item.code, ["starter", "professional", "enterprise"] as const, "商业套餐 code"),
+        name: requiredString(item.name, "商业套餐 name"),
+        description: typeof item.description === "string" ? item.description : "",
+      };
+    }),
+    featureCatalog: featuresValue.map((item) => {
+      if (!isRecord(item)) invalid("商业功能");
+      return {
+        id: requiredString(item.id, "商业功能 id"),
+        name: requiredString(item.name, "商业功能 name"),
+        group: requiredString(item.group, "商业功能 group"),
+        description: typeof item.description === "string" ? item.description : "",
+        minimumPlan: oneOf(item.minimum_plan, ["starter", "professional", "enterprise"] as const, "商业功能 minimum_plan"),
+        overrideable: requiredBoolean(item.overrideable, "商业功能 overrideable"),
+      };
+    }),
+    limitCatalog: limitsValue.map((item) => {
+      if (!isRecord(item)) invalid("商业额度");
+      const defaults = limitRecord(item.plan_defaults);
+      return {
+        id: requiredString(item.id, "商业额度 id"),
+        name: requiredString(item.name, "商业额度 name"),
+        group: requiredString(item.group, "商业额度 group"),
+        description: typeof item.description === "string" ? item.description : "",
+        unit: requiredString(item.unit, "商业额度 unit"),
+        planDefaults: {
+          starter: defaults.starter ?? null,
+          professional: defaults.professional ?? null,
+          enterprise: defaults.enterprise ?? null,
+        },
+      };
+    }),
   };
 }
 
@@ -723,6 +808,44 @@ export function createPlatformApi(client: ApiClient) {
             },
           ),
           "企业状态",
+        ),
+      );
+    },
+
+    async getEnterpriseEntitlements(companyId: string): Promise<CommercialEntitlements> {
+      return commercialEntitlements(
+        unwrapData(
+          await client.get(`/platform/enterprises/${encodeURIComponent(companyId)}/entitlements`),
+          "商业授权",
+        ),
+      );
+    },
+
+    async updateEnterpriseEntitlements(
+      companyId: string,
+      input: {
+        expectedVersion: number;
+        planCode: CommercialPlanCode;
+        billingCycle: CommercialBillingCycle;
+        contractPriceCny?: number;
+        featureOverrides: Record<string, boolean>;
+        limitOverrides: Record<string, number | null>;
+      },
+    ): Promise<CommercialEntitlements> {
+      return commercialEntitlements(
+        unwrapData(
+          await client.put(
+            `/platform/enterprises/${encodeURIComponent(companyId)}/entitlements`,
+            {
+              expected_version: input.expectedVersion,
+              plan_code: input.planCode,
+              billing_cycle: input.billingCycle,
+              contract_price_cny: input.contractPriceCny ?? null,
+              feature_overrides: input.featureOverrides,
+              limit_overrides: input.limitOverrides,
+            },
+          ),
+          "商业授权",
         ),
       );
     },

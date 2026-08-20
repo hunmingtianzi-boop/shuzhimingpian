@@ -35,7 +35,7 @@ import type { ComponentType, ReactNode } from "react";
 import { workflowApi } from "../api/workflowApi";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
-import type { AdminUser } from "../api/types";
+import type { AdminUser, CommercialEntitlements } from "../api/types";
 import {
   APP_PATHS,
   appHref,
@@ -52,6 +52,7 @@ type NavItem = {
   permission?: string;
   allowCardOwner?: boolean;
   role?: string;
+  feature?: string;
 };
 
 const navGroups: Array<{ label: string; items: NavItem[] }> = [
@@ -60,43 +61,43 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { path: APP_PATHS.overview, label: "业务概览", icon: Home24Regular },
       { path: APP_PATHS.notifications, label: "消息中心", icon: Alert24Regular },
-      { path: APP_PATHS.setup, label: "开通向导", icon: Sparkle24Regular, permission: "company.write" },
+      { path: APP_PATHS.setup, label: "开通向导", icon: Sparkle24Regular, permission: "company.write", feature: "card.core" },
     ],
   },
   {
     label: "客户经营",
     items: [
-      { path: APP_PATHS.visits, label: "访问记录", icon: Eye24Regular, permission: "visits.read", allowCardOwner: true },
-      { path: APP_PATHS.visitorProfiles, label: "访客画像", icon: PeopleTeam24Regular, permission: "visits.read", allowCardOwner: true },
-      { path: APP_PATHS.conversations, label: "AI 对话", icon: Chat24Regular, permission: "conversations.read", allowCardOwner: true },
-      { path: APP_PATHS.opportunities, label: "潜在机会", icon: Lightbulb24Regular, permission: "conversations.read", allowCardOwner: true },
-      { path: APP_PATHS.leads, label: "销售线索", icon: PeopleTeam24Regular, permission: "leads.read", allowCardOwner: true },
-      { path: APP_PATHS.exports, label: "数据导出", icon: ArrowDownload24Regular, permission: "exports.read", allowCardOwner: true },
+      { path: APP_PATHS.visits, label: "访问记录", icon: Eye24Regular, permission: "visits.read", allowCardOwner: true, feature: "customer.visits" },
+      { path: APP_PATHS.visitorProfiles, label: "访客画像", icon: PeopleTeam24Regular, permission: "visits.read", allowCardOwner: true, feature: "customer.profiles" },
+      { path: APP_PATHS.conversations, label: "AI 对话", icon: Chat24Regular, permission: "conversations.read", allowCardOwner: true, feature: "ai.conversations" },
+      { path: APP_PATHS.opportunities, label: "潜在机会", icon: Lightbulb24Regular, permission: "conversations.read", allowCardOwner: true, feature: "customer.opportunities" },
+      { path: APP_PATHS.leads, label: "销售线索", icon: PeopleTeam24Regular, permission: "leads.read", allowCardOwner: true, feature: "customer.leads" },
+      { path: APP_PATHS.exports, label: "数据导出", icon: ArrowDownload24Regular, permission: "exports.read", allowCardOwner: true, feature: "data.exports" },
     ],
   },
   {
     label: "AI 与知识",
     items: [
-      { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true },
-      { path: APP_PATHS.knowledge, label: "知识 FAQ", icon: Book24Regular, permission: "knowledge.read" },
-      { path: APP_PATHS.imports, label: "资料导入", icon: DocumentArrowUp24Regular, permission: "knowledge.read" },
-      { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read" },
+      { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true, feature: "knowledge.manage" },
+      { path: APP_PATHS.knowledge, label: "知识 FAQ", icon: Book24Regular, permission: "knowledge.read", feature: "knowledge.manage" },
+      { path: APP_PATHS.imports, label: "资料导入", icon: DocumentArrowUp24Regular, permission: "knowledge.read", feature: "knowledge.import" },
+      { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read", feature: "knowledge.manage" },
     ],
   },
   {
     label: "内容与名片",
     items: [
-      { path: APP_PATHS.cards, label: "名片管理", icon: ContactCardGroup24Regular, permission: "card.read" },
-      { path: APP_PATHS.products, label: "产品管理", icon: Box24Regular, permission: "catalog.read" },
-      { path: APP_PATHS.cases, label: "案例管理", icon: Briefcase24Regular, permission: "catalog.read" },
+      { path: APP_PATHS.cards, label: "名片管理", icon: ContactCardGroup24Regular, permission: "card.read", feature: "card.core" },
+      { path: APP_PATHS.products, label: "产品管理", icon: Box24Regular, permission: "catalog.read", feature: "catalog.manage" },
+      { path: APP_PATHS.cases, label: "案例管理", icon: Briefcase24Regular, permission: "catalog.read", feature: "catalog.manage" },
     ],
   },
   {
     label: "企业治理",
     items: [
-      { path: APP_PATHS.members, label: "企业员工", icon: PeopleSettings24Regular, permission: "members.manage" },
-      { path: APP_PATHS.company, label: "企业资料", icon: Building24Regular, permission: "company.read" },
-      { path: APP_PATHS.privacyRequests, label: "隐私请求", icon: ShieldLock24Regular, permission: "privacy.manage" },
+      { path: APP_PATHS.members, label: "企业员工", icon: PeopleSettings24Regular, permission: "members.manage", feature: "team.members" },
+      { path: APP_PATHS.company, label: "企业资料", icon: Building24Regular, permission: "company.read", feature: "company.profile" },
+      { path: APP_PATHS.privacyRequests, label: "隐私请求", icon: ShieldLock24Regular, permission: "privacy.manage", feature: "privacy.manage" },
     ],
   },
 ];
@@ -153,6 +154,13 @@ export function hasNavPermission(
   return hasPermission(user, permission, { allowCardOwner });
 }
 
+export function hasCommercialFeature(
+  entitlements: CommercialEntitlements | undefined,
+  feature?: string,
+): boolean {
+  return !feature || entitlements === undefined || entitlements.features[feature] === true;
+}
+
 function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const auth = useAuth();
@@ -163,7 +171,8 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
         const visibleItems = group.items.filter(
           (item) =>
             (!item.role || auth.user?.role === item.role) &&
-            hasNavPermission(auth.user, item.permission, item.allowCardOwner),
+            hasNavPermission(auth.user, item.permission, item.allowCardOwner) &&
+            hasCommercialFeature(auth.entitlements, item.feature),
         );
         if (visibleItems.length === 0) return null;
         return (

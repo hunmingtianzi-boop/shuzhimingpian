@@ -1,9 +1,13 @@
+import { normalizeCardPluginReference } from "@cf/card-page-renderer";
+
 import { apiClient, ApiClient, ApiError, unwrapData } from "./client";
 import type {
   AdminUser,
   CardAssetUpload,
   CardVideoAssetUpload,
   CardComposerDefault,
+  CardPluginCatalog,
+  CommercialEntitlements,
   EnterpriseTemplate,
   EnterpriseTemplateBlock,
   EnterpriseTemplateThemeKey,
@@ -260,9 +264,16 @@ function normalizeTemplateBlock(value: unknown): EnterpriseTemplateBlock | undef
     bottom_left: "bottomLeft",
     bottom_right: "bottomRight",
   } as Record<string, NonNullable<NonNullable<EnterpriseTemplateBlock["presentation"]>["background"]>["position"]>)[backgroundPosition];
+  const plugin = normalizeCardPluginReference(type, {
+    pluginId: optionalString(value.plugin_id) || undefined,
+    pluginVersion: optionalString(value.plugin_version) || undefined,
+    contributionId: optionalString(value.contribution_id) || undefined,
+    pluginConfig: isRecord(value.config) ? value.config : undefined,
+  });
   return {
     id: value.id,
     type: type as EnterpriseTemplateBlock["type"],
+    ...plugin,
     visible: value.visible !== false,
     showTitle: value.show_title !== false,
     directoryEnabled: value.directory_enabled !== false,
@@ -320,7 +331,7 @@ function normalizeEnterpriseTemplate(payload: unknown): EnterpriseTemplate {
   const document = (value: unknown) => {
     const record = isRecord(value) ? value : {};
     return {
-      schemaVersion: 1 as const,
+      schemaVersion: record.schema_version === 2 ? 2 as const : 1 as const,
       themeKey: ["brand", "clean", "warm"].includes(optionalString(record.theme_key))
         ? optionalString(record.theme_key) as EnterpriseTemplateThemeKey
         : "brand",
@@ -354,16 +365,138 @@ function normalizeCardComposerDefault(payload: unknown): CardComposerDefault {
   return { cardKind, version: requireNumber(raw.version, "名片默认配置 version"), document };
 }
 
+function normalizeCardPluginCatalog(payload: unknown): CardPluginCatalog {
+  const raw = requireRecord(payload, "名片插件目录");
+  const releases = Array.isArray(raw.releases) ? raw.releases.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.version !== "string") return [];
+    const trust = item.trust === "system" ? "system" as const : "builtin" as const;
+    const status = item.status === "killed" ? "killed" as const : "available" as const;
+    const contributions = Array.isArray(item.contributions) ? item.contributions.flatMap((entry) => {
+      if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.legacy_type !== "string") return [];
+      return [{
+        id: entry.id,
+        legacyType: entry.legacy_type as EnterpriseTemplateBlock["type"],
+        configSchema: optionalString(entry.config_schema),
+      }];
+    }) : [];
+    return [{
+      id: item.id,
+      version: item.version,
+      hostApi: optionalString(item.host_api),
+      trust,
+      required: item.required === true,
+      commercialFeatureId: optionalString(item.commercial_feature_id),
+      permissions: Array.isArray(item.permissions) ? item.permissions.filter((value): value is string => typeof value === "string") : [],
+      status,
+      contributions,
+    }];
+  }) : [];
+  const installations = Array.isArray(raw.installations) ? raw.installations.flatMap((item) => {
+    if (!isRecord(item) || typeof item.plugin_id !== "string" || typeof item.plugin_version !== "string") return [];
+    return [{
+      pluginId: item.plugin_id,
+      pluginVersion: item.plugin_version,
+      enabled: item.enabled === true,
+      grants: Array.isArray(item.grants) ? item.grants.filter((value): value is string => typeof value === "string") : [],
+    }];
+  }) : [];
+  return {
+    companyVersion: requireNumber(raw.company_version, "名片插件 company_version"),
+    releases,
+    installations,
+  };
+}
+
+function normalizeCommercialEntitlements(payload: unknown): CommercialEntitlements {
+  const raw = requireRecord(payload, "商业授权");
+  const planCode = optionalString(raw.plan_code);
+  const billingCycle = optionalString(raw.billing_cycle);
+  if (!(["starter", "professional", "enterprise"] as string[]).includes(planCode)) {
+    throw new ApiError("商业授权缺少有效套餐。", { code: "INVALID_API_RESPONSE" });
+  }
+  if (!(["monthly", "yearly", "contract"] as string[]).includes(billingCycle)) {
+    throw new ApiError("商业授权缺少有效计费周期。", { code: "INVALID_API_RESPONSE" });
+  }
+  const plans = Array.isArray(raw.plans) ? raw.plans.flatMap((item) => {
+    if (!isRecord(item) || typeof item.code !== "string" || typeof item.name !== "string") return [];
+    if (!["starter", "professional", "enterprise"].includes(item.code)) return [];
+    return [{ code: item.code as CommercialEntitlements["planCode"], name: item.name, description: optionalString(item.description) }];
+  }) : [];
+  const featureCatalog = Array.isArray(raw.feature_catalog) ? raw.feature_catalog.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.name !== "string") return [];
+    const minimumPlan = optionalString(item.minimum_plan);
+    if (!["starter", "professional", "enterprise"].includes(minimumPlan)) return [];
+    return [{
+      id: item.id,
+      name: item.name,
+      group: optionalString(item.group),
+      description: optionalString(item.description),
+      minimumPlan: minimumPlan as CommercialEntitlements["planCode"],
+      overrideable: item.overrideable === true,
+    }];
+  }) : [];
+  const limitRecord = (value: unknown): Record<string, number | null> => {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number | null] =>
+      entry[1] === null || (typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1] >= 0),
+    ));
+  };
+  const limitCatalog = Array.isArray(raw.limit_catalog) ? raw.limit_catalog.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "string" || typeof item.name !== "string") return [];
+    const defaults = limitRecord(item.plan_defaults);
+    return [{
+      id: item.id,
+      name: item.name,
+      group: optionalString(item.group),
+      description: optionalString(item.description),
+      unit: optionalString(item.unit),
+      planDefaults: {
+        starter: defaults.starter ?? null,
+        professional: defaults.professional ?? null,
+        enterprise: defaults.enterprise ?? null,
+      },
+    }];
+  }) : [];
+  const booleanRecord = (value: unknown): Record<string, boolean> => {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
+  };
+  const rawPrice = raw.contract_price_cny;
+  const contractPriceCny = typeof rawPrice === "number"
+    ? rawPrice
+    : typeof rawPrice === "string" && rawPrice.trim() && Number.isFinite(Number(rawPrice))
+      ? Number(rawPrice)
+      : undefined;
+  return {
+    companyId: requireString(raw.company_id, "商业授权 company_id"),
+    companyVersion: requireNumber(raw.company_version, "商业授权 company_version"),
+    planCode: planCode as CommercialEntitlements["planCode"],
+    billingCycle: billingCycle as CommercialEntitlements["billingCycle"],
+    ...(contractPriceCny !== undefined ? { contractPriceCny } : {}),
+    featureOverrides: booleanRecord(raw.feature_overrides),
+    features: booleanRecord(raw.features),
+    limitOverrides: limitRecord(raw.limit_overrides),
+    limits: limitRecord(raw.limits),
+    plans,
+    featureCatalog,
+    limitCatalog,
+  };
+}
+
 function enterpriseTemplatePayload(
   themeKey: EnterpriseTemplateThemeKey,
   blocks: EnterpriseTemplateBlock[],
 ) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     theme_key: themeKey,
     blocks: blocks.map((block, index) => ({
       id: block.id,
       type: block.type,
+      plugin_id: normalizeCardPluginReference(block.type, block).pluginId,
+      plugin_version: normalizeCardPluginReference(block.type, block).pluginVersion,
+      contribution_id: normalizeCardPluginReference(block.type, block).contributionId,
+      config: {},
       visible: block.visible,
       show_title: block.showTitle !== false,
       directory_enabled: block.directoryEnabled !== false,
@@ -1033,6 +1166,10 @@ export function createAdminApi(client: ApiClient) {
     };
   },
 
+  async getCommercialEntitlements(): Promise<CommercialEntitlements> {
+    return normalizeCommercialEntitlements(await client.get("/admin/entitlements"));
+  },
+
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     await client.post("/auth/password", {
       current_password: currentPassword,
@@ -1404,6 +1541,24 @@ export function createAdminApi(client: ApiClient) {
   async getEnterpriseTemplate(id: string): Promise<EnterpriseTemplate> {
     return normalizeEnterpriseTemplate(
       await client.get(`/admin/cards/${encodeURIComponent(id)}/enterprise-template`),
+    );
+  },
+
+  async listCardPlugins(): Promise<CardPluginCatalog> {
+    return normalizeCardPluginCatalog(await client.get("/admin/card-plugins"));
+  },
+
+  async updateCardPlugin(
+    pluginId: string,
+    version: number,
+    input: { enabled: boolean; grants: string[] },
+  ): Promise<CardPluginCatalog> {
+    return normalizeCardPluginCatalog(
+      await client.put(
+        `/admin/card-plugins/${encodeURIComponent(pluginId)}`,
+        input,
+        { version },
+      ),
     );
   },
 

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
+from app.api.commercial_dependencies import require_commercial_feature
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.member_schemas import (
@@ -26,7 +27,11 @@ from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
 from app.services.member_store import MemberScope, MemberStore
 
-router = APIRouter(prefix="/admin/members", tags=["Admin Members"])
+router = APIRouter(
+    prefix="/admin/members",
+    tags=["Admin Members"],
+    dependencies=[Depends(require_commercial_feature("team.members"))],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 
 _ADMIN_ROLES = {"company_admin", "platform_admin"}

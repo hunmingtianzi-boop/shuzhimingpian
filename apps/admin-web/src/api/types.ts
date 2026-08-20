@@ -288,6 +288,48 @@ export type PlatformEnterpriseLifecycle = {
   updatedAt: string;
 };
 
+export type CommercialPlanCode = "starter" | "professional" | "enterprise";
+export type CommercialBillingCycle = "monthly" | "yearly" | "contract";
+
+export type CommercialPlan = {
+  code: CommercialPlanCode;
+  name: string;
+  description: string;
+};
+
+export type CommercialFeature = {
+  id: string;
+  name: string;
+  group: string;
+  description: string;
+  minimumPlan: CommercialPlanCode;
+  overrideable: boolean;
+};
+
+export type CommercialLimit = {
+  id: string;
+  name: string;
+  group: string;
+  description: string;
+  unit: string;
+  planDefaults: Record<CommercialPlanCode, number | null>;
+};
+
+export type CommercialEntitlements = {
+  companyId: string;
+  companyVersion: number;
+  planCode: CommercialPlanCode;
+  billingCycle: CommercialBillingCycle;
+  contractPriceCny?: number;
+  featureOverrides: Record<string, boolean>;
+  features: Record<string, boolean>;
+  limitOverrides: Record<string, number | null>;
+  limits: Record<string, number | null>;
+  plans: CommercialPlan[];
+  featureCatalog: CommercialFeature[];
+  limitCatalog: CommercialLimit[];
+};
+
 export type PlatformOverview = {
   generatedAt: string;
   enterpriseCount: number;
@@ -864,6 +906,10 @@ export type EnterpriseTemplatePresentation = {
 export type EnterpriseTemplateBlock = {
   id: string;
   type: EnterpriseTemplateBlockType;
+  pluginId?: string;
+  pluginVersion?: string;
+  contributionId?: string;
+  pluginConfig?: Record<string, unknown>;
   visible: boolean;
   showTitle?: boolean;
   directoryEnabled?: boolean;
@@ -897,12 +943,12 @@ export type EnterpriseTemplate = {
   cardId: string;
   version: number;
   draft: {
-    schemaVersion: 1;
+    schemaVersion: 1 | 2;
     themeKey: EnterpriseTemplateThemeKey;
     blocks: EnterpriseTemplateBlock[];
   };
   published?: {
-    schemaVersion: 1;
+    schemaVersion: 1 | 2;
     themeKey: EnterpriseTemplateThemeKey;
     blocks: EnterpriseTemplateBlock[];
   };
@@ -915,6 +961,35 @@ export type CardComposerDefault = {
 };
 
 export type EnterpriseTemplateThemeKey = "brand" | "clean" | "warm";
+
+export type CardPluginRelease = {
+  id: string;
+  version: string;
+  hostApi: string;
+  trust: "system" | "builtin";
+  required: boolean;
+  commercialFeatureId: string;
+  permissions: string[];
+  status: "available" | "killed";
+  contributions: Array<{
+    id: string;
+    legacyType: EnterpriseTemplateBlockType;
+    configSchema: string;
+  }>;
+};
+
+export type CompanyCardPluginInstallation = {
+  pluginId: string;
+  pluginVersion: string;
+  enabled: boolean;
+  grants: string[];
+};
+
+export type CardPluginCatalog = {
+  companyVersion: number;
+  releases: CardPluginRelease[];
+  installations: CompanyCardPluginInstallation[];
+};
 
 export type PageResult<T> = {
   items: T[];

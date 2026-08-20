@@ -5,6 +5,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
+from app.api.commercial_dependencies import commercial_actor
+from app.api.commercial_schemas import (
+    CommercialEntitlementEnvelope,
+    UpdateCommercialEntitlementRequest,
+)
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
@@ -16,6 +21,7 @@ from app.api.platform_schemas import (
 )
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
+from app.services.commercial_store import CommercialStore
 from app.services.platform_store import PlatformActor, PlatformStore
 
 router = APIRouter(prefix="/platform/enterprises", tags=["Platform Administration"])
@@ -109,6 +115,43 @@ async def transition_enterprise(
         trace_id=request_id_ctx.get(),
     )
     return PlatformEnterpriseLifecycleEnvelope(data=record)
+
+
+@router.get(
+    "/{company_id}/entitlements",
+    response_model=CommercialEntitlementEnvelope,
+    operation_id="getPlatformEnterpriseEntitlements",
+)
+async def get_enterprise_entitlements(
+    company_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> CommercialEntitlementEnvelope:
+    record = await CommercialStore(request.app.state.session_factory).get_entitlements(
+        actor=commercial_actor(principal),
+        company_id=company_id,
+    )
+    return CommercialEntitlementEnvelope(data=record)
+
+
+@router.put(
+    "/{company_id}/entitlements",
+    response_model=CommercialEntitlementEnvelope,
+    operation_id="updatePlatformEnterpriseEntitlements",
+)
+async def update_enterprise_entitlements(
+    company_id: uuid.UUID,
+    body: UpdateCommercialEntitlementRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> CommercialEntitlementEnvelope:
+    record = await CommercialStore(request.app.state.session_factory).update_entitlements(
+        actor=commercial_actor(principal),
+        company_id=company_id,
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    return CommercialEntitlementEnvelope(data=record)
 
 
 __all__ = ["router"]
