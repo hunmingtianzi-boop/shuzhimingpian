@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 
+import { adaptRegisteredCardPluginBlock } from "./CardBlockPluginRegistry";
 import { orderVisibleCardPageBlocks } from "./CardPageBlocksRenderer";
 import { CardStudioSurface } from "./CardStudioSurface";
 import { StudioCardPage, type StudioModule } from "./CardStudioComponents";
+import type { CardPluginReference } from "./CardPluginContracts";
 
 export type CardPageBlockType = "identity" | "rich_text" | "business_collection" | "image_gallery" | "video_link" | "case_collection" | "trust_panel" | "faq" | "cta" | "ai_assistant" | "action_collection";
 export type CardPageLayoutVariant = "auto" | "list" | "grid" | "carousel" | "featured" | "mosaic" | "horizontal" | "vertical";
@@ -28,7 +30,7 @@ export type CardPageIdentity = { variant?: "legacy" | "v2"; kind: "enterprise" |
 export type CardPageProduct = { id: string; slug?: string; name: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string };
 export type CardPageCase = { id: string; slug?: string; title: string; industry?: string; clientName?: string; background?: string; solution?: string; summary?: string; result?: string; metrics?: Array<{ value: string; label: string }>; imageUrl?: string; ctaLabel?: string };
 export type CardPageFaqItem = { id: string; documentId?: string; question: string; answer: string; sourceLabel?: string };
-export type CardPageBlock = {
+export type CardPageBlock = Partial<CardPluginReference> & {
   id: string; type: CardPageBlockType; title?: string; body?: string; visible?: boolean; showTitle?: boolean; directoryEnabled?: boolean; sortOrder?: number;
   layoutVariant?: CardPageLayoutVariant; itemLimit?: number; presentation?: CardPageIdentityPresentation; imageUrls?: string[]; galleryItems?: CardPageGalleryItem[]; videoUrl?: string; videoCoverUrl?: string;
   productIds?: string[]; productItems?: CardPageProduct[]; productOverrides?: Array<Partial<CardPageProduct> & { id: string; title?: string }>; caseIds?: string[]; caseItems?: CardPageCase[]; caseOverrides?: Array<Partial<CardPageCase> & { id: string }>; faqMode?: "all_published" | "selected"; faqDocumentIds?: string[];
@@ -110,15 +112,17 @@ function moduleSource(block: CardPageBlock, identityKind?: CardPageIdentity["kin
   return ({ identity: "企业员工", rich_text: profileSource, business_collection: "业务库", image_gallery: "素材库", video_link: "素材库", case_collection: "案例库", trust_panel: "企业资料", faq: "问答库", cta: "自定义内容", ai_assistant: "企业资料", action_collection: "快捷入口" } as Record<CardPageBlockType, string>)[block.type];
 }
 function studioType(block: CardPageBlock): StudioModule["type"] { return isOverview(block) ? "overview" : ({ identity: "identity", rich_text: "intro", business_collection: "services", image_gallery: "gallery", video_link: "video", case_collection: "cases", trust_panel: "trust", faq: "faq", cta: "cta", ai_assistant: "ai", action_collection: "actions" } as Record<CardPageBlockType, StudioModule["type"]>)[block.type]; }
-function positionValue(value?: CardPageIdentityPresentation["background"] extends infer B ? B extends { position?: infer P } ? P : never : never) { return ({ top_left: "topLeft", top_right: "topRight", bottom_left: "bottomLeft", bottom_right: "bottomRight" } as Record<string, string>)[String(value || "")] || value; }
-
 export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceUrl = (url) => url }: Pick<CardPageExperienceProps, "blocks" | "data" | "resolveResourceUrl">): StudioModule[] {
   return orderVisibleCardPageBlocks(blocks, blockSelector).map((block): StudioModule => {
     const base: StudioModule = { id: block.id, type: studioType(block), title: moduleTitle(block, data.identity?.kind), source: moduleSource(block, data.identity?.kind), visible: block.type === "identity" ? true : block.visible !== false, directoryEnabled: block.directoryEnabled, showTitle: block.showTitle !== false && block.type !== "identity" && !isOverview(block), layout: simulatorLayout(block.layoutVariant, block.type), body: block.body, actionTemplate: block.actionTemplate };
-    if (block.type === "identity") {
-      const identity = data.identity;
-      base.identity = identity ? { ...identity, imageUrl: identity.imageUrl ? resolveResourceUrl(identity.imageUrl) : undefined, layout: block.presentation?.identityLayout || (block.layoutVariant === "vertical" ? "vertical" : "horizontal"), background: { imageUrl: block.presentation?.background?.assetUrl ? resolveResourceUrl(block.presentation.background.assetUrl) : undefined, fit: block.presentation?.background?.fit, position: positionValue(block.presentation?.background?.position) as string, aspectRatio: block.presentation?.background?.aspectRatio, focalX: block.presentation?.background?.focalX, focalY: block.presentation?.background?.focalY, scale: block.presentation?.background?.scale, opacity: block.presentation?.background?.opacity, overlay: block.presentation?.background?.overlay } } : undefined;
-    } else if (block.type === "business_collection") {
+    const registered = adaptRegisteredCardPluginBlock(block, base, {
+      data,
+      resolveResourceUrl,
+      limited,
+      resolveFaqItems: resolveCardPageFaqItems,
+    });
+    if (registered) return registered;
+    if (block.type === "business_collection") {
       base.items = limited(withOverrides(resolved(block.productItems, block.productIds, data.products || []), block.productOverrides?.map((item) => ({ ...item, name: item.title || item.name }))), block.itemLimit).map((item) => ({ ...item, title: item.name, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }));
     } else if (block.type === "case_collection") {
       base.items = limited(withOverrides(resolved(block.caseItems, block.caseIds, data.cases || []), block.caseOverrides), block.itemLimit).map((item) => ({ ...item, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }));
@@ -127,10 +131,6 @@ export function adaptCardPageToStudioModel({ blocks, data = {}, resolveResourceU
       base.imageUrls = base.galleryItems.map((item) => item.imageUrl);
     } else if (block.type === "video_link") {
       base.videoUrl = safeCardPageVideoUrl(block.videoUrl, resolveResourceUrl); base.videoCoverUrl = block.videoCoverUrl ? resolveResourceUrl(block.videoCoverUrl) : undefined;
-    } else if (block.type === "faq") {
-      base.items = limited(resolveCardPageFaqItems(block, data.faqItems || []), block.itemLimit).map((item) => ({ ...item }));
-    } else if (block.type === "action_collection") {
-      base.items = limited(block.actionItems || [], block.itemLimit).flatMap((item) => { const href = safeCardPageActionHref(item); return href ? [{ ...item, href, imageUrl: item.imageUrl ? resolveResourceUrl(item.imageUrl) : undefined }] : []; });
     } else if (block.type === "cta") { base.ctaLabel = block.ctaLabel; base.ctaUrl = safeCardPageExternalUrl(block.ctaUrl); base.ctaIcon = block.ctaIcon; }
     return base;
   });

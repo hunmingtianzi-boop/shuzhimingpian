@@ -11,6 +11,10 @@ from app.api.admin_schemas import (
     KnowledgePublishEnvelope,
     PutKnowledgeDocumentRequest,
 )
+from app.api.commercial_dependencies import (
+    require_commercial_feature,
+    require_commercial_feature_for_knowledge_path,
+)
 from app.api.content_import_schemas import (
     BulkAcceptContentCandidatesRequest,
     ContentImportCandidateEnvelope,
@@ -56,7 +60,13 @@ from app.services.knowledge_import_store import (
 )
 from app.services.knowledge_ops_store import KnowledgeOpsScope, KnowledgeOpsStore
 
-router = APIRouter(tags=["Knowledge Operations"])
+router = APIRouter(
+    tags=["Knowledge Operations"],
+    dependencies=[
+        Depends(require_commercial_feature("knowledge.manage")),
+        Depends(require_commercial_feature_for_knowledge_path),
+    ],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 _ADMIN_ROLES = {"company_admin", "platform_admin"}
 

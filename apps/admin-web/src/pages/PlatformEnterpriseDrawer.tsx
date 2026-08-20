@@ -22,6 +22,7 @@ import { ApiError } from "../api/client";
 import { platformApi } from "../api/platformApi";
 import type { PlatformCardProjection } from "../api/types";
 import { FormFeedback } from "../components/FormFeedback";
+import { CommercialEntitlementPanel } from "../components/CommercialEntitlementPanel";
 import { ResourceState } from "../components/ResourceState";
 import { StatusBadge } from "../components/StatusBadge";
 import { useResource } from "../hooks/useResource";
@@ -235,6 +236,22 @@ export function PlatformEnterpriseDrawer({
                   </div>
                 ))}
               </dl>
+            </section>
+
+            <section className={styles.section} aria-labelledby="enterprise-entitlements-title">
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h3 id="enterprise-entitlements-title">套餐与功能授权</h3>
+                  <p>套餐提供默认能力；单功能开关可针对该企业覆盖。</p>
+                </div>
+              </div>
+              <CommercialEntitlementPanel
+                companyId={detail.companyId}
+                onChanged={() => {
+                  resource.reload();
+                  onChanged?.();
+                }}
+              />
             </section>
 
             <section className={styles.section} aria-labelledby="enterprise-business-title">

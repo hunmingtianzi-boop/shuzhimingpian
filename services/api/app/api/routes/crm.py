@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
+from app.api.commercial_dependencies import require_commercial_feature
 from app.api.dependencies import (
     get_idempotency_key,
     get_staff_principal,
@@ -131,6 +132,7 @@ async def get_privacy_request(
     "/admin/leads",
     response_model=LeadListEnvelope,
     operation_id="listAdminLeads",
+    dependencies=[Depends(require_commercial_feature("customer.leads"))],
 )
 async def list_leads(
     request: Request,
@@ -156,6 +158,7 @@ async def list_leads(
     "/admin/leads/{lead_id}",
     response_model=LeadDetailEnvelope,
     operation_id="getAdminLead",
+    dependencies=[Depends(require_commercial_feature("customer.leads"))],
 )
 async def get_lead(
     lead_id: uuid.UUID,
@@ -177,6 +180,7 @@ async def get_lead(
     "/admin/leads/{lead_id}",
     response_model=LeadDetailEnvelope,
     operation_id="updateAdminLead",
+    dependencies=[Depends(require_commercial_feature("customer.leads"))],
 )
 async def update_lead(
     lead_id: uuid.UUID,
@@ -203,6 +207,7 @@ async def update_lead(
     response_model=LeadFollowupEnvelope,
     status_code=status.HTTP_201_CREATED,
     operation_id="createLeadFollowup",
+    dependencies=[Depends(require_commercial_feature("customer.leads"))],
 )
 async def create_followup(
     lead_id: uuid.UUID,

@@ -84,7 +84,7 @@ describe("adminApi real contract", () => {
     expect((fetcher.mock.calls[2][1]?.headers as Headers).get("If-Match")).toBe("7");
     const body = JSON.parse(String(fetcher.mock.calls[2][1]?.body));
     expect(body).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       theme_key: "clean",
       blocks: [
         { id: "gallery-1", visible: false, sort_order: 0 },
@@ -306,7 +306,7 @@ describe("adminApi real contract", () => {
     const body = JSON.parse(String(fetcher.mock.calls[1][1]?.body));
     expect(body).not.toHaveProperty("template_source_card_id");
     expect(body.template_document).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       blocks: [
         { id: "identity", sort_order: 0 },
         {

@@ -38,6 +38,7 @@ from app.api.schemas import (
 from app.api.schemas import (
     MessageCitation as MessageCitationSchema,
 )
+from app.commercial.entitlements import feature_is_enabled
 from app.core.config import Settings
 from app.core.pii import PiiCipher
 from app.core.redaction import redact_sensitive_text
@@ -210,6 +211,8 @@ class PublicStore:
                     tenant_id=scope.tenant_id,
                     company_id=scope.company_id,
                     value=card_settings.get("enterprise_template_published"),
+                    company_settings=company_settings,
+                    killed_plugin_keys=self._settings.killed_card_plugin_keys,
                 )
                 if card_settings.get("enterprise_template_published")
                 else None
@@ -248,6 +251,8 @@ class PublicStore:
                         text("SELECT to_regclass('public.wecom_card_contact_ways') IS NOT NULL")
                     )
                 )
+            wecom_entitled = feature_is_enabled(company_settings, "integration.wecom")
+            ai_entitled = feature_is_enabled(company_settings, "ai.conversations")
             wecom_contact = (
                 await session.scalar(
                     select(WeComCardContactWay).where(
@@ -257,7 +262,7 @@ class PublicStore:
                         WeComCardContactWay.revoked_at.is_(None),
                     )
                 )
-                if has_wecom_contact_table
+                if has_wecom_contact_table and wecom_entitled
                 else None
             )
             return PublicCard(
@@ -358,7 +363,7 @@ class PublicStore:
                     # public route combines it with the same dynamic LLM
                     # resolver used by Chat so database profiles take effect
                     # without a process restart.
-                    available=knowledge_count > 0,
+                    available=ai_entitled and knowledge_count > 0,
                     display_name=str(
                         card_settings.get("assistant_name") or f"{company.name} AI 助手"
                     ),
@@ -629,6 +634,10 @@ class PublicStore:
         async with self._sessions() as session, session.begin():
             await self._set_principal_scope(session, principal, card_slug=slug)
             card = await self._require_principal_card(session, principal, slug)
+            company = await session.get(Company, principal.company_id)
+            if company is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+            _require_entitled_feature(company.settings, "ai.conversations")
             if request.chat_notice_version != _policy_version(card, ConsentScope.CHAT_NOTICE):
                 raise _policy_version_mismatch()
             await self._require_current_consent(
@@ -697,6 +706,10 @@ class PublicStore:
             conversation = await self._require_conversation(
                 session, conversation_id=conversation_id, principal=principal
             )
+            company = await session.get(Company, principal.company_id)
+            if company is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+            _require_entitled_feature(company.settings, "ai.conversations")
             card = await session.get(Card, principal.card_id)
             if (
                 card is None
@@ -2022,6 +2035,8 @@ async def _public_enterprise_template(
     tenant_id: uuid.UUID,
     company_id: uuid.UUID,
     value: object,
+    company_settings: dict[str, Any] | None = None,
+    killed_plugin_keys: set[str] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -2115,8 +2130,21 @@ async def _public_enterprise_template(
         public_cases = {row.id: row for row in case_rows}
         ordered_public_case_ids = [row.id for row in case_rows]
     blocks: list[dict[str, Any]] = []
+    killed_plugin_keys = killed_plugin_keys or set()
     for block in document.blocks:
         if not block.visible:
+            continue
+        commercial_feature_id = {
+            "business_collection": "catalog.manage",
+            "case_collection": "catalog.manage",
+            "faq": "card.blocks.faq",
+            "ai_assistant": "ai.conversations",
+            "action_collection": "card.blocks.actions",
+        }.get(block.type, "card.core")
+        if not feature_is_enabled(company_settings, commercial_feature_id):
+            continue
+        plugin_key = f"{block.plugin_id}@{block.plugin_version}/{block.contribution_id}"
+        if block.plugin_id != "cf.system.identity" and plugin_key in killed_plugin_keys:
             continue
         asset_urls = [
             *block.image_urls,
@@ -2254,6 +2282,19 @@ async def _public_enterprise_template(
         "theme_key": document.theme_key,
         "blocks": blocks,
     }
+
+
+def _require_entitled_feature(company_settings: object, feature_id: str) -> None:
+    if feature_is_enabled(
+        company_settings if isinstance(company_settings, dict) else {}, feature_id
+    ):
+        return
+    raise ApiError(
+        403,
+        "FEATURE_NOT_ENTITLED",
+        "当前企业套餐未开通此功能",
+        details={"feature_id": feature_id},
+    )
 
 
 def _is_scoped_card_asset(value: str, company_id: uuid.UUID) -> bool:

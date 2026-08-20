@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     )
     public_card_base_url: str = "http://127.0.0.1:4173"
     allow_insecure_public_card_http: bool = False
+    # Comma-separated exact contribution keys, for example
+    # cf.card.faq@1.0.0/faq. This is an emergency platform control; ordinary
+    # company enablement is persisted in company settings.
+    card_plugin_kill_switches: str = ""
 
     database_url: str = (
         "postgresql+asyncpg://cf_ai_card_app:change-me-app-local-only@localhost:5432/cf_ai_card"
@@ -166,6 +170,14 @@ class Settings(BaseSettings):
         if not value.startswith("/"):
             value = f"/{value}"
         return value.rstrip("/")
+
+    @property
+    def killed_card_plugin_keys(self) -> set[str]:
+        return {
+            value.strip()
+            for value in self.card_plugin_kill_switches.split(",")
+            if value.strip()
+        }
 
     @field_validator("asgi_root_path")
     @classmethod

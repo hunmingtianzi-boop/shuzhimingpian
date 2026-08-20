@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from app.api.commercial_dependencies import require_commercial_feature
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.workflow_schemas import (
@@ -17,7 +18,10 @@ from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
 from app.services.visitor_profile_store import VisitorProfileScope, VisitorProfileStore
 
-router = APIRouter(tags=["Visitor Profiles"])
+router = APIRouter(
+    tags=["Visitor Profiles"],
+    dependencies=[Depends(require_commercial_feature("customer.profiles"))],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 
 

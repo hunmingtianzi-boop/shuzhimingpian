@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.catalog_schemas import (
     CardComposerDefaultRecord,
+    CardPluginCatalogRecord,
     CaseStudyRecord,
+    CompanyCardPluginInstallation,
     CreateCardRequest,
     CreateCaseStudyRequest,
     CreateForbiddenTopicRequest,
@@ -31,6 +33,7 @@ from app.api.catalog_schemas import (
     PublicCaseStudyRecord,
     PublicProductRecord,
     UpdateCaseStudyRequest,
+    UpdateCompanyCardPluginRequest,
     UpdateEnterpriseTemplateRequest,
     UpdateForbiddenTopicRequest,
     UpdateManagedCardRequest,
@@ -38,6 +41,7 @@ from app.api.catalog_schemas import (
     validate_safe_asset_url,
 )
 from app.api.errors import ApiError
+from app.commercial.entitlements import feature_is_enabled
 from app.db.models import (
     Card,
     CardContactField,
@@ -57,6 +61,12 @@ from app.db.models import (
     WeComCardContactWay,
 )
 from app.db.session import resolve_public_card_scope, set_rls_context
+from app.plugins.card_blocks import (
+    BUILTIN_CARD_BLOCK_PLUGINS,
+    PluginReference,
+    card_block_plugin_catalog,
+    plugin_release_for_reference,
+)
 from app.services.audit import append_audit
 from app.services.enterprise_content_store import effective_overrides
 
@@ -205,6 +215,7 @@ class CatalogStore:
         public_card_base_url: str = "http://127.0.0.1:4173",
         allow_insecure_http: bool = False,
         slug_factory: Callable[[], str] = generate_card_slug,
+        killed_card_plugin_keys: set[str] | None = None,
     ) -> None:
         self._sessions = session_factory
         self._public_card_base_url = _normalize_public_base_url(
@@ -212,6 +223,7 @@ class CatalogStore:
             allow_insecure_http=allow_insecure_http,
         )
         self._slug_factory = slug_factory
+        self._killed_card_plugin_keys = killed_card_plugin_keys or set()
 
     async def list_products(
         self,
@@ -1271,6 +1283,11 @@ class CatalogStore:
             employee_identity: EmployeeIdentityProjection | None = None
             settings = _template_settings(card.settings)
             draft = EnterpriseTemplateDocument.model_validate(settings["enterprise_template_draft"])
+            await self._validate_enterprise_template_plugins(
+                session,
+                scope=scope,
+                document=draft,
+            )
             published = await self._validate_enterprise_template_resources(
                 session,
                 scope=scope,
@@ -1339,6 +1356,11 @@ class CatalogStore:
             await self._set_scope(session, scope)
             card = await self._card(session, scope, card_id, for_update=True)
             require_version(card.version, expected_version)
+            await self._validate_enterprise_template_plugins(
+                session,
+                scope=scope,
+                document=body,
+            )
             await self._validate_enterprise_template_resources(
                 session,
                 scope=scope,
@@ -1376,6 +1398,97 @@ class CatalogStore:
                 document=document,
             )
 
+    async def list_card_plugins(self, *, scope: CatalogScope) -> CardPluginCatalogRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company_for_composer(session, scope)
+            return _card_plugin_catalog_record(
+                company,
+                killed=self._killed_card_plugin_keys,
+            )
+
+    async def update_company_card_plugin(
+        self,
+        *,
+        scope: CatalogScope,
+        plugin_id: str,
+        expected_version: int,
+        body: UpdateCompanyCardPluginRequest,
+        trace_id: str | None = None,
+    ) -> CardPluginCatalogRecord:
+        release = next(
+            (item for item in BUILTIN_CARD_BLOCK_PLUGINS if item.plugin_id == plugin_id),
+            None,
+        )
+        if release is None:
+            raise ApiError(404, "CARD_PLUGIN_NOT_FOUND", "名片插件不存在或未随平台发布")
+        if release.required and not body.enabled:
+            raise ApiError(422, "CARD_PLUGIN_REQUIRED", "系统名片插件不能停用")
+        unknown_grants = set(body.grants) - set(release.permissions)
+        if unknown_grants:
+            raise ApiError(
+                422,
+                "CARD_PLUGIN_GRANT_INVALID",
+                "插件授权包含未声明的能力",
+                details={"grants": sorted(unknown_grants)},
+            )
+        missing_grants = set(release.permissions) - set(body.grants)
+        if body.enabled and missing_grants:
+            raise ApiError(
+                422,
+                "CARD_PLUGIN_GRANT_REQUIRED",
+                "启用插件前必须授予其声明的能力",
+                details={"grants": sorted(missing_grants)},
+            )
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company_for_composer(session, scope, for_update=True)
+            require_version(company.version, expected_version)
+            if (
+                body.enabled
+                and not release.required
+                and not feature_is_enabled(company.settings, release.commercial_feature_id)
+            ):
+                raise ApiError(
+                    403,
+                    "FEATURE_NOT_ENTITLED",
+                    "当前企业套餐未开通该名片插件",
+                    details={
+                        "feature_id": release.commercial_feature_id,
+                        "plugin_id": release.plugin_id,
+                    },
+                )
+            settings = _dict_value(company.settings)
+            installations = _card_plugin_installation_values(settings)
+            installations[plugin_id] = {
+                "plugin_version": release.version,
+                "enabled": body.enabled,
+                "grants": sorted(body.grants),
+            }
+            settings["card_plugin_installations"] = installations
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.card_plugin.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "plugin_id": plugin_id,
+                    "plugin_version": release.version,
+                    "enabled": body.enabled,
+                    "grants": sorted(body.grants),
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            return _card_plugin_catalog_record(
+                company,
+                killed=self._killed_card_plugin_keys,
+            )
+
     async def update_card_composer_default(
         self,
         *,
@@ -1390,6 +1503,12 @@ class CatalogStore:
             await self._set_scope(session, scope)
             company = await self._company_for_composer(session, scope, for_update=True)
             require_version(company.version, expected_version)
+            await self._validate_enterprise_template_plugins(
+                session,
+                scope=scope,
+                document=body,
+                company=company,
+            )
             await self._validate_enterprise_template_resources(
                 session, scope=scope, document=body, require_public_cases=False
             )
@@ -1459,13 +1578,20 @@ class CatalogStore:
             )
             # Store the canonical editor document, not the response-only
             # product/case projections returned by resource validation.
-            return body.template_document
-        return await self._resolve_card_composer_template(
+            document = body.template_document
+        else:
+            document = await self._resolve_card_composer_template(
+                session,
+                scope=scope,
+                card_kind=body.card_kind,
+                source_card_id=body.template_source_card_id,
+            )
+        await self._validate_enterprise_template_plugins(
             session,
             scope=scope,
-            card_kind=body.card_kind,
-            source_card_id=body.template_source_card_id,
+            document=document,
         )
+        return document
 
     async def _company_for_composer(
         self, session: AsyncSession, scope: CatalogScope, *, for_update: bool = False
@@ -1690,6 +1816,75 @@ class CatalogStore:
                 "blocks": projected_blocks,
             }
         )
+
+    async def _validate_enterprise_template_plugins(
+        self,
+        session: AsyncSession,
+        *,
+        scope: CatalogScope,
+        document: EnterpriseTemplateDocument,
+        company: Company | None = None,
+    ) -> None:
+        # Version-one documents are compatibility snapshots. They remain
+        # readable/publishable until an administrator explicitly saves v2.
+        if document.schema_version == 1:
+            return
+        company = company or await self._company_for_composer(session, scope)
+        installations = _effective_card_plugin_installations(company.settings)
+        for block in document.blocks:
+            if block.plugin_id == "cf.legacy.card-blocks":
+                continue
+            reference_key = (
+                f"{block.plugin_id}@{block.plugin_version}/{block.contribution_id}"
+            )
+            if reference_key in self._killed_card_plugin_keys:
+                raise ApiError(
+                    422,
+                    "CARD_PLUGIN_KILLED",
+                    "名片插件已被平台紧急停用",
+                    details={"plugin": reference_key, "block_id": block.id},
+                )
+            release = plugin_release_for_reference(
+                PluginReference(
+                    plugin_id=block.plugin_id or "",
+                    plugin_version=block.plugin_version or "",
+                    contribution_id=block.contribution_id or "",
+                )
+            )
+            if release is None:
+                raise ApiError(
+                    422,
+                    "CARD_PLUGIN_UNAVAILABLE",
+                    "名片插件版本不可用",
+                    details={"plugin": reference_key, "block_id": block.id},
+                )
+            installation = installations.get(release.plugin_id)
+            if installation is None or not installation["enabled"]:
+                raise ApiError(
+                    422,
+                    "CARD_PLUGIN_DISABLED",
+                    "企业尚未启用该名片插件",
+                    details={"plugin_id": release.plugin_id, "block_id": block.id},
+                )
+            if installation["plugin_version"] != release.version:
+                raise ApiError(
+                    422,
+                    "CARD_PLUGIN_VERSION_UNAVAILABLE",
+                    "企业启用的插件版本与名片草稿不一致",
+                    details={"plugin_id": release.plugin_id, "block_id": block.id},
+                )
+            missing = set(release.permissions) - set(installation["grants"])
+            if missing:
+                raise ApiError(
+                    422,
+                    "CARD_PLUGIN_GRANT_REQUIRED",
+                    "名片插件缺少所需能力授权",
+                    details={
+                        "plugin_id": release.plugin_id,
+                        "block_id": block.id,
+                        "grants": sorted(missing),
+                    },
+                )
 
     async def _ensure_enterprise_publishable(
         self,
@@ -3032,6 +3227,58 @@ def _normalize_public_base_url(
     ):
         raise ValueError("non-local public_card_base_url must use HTTPS")
     return candidate
+
+
+def _card_plugin_installation_values(value: object) -> dict[str, Any]:
+    settings = _dict_value(value)
+    raw = settings.get("card_plugin_installations")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _effective_card_plugin_installations(value: object) -> dict[str, dict[str, Any]]:
+    configured = _card_plugin_installation_values(value)
+    result: dict[str, dict[str, Any]] = {}
+    for release in BUILTIN_CARD_BLOCK_PLUGINS:
+        override = configured.get(release.plugin_id)
+        override = override if isinstance(override, dict) else {}
+        grants = override.get("grants")
+        grants = (
+            [str(item) for item in grants if isinstance(item, str)]
+            if isinstance(grants, list)
+            else list(release.permissions)
+        )
+        result[release.plugin_id] = {
+            "plugin_version": str(override.get("plugin_version") or release.version),
+            "enabled": (
+                True
+                if release.required
+                else override.get("enabled", True) is True
+                and feature_is_enabled(value, release.commercial_feature_id)
+            ),
+            "grants": list(release.permissions) if release.required else grants,
+        }
+    return result
+
+
+def _card_plugin_catalog_record(
+    company: Company,
+    *,
+    killed: set[str],
+) -> CardPluginCatalogRecord:
+    installations = _effective_card_plugin_installations(company.settings)
+    return CardPluginCatalogRecord(
+        company_version=company.version,
+        releases=card_block_plugin_catalog(killed=killed),
+        installations=[
+            CompanyCardPluginInstallation(
+                plugin_id=release.plugin_id,
+                plugin_version=installations[release.plugin_id]["plugin_version"],
+                enabled=bool(installations[release.plugin_id]["enabled"]),
+                grants=list(installations[release.plugin_id]["grants"]),
+            )
+            for release in BUILTIN_CARD_BLOCK_PLUGINS
+        ],
+    )
 
 
 def _dict_value(value: object) -> dict[str, Any]:

@@ -20,6 +20,7 @@ from app.api.workflow_schemas import (
     UpdateLeadRequest,
     UpdatePrivacyRequest,
 )
+from app.commercial.entitlements import feature_is_enabled
 from app.core.config import Settings
 from app.core.pii import PiiCipher, mask_value
 from app.core.tokens import VisitorPrincipal
@@ -84,6 +85,16 @@ class CrmStore:
         async with self._sessions() as session, session.begin():
             await self._set_visitor_scope(session, principal, card_slug=slug)
             card = await self._principal_card(session, principal=principal, slug=slug)
+            company = await session.get(Company, principal.company_id)
+            if company is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+            if not feature_is_enabled(company.settings, "customer.leads"):
+                raise ApiError(
+                    403,
+                    "FEATURE_NOT_ENTITLED",
+                    "当前企业套餐未开通销售线索",
+                    details={"feature_id": "customer.leads"},
+                )
             expected_policy = _policy_version(card, ConsentScope.LEAD_CONTACT)
             if body.consent_policy_version != expected_policy:
                 raise ApiError(

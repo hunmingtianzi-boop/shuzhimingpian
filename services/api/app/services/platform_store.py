@@ -169,6 +169,12 @@ class PlatformStore:
                     "policy_versions": {
                         "profile_personalization": "profile-personalization-v1"
                     },
+                    "commercial_entitlements": {
+                        "plan_code": "starter",
+                        "billing_cycle": "contract",
+                        "contract_price_cny": None,
+                        "feature_overrides": {},
+                    },
                 },
             )
             email = account if "@" in account else None

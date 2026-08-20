@@ -23,6 +23,7 @@ from app.api.admin_schemas import (
 )
 from app.api.catalog_schemas import (
     CardComposerDefaultEnvelope,
+    CardPluginCatalogEnvelope,
     CaseStudyEnvelope,
     CaseStudyListEnvelope,
     ConfirmPublicationRequest,
@@ -42,11 +43,17 @@ from app.api.catalog_schemas import (
     RollbackPublicationRequest,
     UpdateCardComposerDefaultRequest,
     UpdateCaseStudyRequest,
+    UpdateCompanyCardPluginRequest,
     UpdateEnterpriseTemplateRequest,
     UpdateForbiddenTopicRequest,
     UpdateManagedCardRequest,
     UpdateProductRequest,
 )
+from app.api.commercial_dependencies import (
+    commercial_actor,
+    require_commercial_feature_for_admin_path,
+)
+from app.api.commercial_schemas import CommercialEntitlementEnvelope
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.scheduled_publish_schemas import (
@@ -69,10 +76,15 @@ from app.integrations.wecom import (
 from app.services.admin_store import AdminScope, AdminStore
 from app.services.catalog_knowledge import CatalogKnowledgeSynchronizer
 from app.services.catalog_store import CatalogScope, CatalogStore, require_version
+from app.services.commercial_store import CommercialStore
 from app.services.scheduled_publish_store import ScheduledPublishStore
 from app.services.wecom_store import WeComCardContactRecord, WeComStore
 
-router = APIRouter(prefix="/admin", tags=["Admin Content"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Admin Content"],
+    dependencies=[Depends(require_commercial_feature_for_admin_path)],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 IfMatchDependency = Annotated[str, Header(alias="If-Match")]
 
@@ -139,6 +151,21 @@ _PERMISSIONS: dict[str, set[str]] = {
 }
 
 
+@router.get(
+    "/entitlements",
+    response_model=CommercialEntitlementEnvelope,
+    operation_id="getAdminCommercialEntitlements",
+)
+async def get_commercial_entitlements(
+    request: Request,
+    principal: StaffDependency,
+) -> CommercialEntitlementEnvelope:
+    record = await CommercialStore(request.app.state.session_factory).get_entitlements(
+        actor=commercial_actor(principal)
+    )
+    return CommercialEntitlementEnvelope(data=record)
+
+
 def _store(request: Request) -> AdminStore:
     return AdminStore.from_runtime(
         session_factory=request.app.state.session_factory,
@@ -168,6 +195,9 @@ def _catalog_store(request: Request) -> CatalogStore:
         public_card_base_url=base_url,
         allow_insecure_http=bool(
             getattr(request.app.state.settings, "allow_insecure_public_card_http", False)
+        ),
+        killed_card_plugin_keys=set(
+            getattr(request.app.state.settings, "killed_card_plugin_keys", set())
         ),
     )
 
@@ -1655,6 +1685,47 @@ async def get_enterprise_card_template(
         scope=_catalog_scope(principal), card_id=card_id
     )
     return EnterpriseTemplateEnvelope(data=record)
+
+
+@router.get(
+    "/card-plugins",
+    response_model=CardPluginCatalogEnvelope,
+    operation_id="listAdminCardPlugins",
+)
+async def list_card_plugins(
+    request: Request,
+    principal: StaffDependency,
+) -> CardPluginCatalogEnvelope:
+    _require_permission(principal, "card.read")
+    record = await _catalog_store(request).list_card_plugins(
+        scope=_catalog_scope(principal)
+    )
+    return CardPluginCatalogEnvelope(data=record)
+
+
+@router.put(
+    "/card-plugins/{plugin_id}",
+    response_model=CardPluginCatalogEnvelope,
+    operation_id="updateAdminCardPlugin",
+)
+async def update_card_plugin(
+    plugin_id: str,
+    body: UpdateCompanyCardPluginRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CardPluginCatalogEnvelope:
+    _require_permission(principal, "card.write")
+    record = await _catalog_store(request).update_company_card_plugin(
+        scope=_catalog_scope(principal),
+        plugin_id=plugin_id,
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, record.company_version)
+    return CardPluginCatalogEnvelope(data=record)
 
 
 @router.put(

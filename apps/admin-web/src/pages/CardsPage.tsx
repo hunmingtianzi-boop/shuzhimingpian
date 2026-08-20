@@ -40,6 +40,7 @@ import { CardEditor, syncEnterpriseLogo } from "../components/CardEditor";
 import type { CardCreationDraft } from "../components/CardEditor";
 import { EnterpriseTemplateEditor } from "../components/EnterpriseTemplateEditor";
 import { CardContentOverridesDialog } from "../components/CardContentOverridesDialog";
+import { CardPluginPanel } from "../components/CardPluginPanel";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import { StatusBadge } from "../components/StatusBadge";
@@ -511,6 +512,7 @@ export function CardsPage() {
 
       {resource.status === "ready" && (
         <>
+          {canManageEnterpriseCards ? <CardPluginPanel /> : null}
           <section
             className="content-panel catalog-panel catalog-section-panel"
             aria-labelledby="enterprise-card-title"

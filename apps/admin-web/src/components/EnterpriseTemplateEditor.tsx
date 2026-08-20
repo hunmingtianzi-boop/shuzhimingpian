@@ -37,7 +37,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
-import { StudioEditorShell, StudioIcon, StudioModuleRow, type StudioIconName } from "@cf/card-page-renderer";
+import {
+  cardPluginReferenceForLegacyType,
+  StudioEditorShell,
+  StudioIcon,
+  StudioModuleRow,
+  type StudioIconName,
+} from "@cf/card-page-renderer";
 
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
@@ -107,6 +113,7 @@ export function createEnterpriseTemplateBlock(
   return {
     id: nextBlockId(type),
     type,
+    ...cardPluginReferenceForLegacyType(type),
     visible: true,
     showTitle: type !== "identity",
     directoryEnabled: true,

@@ -7,6 +7,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.admin_schemas import CreateKnowledgeDocumentRequest, PutKnowledgeDocumentRequest
+from app.api.commercial_dependencies import require_commercial_feature_for_admin_path
 from app.api.dependencies import get_staff_principal, get_visitor_principal
 from app.api.errors import ApiError
 from app.api.workflow_schemas import (
@@ -35,7 +36,10 @@ from app.services.topic_analysis import TopicAnalysisService
 from app.services.workflow_store import WorkflowScope, WorkflowStore
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(tags=["Business Workflow"])
+router = APIRouter(
+    tags=["Business Workflow"],
+    dependencies=[Depends(require_commercial_feature_for_admin_path)],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 VisitorDependency = Annotated[VisitorPrincipal, Depends(get_visitor_principal)]
 

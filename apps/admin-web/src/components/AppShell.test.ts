@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { AdminUser } from "../api/types";
+import type { AdminUser, CommercialEntitlements } from "../api/types";
 import { APP_PATHS } from "../routing";
-import { getPlatformNavigationPaths, hasNavPermission } from "./AppShell";
+import {
+  getPlatformNavigationPaths,
+  hasCommercialFeature,
+  hasNavPermission,
+} from "./AppShell";
 
 function user(role: string, permissions: string[] = []): AdminUser {
   return {
@@ -64,5 +68,15 @@ describe("hasNavPermission", () => {
     expect(paths).toContain(APP_PATHS.platformOnboarding);
     expect(paths).not.toContain(APP_PATHS.overview);
     expect(paths).not.toContain(APP_PATHS.company);
+  });
+
+  it("uses effective commercial entitlements without hiding menus during bootstrap", () => {
+    expect(hasCommercialFeature(undefined, "data.exports")).toBe(true);
+    expect(hasCommercialFeature({
+      features: { "data.exports": false, "customer.visits": true },
+    } as unknown as CommercialEntitlements, "data.exports")).toBe(false);
+    expect(hasCommercialFeature({
+      features: { "data.exports": false, "customer.visits": true },
+    } as unknown as CommercialEntitlements, "customer.visits")).toBe(true);
   });
 });

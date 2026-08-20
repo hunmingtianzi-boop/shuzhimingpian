@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 
+from app.api.commercial_dependencies import require_commercial_feature
 from app.api.dependencies import get_idempotency_key, get_staff_principal
 from app.api.errors import ApiError
 from app.api.export_schemas import (
@@ -18,7 +19,11 @@ from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
 from app.services.export_store import ExportScope, ExportStore, ExportType
 
-router = APIRouter(prefix="/admin", tags=["Data Exports"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Data Exports"],
+    dependencies=[Depends(require_commercial_feature("data.exports"))],
+)
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 IdempotencyDependency = Annotated[str, Depends(get_idempotency_key)]
 _ADMIN_ROLES = {"company_admin", "platform_admin"}

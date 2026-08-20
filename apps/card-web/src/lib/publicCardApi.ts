@@ -1,8 +1,14 @@
+import { normalizeCardPluginReference } from "@cf/card-page-renderer";
+
 type PublicLinkItem = Record<string, string>;
 
 export type PublicEnterpriseTemplateBlock = {
   id: string;
   type: "identity" | "rich_text" | "business_collection" | "image_gallery" | "video_link" | "case_collection" | "trust_panel" | "faq" | "cta" | "ai_assistant" | "action_collection";
+  plugin_id?: string;
+  plugin_version?: string;
+  contribution_id?: string;
+  config?: Record<string, unknown>;
   title?: string;
   body?: string;
   visible?: boolean;
@@ -131,7 +137,7 @@ export type PublicCardData = {
     lead_consent: string;
     profile_personalization: string;
   };
-  enterprise_template?: { schema_version: 1; theme_key?: "brand" | "clean" | "warm"; blocks: PublicEnterpriseTemplateBlock[] } | null;
+  enterprise_template?: { schema_version: 1 | 2; theme_key?: "brand" | "clean" | "warm"; blocks: PublicEnterpriseTemplateBlock[] } | null;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -257,9 +263,19 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
           }];
         })
       : undefined;
+    const plugin = normalizeCardPluginReference(raw.type, {
+      pluginId: optionalString(raw, "plugin_id"),
+      pluginVersion: optionalString(raw, "plugin_version"),
+      contributionId: optionalString(raw, "contribution_id"),
+      pluginConfig: isRecord(raw.config) ? raw.config : undefined,
+    });
     return [{
       id: raw.id,
       type: raw.type as PublicEnterpriseTemplateBlock["type"],
+      plugin_id: plugin.pluginId,
+      plugin_version: plugin.pluginVersion,
+      contribution_id: plugin.contributionId,
+      config: plugin.pluginConfig,
       visible: raw.visible !== false,
       show_title: raw.show_title !== false,
       directory_enabled: raw.directory_enabled !== false,
@@ -293,7 +309,7 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
     }];
   });
   const theme = value.theme_key;
-  return { schema_version: 1, theme_key: theme === "clean" || theme === "warm" ? theme : "brand", blocks };
+  return { schema_version: value.schema_version === 2 ? 2 : 1, theme_key: theme === "clean" || theme === "warm" ? theme : "brand", blocks };
 }
 
 function parsePublicCard(value: unknown): PublicCardData {
