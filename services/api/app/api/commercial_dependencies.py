@@ -70,6 +70,7 @@ async def require_commercial_feature_for_admin_path(
         ("/admin/company/profile", None, "company.profile"),
         ("/admin/company/identity", None, "company.profile"),
         ("/admin/ai/answer-policy", None, "company.profile"),
+        ("/admin/ai/model-access", None, "company.profile"),
         ("/admin/notifications/settings", None, "company.profile"),
         ("/admin/privacy/settings", None, "company.profile"),
         ("/admin/products", None, "catalog.manage"),

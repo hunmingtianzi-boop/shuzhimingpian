@@ -308,6 +308,8 @@ async def _generate_and_persist(
             http_client=request.app.state.http_client,
             session_factory=request.app.state.session_factory,
             redis=getattr(request.app.state, "redis", None),
+            tenant_id=principal.tenant_id,
+            company_id=principal.company_id,
         )
     except LLMRuntimeUnavailable as exc:
         if metrics is not None:

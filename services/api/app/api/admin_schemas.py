@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator
 
 from app.ai.off_topic import (
     DEFAULT_OFF_TOPIC_QUESTION_LIMIT,
@@ -166,6 +166,67 @@ class UpdateCompanyAnswerPolicyRequest(AdminStrictModel):
         ge=MIN_OFF_TOPIC_QUESTION_LIMIT,
         le=MAX_OFF_TOPIC_QUESTION_LIMIT,
     )
+
+
+class EnterpriseLlmProfileOption(AdminStrictModel):
+    id: uuid.UUID
+    name: str
+    provider: str
+    base_url: str
+    model: str
+    daily_budget_ceiling_cny: float = Field(ge=0)
+    is_default: bool
+
+
+class EnterpriseLlmProfileOptionListEnvelope(AdminStrictModel):
+    data: list[EnterpriseLlmProfileOption]
+
+
+class EnterpriseLlmAccess(AdminStrictModel):
+    platform_profile_id: uuid.UUID
+    profile_name: str
+    provider: str
+    base_url: str
+    model: str
+    mode: Literal["platform_managed", "byok"]
+    daily_budget_cny: float = Field(ge=0)
+    platform_budget_ceiling_cny: float = Field(ge=0)
+    enabled: bool
+    key_configured: bool
+    key_hint: str | None = None
+    version: int = Field(ge=0)
+    configured: bool
+    delegated: bool
+    updated_at: datetime
+
+
+class EnterpriseLlmAccessEnvelope(AdminStrictModel):
+    data: EnterpriseLlmAccess
+
+
+class UpdateEnterpriseLlmAccessRequest(AdminStrictModel):
+    platform_profile_id: uuid.UUID
+    mode: Literal["platform_managed", "byok"]
+    daily_budget_cny: float = Field(ge=0)
+    expected_version: int = Field(ge=0)
+    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+    enabled: bool = True
+
+
+class TestEnterpriseLlmAccessRequest(AdminStrictModel):
+    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class EnterpriseLlmConnectionTest(AdminStrictModel):
+    status: Literal["succeeded", "failed"]
+    provider: str
+    model: str
+    latency_ms: int = Field(ge=0)
+    error_code: str | None = None
+
+
+class EnterpriseLlmConnectionTestEnvelope(AdminStrictModel):
+    data: EnterpriseLlmConnectionTest
 
 
 class CompanyNotificationSettings(AdminStrictModel):

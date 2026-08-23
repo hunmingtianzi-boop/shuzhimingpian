@@ -242,7 +242,12 @@ class TopicAnalysisService:
         )
         if question_count == 0:
             return _empty_view(period_days)
-        config = await resolve_effective_chat_config(self._sessions, self._settings)
+        config = await resolve_effective_chat_config(
+            self._sessions,
+            self._settings,
+            tenant_id=scope.tenant_id,
+            company_id=scope.company_id,
+        )
         runtime_settings = config.apply_to_settings(self._settings)
         provider = TopicAnalysisProvider(runtime_settings, self._http_client)
         if self._semaphore is None:

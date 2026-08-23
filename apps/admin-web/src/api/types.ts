@@ -196,6 +196,51 @@ export type CompanyPrivacySettings = {
   updatedAt: string;
 };
 
+export type EnterpriseLlmProfileOption = {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  dailyBudgetCeilingCny: number;
+  isDefault: boolean;
+};
+
+export type EnterpriseLlmAccess = {
+  platformProfileId: string;
+  profileName: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  mode: "platform_managed" | "byok";
+  dailyBudgetCny: number;
+  platformBudgetCeilingCny: number;
+  enabled: boolean;
+  keyConfigured: boolean;
+  keyHint?: string;
+  version: number;
+  configured: boolean;
+  delegated: boolean;
+  updatedAt: string;
+};
+
+export type EnterpriseLlmAccessInput = {
+  platformProfileId: string;
+  mode: "platform_managed" | "byok";
+  dailyBudgetCny: number;
+  expectedVersion: number;
+  apiKey?: string;
+  enabled: boolean;
+};
+
+export type EnterpriseLlmConnectionTest = {
+  status: "succeeded" | "failed";
+  provider: string;
+  model: string;
+  latencyMs: number;
+  errorCode?: string;
+};
+
 export type IdentityProfileFact = {
   id: string;
   label: string;
@@ -309,6 +354,29 @@ export type PlatformEnterprise = {
   createdAt: string;
   updatedAt?: string;
   version?: number;
+};
+
+export type PlatformAssociationSummary = {
+  companyId: string;
+  legalName: string;
+  shortName?: string;
+  businessTenantKey: string;
+  memberCount: number;
+  allocatedSeats: number;
+};
+
+export type PlatformAssociationMember = {
+  id: string;
+  associationCompanyId: string;
+  companyId: string;
+  legalName: string;
+  shortName?: string;
+  businessTenantKey: string;
+  memberTier?: string;
+  allocatedSeats: number;
+  benefits: Record<string, unknown>;
+  version: number;
+  updatedAt: string;
 };
 
 export type PlatformSubjectType =

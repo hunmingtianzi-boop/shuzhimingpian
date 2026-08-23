@@ -1,0 +1,80 @@
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.summaryCard,
+.memberCard,
+.addPanel {
+  border: 1px solid var(--colorNeutralStroke2);
+  border-radius: 12px;
+  background: var(--colorNeutralBackground1);
+  padding: 16px;
+}
+
+.summaryCard {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.summaryCard[data-selected="true"] {
+  border-color: var(--colorBrandStroke1);
+  box-shadow: inset 3px 0 0 var(--colorBrandBackground);
+}
+
+.summaryCard span,
+.memberMeta {
+  color: var(--colorNeutralForeground3);
+}
+
+.memberList {
+  display: grid;
+  gap: 12px;
+}
+
+.memberCard {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1fr) 130px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.memberIdentity {
+  align-self: center;
+}
+
+.memberIdentity strong,
+.memberIdentity span {
+  display: block;
+}
+
+.addPanel {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(160px, 1fr) 130px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .memberCard,
+  .addPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .actions > * {
+    flex: 1;
+  }
+}

@@ -9,6 +9,8 @@ import type {
   CreatedPlatformEnterprise,
   PlatformCardProjection,
   PlatformAuditProjection,
+  PlatformAssociationMember,
+  PlatformAssociationSummary,
   PlatformCompanyAggregate,
   PlatformEnterprise,
   PlatformEnterpriseDetail,
@@ -143,6 +145,35 @@ function enterprise(value: unknown): PlatformEnterprise {
     status: requiredString(value.status ?? value.company_status, "status"),
     createdAt: requiredString(value.created_at, "created_at"),
     updatedAt: optionalString(value.updated_at, "updated_at"),
+  };
+}
+
+function associationSummary(value: unknown): PlatformAssociationSummary {
+  if (!isRecord(value)) invalid("协会");
+  return {
+    companyId: requiredString(value.company_id, "association.company_id"),
+    legalName: requiredString(value.legal_name, "association.legal_name"),
+    shortName: optionalString(value.short_name, "association.short_name"),
+    businessTenantKey: requiredString(value.business_tenant_key, "association.business_tenant_key"),
+    memberCount: nonNegativeInteger(value.member_count, "association.member_count"),
+    allocatedSeats: nonNegativeInteger(value.allocated_seats, "association.allocated_seats"),
+  };
+}
+
+function associationMember(value: unknown): PlatformAssociationMember {
+  if (!isRecord(value) || !isRecord(value.benefits)) invalid("协会成员");
+  return {
+    id: requiredString(value.id, "association_member.id"),
+    associationCompanyId: requiredString(value.association_company_id, "association_member.association_company_id"),
+    companyId: requiredString(value.company_id, "association_member.company_id"),
+    legalName: requiredString(value.legal_name, "association_member.legal_name"),
+    shortName: optionalString(value.short_name, "association_member.short_name"),
+    businessTenantKey: requiredString(value.business_tenant_key, "association_member.business_tenant_key"),
+    memberTier: optionalString(value.member_tier, "association_member.member_tier"),
+    allocatedSeats: nonNegativeInteger(value.allocated_seats, "association_member.allocated_seats"),
+    benefits: value.benefits,
+    version: nonNegativeInteger(value.version, "association_member.version"),
+    updatedAt: requiredString(value.updated_at, "association_member.updated_at"),
   };
 }
 
@@ -889,6 +920,47 @@ export function createPlatformApi(client: ApiClient) {
       const values = unwrapData(payload, "企业列表");
       if (!Array.isArray(values)) invalid("企业列表");
       return values.map(enterprise);
+    },
+
+    async listAssociations(): Promise<PlatformAssociationSummary[]> {
+      const values = unwrapData(await client.get("/platform/associations"), "协会列表");
+      if (!Array.isArray(values)) invalid("协会列表");
+      return values.map(associationSummary);
+    },
+
+    async listAssociationMembers(associationCompanyId: string): Promise<PlatformAssociationMember[]> {
+      const values = unwrapData(
+        await client.get(`/platform/associations/${encodeURIComponent(associationCompanyId)}/members`),
+        "协会成员列表",
+      );
+      if (!Array.isArray(values)) invalid("协会成员列表");
+      return values.map(associationMember);
+    },
+
+    async upsertAssociationMember(
+      associationCompanyId: string,
+      memberCompanyId: string,
+      input: { expectedVersion: number; memberTier?: string; allocatedSeats: number; benefits?: Record<string, unknown> },
+    ): Promise<PlatformAssociationMember> {
+      return associationMember(unwrapData(await client.put(
+        `/platform/associations/${encodeURIComponent(associationCompanyId)}/members/${encodeURIComponent(memberCompanyId)}`,
+        {
+          expected_version: input.expectedVersion,
+          member_tier: input.memberTier?.trim() || null,
+          allocated_seats: input.allocatedSeats,
+          benefits: input.benefits ?? {},
+        },
+      ), "协会成员"));
+    },
+
+    async removeAssociationMember(
+      associationCompanyId: string,
+      memberCompanyId: string,
+      expectedVersion: number,
+    ): Promise<void> {
+      await client.delete(
+        `/platform/associations/${encodeURIComponent(associationCompanyId)}/members/${encodeURIComponent(memberCompanyId)}?expected_version=${expectedVersion}`,
+      );
     },
 
     async getOverview(): Promise<PlatformOverview> {

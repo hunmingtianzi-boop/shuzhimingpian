@@ -74,7 +74,12 @@ class ContentImportReviewService:
     ) -> ContentImportRunRecord:
         await self._documents(scope=scope, batch_id=batch_id)
         try:
-            config = await resolve_effective_chat_config(self._sessions, self._settings)
+            config = await resolve_effective_chat_config(
+                self._sessions,
+                self._settings,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+            )
         except LLMRuntimeUnavailable as exc:
             raise ApiError(
                 503,
@@ -105,7 +110,12 @@ class ContentImportReviewService:
             scope=scope, run_id=run_id, lock_token=lock_token
         )
         try:
-            config = await resolve_effective_chat_config(self._sessions, self._settings)
+            config = await resolve_effective_chat_config(
+                self._sessions,
+                self._settings,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+            )
             provider = OpenAICompatibleChatProvider(
                 ChatProviderConfig(
                     base_url=config.base_url,

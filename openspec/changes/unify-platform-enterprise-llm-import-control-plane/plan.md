@@ -132,3 +132,19 @@ Implementation MUST start in a new exact run under `openspec/changes/unify-platf
 - [x] 10.1 Run focused migration/API/RLS/security/worker/OpenAPI/admin tests and scope review.
 - [ ] 10.2 Run real platform and enterprise desktop/390px journeys and capture representative evidence.
 - [ ] 10.3 Complete proof mapping and independent Checker review; do not commit or push without separate authorization.
+
+## 11. P2 enterprise model access
+
+- [x] 11.1 Freeze the enterprise model-access contract: platform profiles are the provider/model whitelist, the active profile is the default, profile budget is the hard ceiling, and BYOK never accepts an arbitrary provider/base URL/model.
+- [x] 11.2 Add a company-scoped encrypted model-access configuration with optimistic versioning, RLS, masked key state and safe rollback.
+- [x] 11.3 Resolve public Chat and enterprise content import against the requesting company configuration while retaining the current active-profile fallback for unconfigured companies.
+- [x] 11.4 Add enterprise self-service read/update/test APIs and platform delegated configuration with mandatory reason, audit metadata and in-app enterprise notification.
+- [x] 11.5 Add the enterprise AI model-access page and platform policy visibility without mixing it into answer strategy or company identity.
+- [x] 11.6 Verify managed quota, BYOK, whitelist rejection, budget clamp, stale version, secret masking, delegated audit/notification and unchanged high-risk answer gates.
+
+## 12. P3 association governance boundary
+
+- [x] 12.1 Add an association-to-company membership relation that references independent companies and never changes tenant/company ownership or RLS scope.
+- [x] 12.2 Add platform-only association membership APIs for member tier, allocated seats and benefit metadata; return aggregates only and no enterprise PII/content.
+- [x] 12.3 Add a minimal platform association management surface or enterprise-detail projection while explicitly deferring association login, delegated permissions, billing and formal permission matrices.
+- [x] 12.4 Verify duplicate prevention, association/member type validation, cross-tenant isolation, platform-only writes and safe detach.

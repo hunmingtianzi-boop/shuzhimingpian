@@ -22,6 +22,10 @@ import type {
   CompanyAnswerPolicy,
   CompanyNotificationSettings,
   CompanyPrivacySettings,
+  EnterpriseLlmAccess,
+  EnterpriseLlmAccessInput,
+  EnterpriseLlmConnectionTest,
+  EnterpriseLlmProfileOption,
   ContentVisibility,
   ForbiddenAction,
   ForbiddenTopic,
@@ -221,6 +225,59 @@ function normalizePrivacySettings(payload: unknown): CompanyPrivacySettings {
     visitorProfileRetentionDays: optionalNumber(raw.visitor_profile_retention_days) ?? 365,
     version: optionalNumber(raw.version) ?? 1,
     updatedAt: requireString(raw.updated_at, "数据与隐私设置更新时间"),
+  };
+}
+
+function normalizeEnterpriseLlmAccess(payload: unknown): EnterpriseLlmAccess {
+  const raw = requireRecord(payload, "模型接入设置");
+  const mode = optionalString(raw.mode);
+  if (mode !== "platform_managed" && mode !== "byok") {
+    throw new ApiError("模型接入设置返回了未知模式。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    platformProfileId: requireString(raw.platform_profile_id, "平台模型配置"),
+    profileName: requireString(raw.profile_name, "配置名称"),
+    provider: requireString(raw.provider, "Provider"),
+    baseUrl: requireString(raw.base_url, "Base URL"),
+    model: requireString(raw.model, "模型"),
+    mode,
+    dailyBudgetCny: optionalNumber(raw.daily_budget_cny) ?? 0,
+    platformBudgetCeilingCny: optionalNumber(raw.platform_budget_ceiling_cny) ?? 0,
+    enabled: raw.enabled !== false,
+    keyConfigured: raw.key_configured === true,
+    keyHint: optionalString(raw.key_hint) || undefined,
+    version: optionalNumber(raw.version) ?? 0,
+    configured: raw.configured === true,
+    delegated: raw.delegated === true,
+    updatedAt: requireString(raw.updated_at, "更新时间"),
+  };
+}
+
+function normalizeEnterpriseLlmOptions(payload: unknown): EnterpriseLlmProfileOption[] {
+  const data = unwrapData(payload);
+  if (!Array.isArray(data)) throw new ApiError("模型白名单返回了无法识别的数据。", { code: "INVALID_API_RESPONSE" });
+  return data.map((value) => {
+    if (!isRecord(value)) throw new ApiError("模型白名单包含无效项目。", { code: "INVALID_API_RESPONSE" });
+    return {
+      id: requireString(value.id, "模型配置 id"),
+      name: requireString(value.name, "模型配置名称"),
+      provider: requireString(value.provider, "Provider"),
+      baseUrl: requireString(value.base_url, "Base URL"),
+      model: requireString(value.model, "模型"),
+      dailyBudgetCeilingCny: optionalNumber(value.daily_budget_ceiling_cny) ?? 0,
+      isDefault: value.is_default === true,
+    };
+  });
+}
+
+function normalizeEnterpriseLlmTest(payload: unknown): EnterpriseLlmConnectionTest {
+  const raw = requireRecord(payload, "模型连接测试");
+  return {
+    status: raw.status === "succeeded" ? "succeeded" : "failed",
+    provider: requireString(raw.provider, "Provider"),
+    model: requireString(raw.model, "模型"),
+    latencyMs: optionalNumber(raw.latency_ms) ?? 0,
+    errorCode: optionalString(raw.error_code) || undefined,
   };
 }
 
@@ -1321,6 +1378,31 @@ export function createAdminApi(client: ApiClient) {
         { version: input.version },
       ),
     );
+  },
+
+  async listEnterpriseLlmOptions(): Promise<EnterpriseLlmProfileOption[]> {
+    return normalizeEnterpriseLlmOptions(await client.get("/admin/ai/model-access/options"));
+  },
+
+  async getEnterpriseLlmAccess(): Promise<EnterpriseLlmAccess> {
+    return normalizeEnterpriseLlmAccess(await client.get("/admin/ai/model-access"));
+  },
+
+  async updateEnterpriseLlmAccess(input: EnterpriseLlmAccessInput): Promise<EnterpriseLlmAccess> {
+    return normalizeEnterpriseLlmAccess(await client.put("/admin/ai/model-access", {
+      platform_profile_id: input.platformProfileId,
+      mode: input.mode,
+      daily_budget_cny: input.dailyBudgetCny,
+      expected_version: input.expectedVersion,
+      api_key: input.apiKey?.trim() || null,
+      enabled: input.enabled,
+    }));
+  },
+
+  async testEnterpriseLlmAccess(apiKey?: string): Promise<EnterpriseLlmConnectionTest> {
+    return normalizeEnterpriseLlmTest(await client.post("/admin/ai/model-access:test", {
+      api_key: apiKey?.trim() || null,
+    }));
   },
 
   async getNotificationSettings(): Promise<CompanyNotificationSettings> {

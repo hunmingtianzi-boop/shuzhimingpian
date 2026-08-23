@@ -3,7 +3,7 @@ from __future__ import annotations
 import socket
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from ipaddress import ip_address
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.errors import ApiError
 from app.core.config import Settings
 from app.core.pii import PiiCipher, PiiCipherError
-from app.db.models import MembershipRole, PlatformLLMProfile
+from app.db.models import CompanyLLMConfiguration, MembershipRole, PlatformLLMProfile
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
 
@@ -147,7 +147,7 @@ class EffectiveChatConfig:
     input_price_cny_per_million: float
     output_price_cny_per_million: float
     enabled: bool
-    source: Literal["database", "environment"]
+    source: Literal["database", "environment", "company"]
     version: int
     allow_general_answers: bool = False
     faq_fast_path_enabled: bool = False
@@ -350,6 +350,9 @@ def database_chat_config(
 async def resolve_effective_chat_config(
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
+    *,
+    tenant_id: uuid.UUID | None = None,
+    company_id: uuid.UUID | None = None,
 ) -> EffectiveChatConfig:
     """Resolve the selected profile on every request; only zero rows may fall back.
 
@@ -360,7 +363,56 @@ async def resolve_effective_chat_config(
     from the latency-critical path.
     """
 
+    if (tenant_id is None) != (company_id is None):
+        raise ValueError("tenant_id and company_id must be provided together")
     async with session_factory() as session, session.begin():
+        company_config: CompanyLLMConfiguration | None = None
+        if tenant_id is not None and company_id is not None:
+            await set_rls_context(session, tenant_id=tenant_id, company_id=company_id)
+            company_config = await session.scalar(
+                select(CompanyLLMConfiguration).where(
+                    CompanyLLMConfiguration.tenant_id == tenant_id,
+                    CompanyLLMConfiguration.company_id == company_id,
+                )
+            )
+        if company_config is not None:
+            if not company_config.enabled:
+                raise LLMRuntimeUnavailable("company_configuration_disabled")
+            selected = await session.scalar(
+                select(PlatformLLMProfile).where(
+                    PlatformLLMProfile.id == company_config.platform_profile_id
+                )
+            )
+            if selected is None or not selected.enabled:
+                raise LLMRuntimeUnavailable("company_profile_unavailable")
+            key_override: SecretStr | None = None
+            if company_config.mode == "byok":
+                if company_config.api_key_ciphertext is None:
+                    raise LLMRuntimeUnavailable("api_key_missing")
+                try:
+                    key_override = SecretStr(
+                        PiiCipher.from_settings(settings).decrypt(
+                            company_config.api_key_ciphertext
+                        )
+                    )
+                except PiiCipherError as exc:
+                    raise LLMRuntimeUnavailable("configuration_invalid") from exc
+            resolved = database_chat_config(
+                selected,
+                settings=settings,
+                api_key_override=key_override,
+            )
+            return replace(
+                resolved,
+                profile_name=f"企业配置 · {selected.name}",
+                daily_budget_cny=min(
+                    float(company_config.daily_budget_cny),
+                    float(selected.daily_budget_cny),
+                ),
+                source="company",
+                version=company_config.version,
+                updated_at=company_config.updated_at,
+            )
         profile = await session.scalar(
             select(PlatformLLMProfile)
             .order_by(
@@ -380,9 +432,17 @@ async def resolve_effective_chat_config(
 async def is_chat_available(
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
+    *,
+    tenant_id: uuid.UUID | None = None,
+    company_id: uuid.UUID | None = None,
 ) -> bool:
     try:
-        await resolve_effective_chat_config(session_factory, settings)
+        await resolve_effective_chat_config(
+            session_factory,
+            settings,
+            tenant_id=tenant_id,
+            company_id=company_id,
+        )
     except LLMRuntimeUnavailable:
         return False
     return True

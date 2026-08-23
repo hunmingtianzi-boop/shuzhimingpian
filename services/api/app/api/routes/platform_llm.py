@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 
+from app.api.admin_schemas import EnterpriseLlmAccess, EnterpriseLlmAccessEnvelope
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.platform_schemas import (
     ActivatePlatformLlmProfileRequest,
     CreatePlatformLlmProfileRequest,
+    DelegateEnterpriseLlmAccessRequest,
     PlatformLlmConnectionTestEnvelope,
     PlatformLlmConnectionTestRecord,
     PlatformLlmProfileEnvelope,
@@ -20,7 +23,13 @@ from app.api.platform_schemas import (
 )
 from app.core.request_context import request_id_ctx
 from app.core.tokens import StaffPrincipal
-from app.db.models import MembershipRole
+from app.db.models import Company, MembershipRole
+from app.db.session import set_rls_context
+from app.services.enterprise_llm_access import (
+    EnterpriseLLMAccessService,
+    EnterpriseLLMActor,
+    EnterpriseLLMUpdate,
+)
 from app.services.platform_llm_profiles import (
     ActivateProfileInput,
     CreateProfileInput,
@@ -45,6 +54,14 @@ def _service(request: Request) -> PlatformLLMProfileService:
     )
 
 
+def _enterprise_access_service(request: Request) -> EnterpriseLLMAccessService:
+    return EnterpriseLLMAccessService(
+        request.app.state.session_factory,
+        request.app.state.settings,
+        request.app.state.http_client,
+    )
+
+
 def _actor(principal: StaffPrincipal) -> PlatformLLMActor:
     role = str(getattr(principal.role, "value", principal.role))
     if role != MembershipRole.PLATFORM_ADMIN.value:
@@ -56,6 +73,88 @@ def _actor(principal: StaffPrincipal) -> PlatformLLMActor:
         session_id=principal.session_id,
         role=role,
     )
+
+
+def _enterprise_actor(principal: StaffPrincipal) -> EnterpriseLLMActor:
+    actor = _actor(principal)
+    return EnterpriseLLMActor(
+        user_id=actor.user_id,
+        tenant_id=actor.tenant_id,
+        company_id=actor.company_id,
+        session_id=actor.session_id,
+        role=actor.role,
+    )
+
+
+@router.put(
+    "/companies/{company_id}/access",
+    response_model=EnterpriseLlmAccessEnvelope,
+    operation_id="delegateEnterpriseLlmAccess",
+)
+async def delegate_enterprise_llm_access(
+    company_id: uuid.UUID,
+    body: DelegateEnterpriseLlmAccessRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmAccessEnvelope:
+    actor = _enterprise_actor(principal)
+    async with request.app.state.session_factory() as session, session.begin():
+        await set_rls_context(
+            session,
+            tenant_id=principal.tenant_id,
+            company_id=principal.company_id,
+            actor_user_id=principal.user_id,
+            actor_session_id=principal.session_id,
+        )
+        company = await session.get(Company, company_id)
+    if company is None:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+    view = await _enterprise_access_service(request).update(
+        actor=actor,
+        body=EnterpriseLLMUpdate(
+            platform_profile_id=body.platform_profile_id,
+            mode=body.mode,
+            daily_budget_cny=body.daily_budget_cny,
+            expected_version=body.expected_version,
+            api_key=body.api_key.get_secret_value() if body.api_key else None,
+            enabled=body.enabled,
+        ),
+        trace_id=request_id_ctx.get(),
+        target_tenant_id=company.tenant_id,
+        target_company_id=company.id,
+        delegated_reason=body.reason,
+    )
+    return EnterpriseLlmAccessEnvelope(data=EnterpriseLlmAccess(**asdict(view)))
+
+
+@router.get(
+    "/companies/{company_id}/access",
+    response_model=EnterpriseLlmAccessEnvelope,
+    operation_id="getDelegatedEnterpriseLlmAccess",
+)
+async def get_delegated_enterprise_llm_access(
+    company_id: uuid.UUID,
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmAccessEnvelope:
+    actor = _enterprise_actor(principal)
+    async with request.app.state.session_factory() as session, session.begin():
+        await set_rls_context(
+            session,
+            tenant_id=principal.tenant_id,
+            company_id=principal.company_id,
+            actor_user_id=principal.user_id,
+            actor_session_id=principal.session_id,
+        )
+        company = await session.get(Company, company_id)
+    if company is None:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "企业不存在")
+    view = await _enterprise_access_service(request).get(
+        actor=actor,
+        target_tenant_id=company.tenant_id,
+        target_company_id=company.id,
+    )
+    return EnterpriseLlmAccessEnvelope(data=EnterpriseLlmAccess(**asdict(view)))
 
 
 def _record(view: PlatformLLMProfileView) -> PlatformLlmProfileRecord:

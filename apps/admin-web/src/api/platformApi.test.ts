@@ -118,6 +118,63 @@ describe("platformApi", () => {
     );
   });
 
+  it("normalizes association aggregates without member-company private data", async () => {
+    const client = {
+      get: vi.fn().mockResolvedValue({
+        data: [{
+          company_id: "association-1",
+          legal_name: "数字经济协会",
+          short_name: "数经协会",
+          business_tenant_key: "association-one",
+          member_count: 3,
+          allocated_seats: 12,
+          visitor_email: "must be dropped",
+        }],
+      }),
+    } as unknown as ApiClient;
+
+    const values = await createPlatformApi(client).listAssociations();
+
+    expect(values).toEqual([expect.objectContaining({ companyId: "association-1", memberCount: 3 })]);
+    expect(JSON.stringify(values)).not.toContain("visitor_email");
+  });
+
+  it("uses optimistic association membership writes and detach", async () => {
+    const member = {
+      id: "membership-1",
+      association_company_id: "association-1",
+      company_id: "company-1",
+      legal_name: "成员企业",
+      short_name: null,
+      business_tenant_key: "member-one",
+      member_tier: "理事单位",
+      allocated_seats: 4,
+      benefits: {},
+      version: 2,
+      updated_at: "2026-08-23T12:00:00Z",
+    };
+    const client = {
+      put: vi.fn().mockResolvedValue({ data: member }),
+      delete: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ApiClient;
+    const api = createPlatformApi(client);
+
+    await api.upsertAssociationMember("association-1", "company-1", {
+      expectedVersion: 1,
+      memberTier: "理事单位",
+      allocatedSeats: 4,
+    });
+    await api.removeAssociationMember("association-1", "company-1", 2);
+
+    expect(client.put).toHaveBeenCalledWith(
+      "/platform/associations/association-1/members/company-1",
+      expect.objectContaining({ expected_version: 1, allocated_seats: 4 }),
+    );
+    expect(client.delete).toHaveBeenCalledWith(
+      "/platform/associations/association-1/members/company-1?expected_version=2",
+    );
+  });
+
   it("strictly normalizes the overview allowlist", async () => {
     const client = {
       get: vi.fn().mockResolvedValue({

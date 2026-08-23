@@ -27,6 +27,7 @@ from app.api.routes import (
     knowledge_ops,
     members,
     platform,
+    platform_associations,
     platform_llm,
     platform_onboarding,
     platform_operations,
@@ -208,6 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_ops.router, prefix=runtime_settings.api_prefix)
     app.include_router(platform.router, prefix=runtime_settings.api_prefix)
     app.include_router(platform_llm.router, prefix=runtime_settings.api_prefix)
+    app.include_router(platform_associations.router, prefix=runtime_settings.api_prefix)
     app.include_router(platform_onboarding.router, prefix=runtime_settings.api_prefix)
     app.include_router(platform_operations.router, prefix=runtime_settings.api_prefix)
     app.include_router(crm.router, prefix=runtime_settings.api_prefix)

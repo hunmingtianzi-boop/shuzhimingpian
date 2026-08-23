@@ -6775,12 +6775,48 @@ div.template-inspector-empty {
 }
 
 @media (max-width: 720px) {
+  .page-header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .page-header-actions > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .page-header-actions > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
   .profile-fact-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+  }
+
+  .profile-fact-order {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .profile-fact-row > :nth-child(2),
+  .profile-fact-row > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .profile-fact-row > :nth-child(2) {
+    grid-row: 2;
   }
 
   .profile-fact-row > :nth-child(3) {
-    grid-column: 2 / 3;
+    grid-row: 3;
+  }
+
+  .profile-fact-row > :last-child {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 .card-plugin-grid {

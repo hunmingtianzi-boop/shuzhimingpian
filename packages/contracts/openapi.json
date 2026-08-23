@@ -367,6 +367,220 @@
         }
       }
     },
+    "/admin/ai/model-access/options": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "List Enterprise Llm Profile Options",
+        "operationId": "listEnterpriseLlmProfileOptions",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmProfileOptionListEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/ai/model-access": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Enterprise Llm Access",
+        "operationId": "getEnterpriseLlmAccess",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmAccessEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Enterprise Llm Access",
+        "operationId": "updateEnterpriseLlmAccess",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEnterpriseLlmAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmAccessEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/ai/model-access:test": {
+      "post": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Test Enterprise Llm Access",
+        "operationId": "testEnterpriseLlmAccess",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestEnterpriseLlmAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmConnectionTestEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/company/profile": {
       "get": {
         "tags": [
@@ -9371,6 +9585,132 @@
         }
       }
     },
+    "/platform/settings/llm/profiles/companies/{company_id}/access": {
+      "put": {
+        "tags": [
+          "Platform LLM Settings"
+        ],
+        "summary": "Delegate Enterprise Llm Access",
+        "operationId": "delegateEnterpriseLlmAccess",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DelegateEnterpriseLlmAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmAccessEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Platform LLM Settings"
+        ],
+        "summary": "Get Delegated Enterprise Llm Access",
+        "operationId": "getDelegatedEnterpriseLlmAccess",
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseLlmAccessEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/platform/settings/llm/profiles": {
       "get": {
         "tags": [
@@ -9670,6 +10010,263 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/associations": {
+      "get": {
+        "tags": [
+          "Platform Associations"
+        ],
+        "summary": "List Associations",
+        "operationId": "listPlatformAssociations",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAssociationListEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/associations/{association_company_id}/members": {
+      "get": {
+        "tags": [
+          "Platform Associations"
+        ],
+        "summary": "List Association Members",
+        "operationId": "listPlatformAssociationMembers",
+        "parameters": [
+          {
+            "name": "association_company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Association Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAssociationMemberListEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/associations/{association_company_id}/members/{member_company_id}": {
+      "put": {
+        "tags": [
+          "Platform Associations"
+        ],
+        "summary": "Upsert Association Member",
+        "operationId": "upsertPlatformAssociationMember",
+        "parameters": [
+          {
+            "name": "association_company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Association Company Id"
+            }
+          },
+          {
+            "name": "member_company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Company Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertPlatformAssociationMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAssociationMemberEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Platform Associations"
+        ],
+        "summary": "Remove Association Member",
+        "operationId": "removePlatformAssociationMember",
+        "parameters": [
+          {
+            "name": "association_company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Association Company Id"
+            }
+          },
+          {
+            "name": "member_company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Company Id"
+            }
+          },
+          {
+            "name": "expected_version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Expected Version"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -19645,6 +20242,69 @@
         ],
         "title": "DashboardOverview"
       },
+      "DelegateEnterpriseLlmAccessRequest": {
+        "properties": {
+          "platform_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Platform Profile Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "platform_managed",
+              "byok"
+            ],
+            "title": "Mode"
+          },
+          "daily_budget_cny": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Daily Budget Cny"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1,
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "platform_profile_id",
+          "mode",
+          "daily_budget_cny",
+          "expected_version",
+          "reason"
+        ],
+        "title": "DelegateEnterpriseLlmAccessRequest"
+      },
       "DistributionEnvelope": {
         "properties": {
           "data": {
@@ -20189,6 +20849,239 @@
           "updated_at"
         ],
         "title": "EnterpriseListItem"
+      },
+      "EnterpriseLlmAccess": {
+        "properties": {
+          "platform_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Platform Profile Id"
+          },
+          "profile_name": {
+            "type": "string",
+            "title": "Profile Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "platform_managed",
+              "byok"
+            ],
+            "title": "Mode"
+          },
+          "daily_budget_cny": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Daily Budget Cny"
+          },
+          "platform_budget_ceiling_cny": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Platform Budget Ceiling Cny"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "key_configured": {
+            "type": "boolean",
+            "title": "Key Configured"
+          },
+          "key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Hint"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Version"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "delegated": {
+            "type": "boolean",
+            "title": "Delegated"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "platform_profile_id",
+          "profile_name",
+          "provider",
+          "base_url",
+          "model",
+          "mode",
+          "daily_budget_cny",
+          "platform_budget_ceiling_cny",
+          "enabled",
+          "key_configured",
+          "version",
+          "configured",
+          "delegated",
+          "updated_at"
+        ],
+        "title": "EnterpriseLlmAccess"
+      },
+      "EnterpriseLlmAccessEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseLlmAccess"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "EnterpriseLlmAccessEnvelope"
+      },
+      "EnterpriseLlmConnectionTest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Latency Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "provider",
+          "model",
+          "latency_ms"
+        ],
+        "title": "EnterpriseLlmConnectionTest"
+      },
+      "EnterpriseLlmConnectionTestEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseLlmConnectionTest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "EnterpriseLlmConnectionTestEnvelope"
+      },
+      "EnterpriseLlmProfileOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "daily_budget_ceiling_cny": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Daily Budget Ceiling Cny"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "base_url",
+          "model",
+          "daily_budget_ceiling_cny",
+          "is_default"
+        ],
+        "title": "EnterpriseLlmProfileOption"
+      },
+      "EnterpriseLlmProfileOptionListEnvelope": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseLlmProfileOption"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "EnterpriseLlmProfileOptionListEnvelope"
       },
       "EnterpriseReadinessEnvelope": {
         "properties": {
@@ -25168,6 +26061,183 @@
         ],
         "title": "PasswordResetRecord"
       },
+      "PlatformAssociationListEnvelope": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformAssociationSummary"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlatformAssociationListEnvelope"
+      },
+      "PlatformAssociationMember": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "association_company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Association Company Id"
+          },
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
+          },
+          "member_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Tier"
+          },
+          "allocated_seats": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Allocated Seats"
+          },
+          "benefits": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Benefits"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "association_company_id",
+          "company_id",
+          "legal_name",
+          "business_tenant_key",
+          "allocated_seats",
+          "version",
+          "updated_at"
+        ],
+        "title": "PlatformAssociationMember"
+      },
+      "PlatformAssociationMemberEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlatformAssociationMember"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlatformAssociationMemberEnvelope"
+      },
+      "PlatformAssociationMemberListEnvelope": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformAssociationMember"
+            },
+            "type": "array",
+            "title": "Data"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlatformAssociationMemberListEnvelope"
+      },
+      "PlatformAssociationSummary": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
+          },
+          "member_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Member Count"
+          },
+          "allocated_seats": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Allocated Seats"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id",
+          "legal_name",
+          "business_tenant_key",
+          "member_count",
+          "allocated_seats"
+        ],
+        "title": "PlatformAssociationSummary"
+      },
       "PlatformAuditListEnvelope": {
         "properties": {
           "data": {
@@ -29216,6 +30286,28 @@
         ],
         "title": "TemporaryCredentialDelivery"
       },
+      "TestEnterpriseLlmAccessRequest": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1,
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TestEnterpriseLlmAccessRequest"
+      },
       "TestPlatformLlmProfileRequest": {
         "properties": {
           "api_key": {
@@ -30183,6 +31275,62 @@
         ],
         "title": "UpdateContentCandidateRequest"
       },
+      "UpdateEnterpriseLlmAccessRequest": {
+        "properties": {
+          "platform_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Platform Profile Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "platform_managed",
+              "byok"
+            ],
+            "title": "Mode"
+          },
+          "daily_budget_cny": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Daily Budget Cny"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1,
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "platform_profile_id",
+          "mode",
+          "daily_budget_cny",
+          "expected_version"
+        ],
+        "title": "UpdateEnterpriseLlmAccessRequest"
+      },
       "UpdateEnterpriseTemplateRequest": {
         "properties": {
           "schema_version": {
@@ -31033,6 +32181,45 @@
         ],
         "title": "UpdateSelfProfileRequest",
         "description": "Narrow self-service surface; target identity always comes from the token."
+      },
+      "UpsertPlatformAssociationMemberRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          },
+          "member_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Tier"
+          },
+          "allocated_seats": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Allocated Seats",
+            "default": 0
+          },
+          "benefits": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Benefits"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "UpsertPlatformAssociationMemberRequest"
       },
       "ValidationError": {
         "properties": {

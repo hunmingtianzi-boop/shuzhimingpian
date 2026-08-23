@@ -95,6 +95,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read", feature: "knowledge.manage", sectionLabel: "知识优化" },
       { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true, feature: "knowledge.manage", sectionLabel: "知识优化" },
       { path: APP_PATHS.answerPolicy, label: "回答策略", icon: Chat24Regular, permission: "company.read", feature: "company.profile", sectionLabel: "AI 设置" },
+      { path: APP_PATHS.modelAccess, label: "模型接入", icon: Lightbulb24Regular, permission: "company.read", feature: "company.profile", sectionLabel: "AI 设置" },
     ],
   },
   {
@@ -126,6 +127,7 @@ const platformNavGroups: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { path: APP_PATHS.platformEnterprises, label: "企业中心", icon: Building24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
       { path: APP_PATHS.platformOnboarding, label: "资料辅助建企", icon: Book24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
+      { path: APP_PATHS.platformAssociations, label: "协会与商会", icon: PeopleTeam24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
     ],
   },
   {
@@ -385,7 +387,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Navigation onNavigate={() => setMobileOpen(false)} setupIncomplete={setupIncomplete} />
         </DrawerBody>
       </OverlayDrawer>
-      {!isPlatform && hasNavPermission(auth.user, "knowledge.read") && (
+      {!isPlatform &&
+        hasNavPermission(auth.user, "knowledge.read") &&
+        hasCommercialFeature(auth.entitlements, "knowledge.import") && (
         <ContentImportTaskDock />
       )}
     </div>

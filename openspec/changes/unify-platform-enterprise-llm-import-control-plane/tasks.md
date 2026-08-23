@@ -47,3 +47,15 @@
 - [ ] 7.1 Run focused migrations, API/RLS/security, worker, OpenAPI, admin tests/build and scope review with no secret or forbidden-field regression.
 - [ ] 7.2 Run real platform and enterprise website journeys at desktop and 390px, including cardless provisioning, detail deep links, task views, visit/product journeys and settings separation.
 - [ ] 7.3 Map AC receipts into the current run proof pack, perform independent Checker review, and report remaining P2-P4 deferrals without committing or pushing unless separately authorized.
+
+## 8. Enterprise model access (P2)
+
+- [ ] 8.1 Reuse enabled platform LLM profiles as the provider/model whitelist and active default; add company-scoped managed/BYOK configuration with encrypted keys, budget ceiling and optimistic versioning.
+- [ ] 8.2 Route company Chat/import runtime through the effective company configuration, add self-service and delegated APIs, audit every change and notify the affected enterprise without impersonation.
+- [ ] 8.3 Add a separate enterprise model-access UI and verify all secret, whitelist, budget, stale-write and fallback boundaries.
+
+## 9. Association governance extension point (P3)
+
+- [ ] 9.1 Model association memberships as cross-company references without parent-tenant semantics or changes to company RLS ownership.
+- [ ] 9.2 Add platform-only aggregate membership management with tier, seat and benefit allocation fields; defer association actors, formal permission matrices and billing.
+- [ ] 9.3 Verify type constraints, duplicate prevention, platform-only access and absence of member-company private data.

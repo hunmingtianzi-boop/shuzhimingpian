@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import httpx
 from redis.asyncio import Redis
@@ -170,6 +171,8 @@ async def resolve_rag_runtime(
     http_client: httpx.AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
     redis: Redis | None = None,
+    tenant_id: UUID | None = None,
+    company_id: UUID | None = None,
 ) -> ResolvedRAGRuntime:
     """Resolve and build Chat for one request without mutating process settings.
 
@@ -177,7 +180,15 @@ async def resolve_rag_runtime(
     import configuration continue to come from the existing process settings.
     """
 
-    config = await resolve_effective_chat_config(session_factory, settings)
+    if tenant_id is None and company_id is None:
+        config = await resolve_effective_chat_config(session_factory, settings)
+    else:
+        config = await resolve_effective_chat_config(
+            session_factory,
+            settings,
+            tenant_id=tenant_id,
+            company_id=company_id,
+        )
     runtime_settings = config.apply_to_settings(settings)
     return ResolvedRAGRuntime(
         config=config,

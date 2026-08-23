@@ -171,6 +171,11 @@ const AnswerPolicyPage = lazy(() =>
     default: module.AnswerPolicyPage,
   })),
 );
+const ModelAccessPage = lazy(() =>
+  import("./pages/ModelAccessPage").then((module) => ({
+    default: module.ModelAccessPage,
+  })),
+);
 const NotificationSettingsPage = lazy(() =>
   import("./pages/NotificationSettingsPage").then((module) => ({
     default: module.NotificationSettingsPage,
@@ -194,6 +199,11 @@ const PlatformLlmSettingsPage = lazy(() =>
 const PlatformOnboardingPage = lazy(() =>
   import("./pages/PlatformOnboardingPage").then((module) => ({
     default: module.PlatformOnboardingPage,
+  })),
+);
+const PlatformAssociationsPage = lazy(() =>
+  import("./pages/PlatformAssociationsPage").then((module) => ({
+    default: module.PlatformAssociationsPage,
   })),
 );
 const PlatformTasksPage = lazy(() =>
@@ -903,6 +913,7 @@ const commercialFeatureByPath = new Map<string, string>([
   [APP_PATHS.privacyRequests, "privacy.manage"],
   [APP_PATHS.privacySettings, "privacy.manage"],
   [APP_PATHS.answerPolicy, "company.profile"],
+  [APP_PATHS.modelAccess, "company.profile"],
   [APP_PATHS.notificationSettings, "company.profile"],
 ]);
 
@@ -977,6 +988,9 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.platformOnboarding) {
     return <PlatformOnboardingRoute />;
   }
+  if (pathname === APP_PATHS.platformAssociations) {
+    return <PlatformAssociationsPage />;
+  }
   const platformEnterprise = matchPlatformEnterprisePath(pathname);
   if (platformEnterprise) {
     return (
@@ -1025,6 +1039,7 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.setup) return <CompanySetupPage />;
   if (pathname === APP_PATHS.company) return <CompanyProfilePage />;
   if (pathname === APP_PATHS.answerPolicy) return <AnswerPolicyPage />;
+  if (pathname === APP_PATHS.modelAccess) return <ModelAccessPage />;
   if (pathname === APP_PATHS.members) return <MembersPage />;
   if (pathname === APP_PATHS.card) return <CardSettingsPage />;
   if (pathname === APP_PATHS.cards) return <CardsPage />;

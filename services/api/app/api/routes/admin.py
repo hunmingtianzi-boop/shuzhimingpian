@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
@@ -13,6 +14,12 @@ from app.api.admin_schemas import (
     CompanyPrivacySettingsEnvelope,
     CompanyProfileEnvelope,
     CreateKnowledgeDocumentRequest,
+    EnterpriseLlmAccess,
+    EnterpriseLlmAccessEnvelope,
+    EnterpriseLlmConnectionTest,
+    EnterpriseLlmConnectionTestEnvelope,
+    EnterpriseLlmProfileOption,
+    EnterpriseLlmProfileOptionListEnvelope,
     EnterpriseSetupEnvelope,
     EnterpriseSetupResult,
     KnowledgeDocumentDetailEnvelope,
@@ -22,12 +29,14 @@ from app.api.admin_schemas import (
     KnowledgePublishEnvelope,
     PublishKnowledgeDocumentRequest,
     PutKnowledgeDocumentRequest,
+    TestEnterpriseLlmAccessRequest,
     UpdateCardRequest,
     UpdateCompanyAnswerPolicyRequest,
     UpdateCompanyIdentityProfileRequest,
     UpdateCompanyNotificationSettingsRequest,
     UpdateCompanyPrivacySettingsRequest,
     UpdateCompanyProfileRequest,
+    UpdateEnterpriseLlmAccessRequest,
 )
 from app.api.catalog_schemas import (
     CardComposerDefaultEnvelope,
@@ -85,6 +94,12 @@ from app.services.admin_store import AdminScope, AdminStore
 from app.services.catalog_knowledge import CatalogKnowledgeSynchronizer
 from app.services.catalog_store import CatalogScope, CatalogStore, require_version
 from app.services.commercial_store import CommercialStore
+from app.services.enterprise_llm_access import (
+    EnterpriseLLMAccessService,
+    EnterpriseLLMActor,
+    EnterpriseLLMUpdate,
+    EnterpriseLLMView,
+)
 from app.services.scheduled_publish_store import ScheduledPublishStore
 from app.services.wecom_store import WeComCardContactRecord, WeComStore
 
@@ -179,6 +194,106 @@ def _store(request: Request) -> AdminStore:
         session_factory=request.app.state.session_factory,
         settings=request.app.state.settings,
         http_client=request.app.state.http_client,
+    )
+
+
+def _llm_access_service(request: Request) -> EnterpriseLLMAccessService:
+    return EnterpriseLLMAccessService(
+        request.app.state.session_factory,
+        request.app.state.settings,
+        request.app.state.http_client,
+    )
+
+
+def _llm_actor(principal: StaffPrincipal) -> EnterpriseLLMActor:
+    return EnterpriseLLMActor(
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        company_id=principal.company_id,
+        session_id=principal.session_id,
+        role=str(getattr(principal.role, "value", principal.role)),
+    )
+
+
+def _llm_access_record(view: EnterpriseLLMView) -> EnterpriseLlmAccess:
+    return EnterpriseLlmAccess(**asdict(view))
+
+
+@router.get(
+    "/ai/model-access/options",
+    response_model=EnterpriseLlmProfileOptionListEnvelope,
+    operation_id="listEnterpriseLlmProfileOptions",
+)
+async def list_enterprise_llm_profile_options(
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmProfileOptionListEnvelope:
+    options = await _llm_access_service(request).options(actor=_llm_actor(principal))
+    return EnterpriseLlmProfileOptionListEnvelope(
+        data=[EnterpriseLlmProfileOption(**asdict(option)) for option in options]
+    )
+
+
+@router.get(
+    "/ai/model-access",
+    response_model=EnterpriseLlmAccessEnvelope,
+    operation_id="getEnterpriseLlmAccess",
+)
+async def get_enterprise_llm_access(
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmAccessEnvelope:
+    view = await _llm_access_service(request).get(actor=_llm_actor(principal))
+    return EnterpriseLlmAccessEnvelope(data=_llm_access_record(view))
+
+
+@router.put(
+    "/ai/model-access",
+    response_model=EnterpriseLlmAccessEnvelope,
+    operation_id="updateEnterpriseLlmAccess",
+)
+async def update_enterprise_llm_access(
+    body: UpdateEnterpriseLlmAccessRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmAccessEnvelope:
+    view = await _llm_access_service(request).update(
+        actor=_llm_actor(principal),
+        body=EnterpriseLLMUpdate(
+            platform_profile_id=body.platform_profile_id,
+            mode=body.mode,
+            daily_budget_cny=body.daily_budget_cny,
+            expected_version=body.expected_version,
+            api_key=body.api_key.get_secret_value() if body.api_key else None,
+            enabled=body.enabled,
+        ),
+        trace_id=request_id_ctx.get(),
+    )
+    return EnterpriseLlmAccessEnvelope(data=_llm_access_record(view))
+
+
+@router.post(
+    "/ai/model-access:test",
+    response_model=EnterpriseLlmConnectionTestEnvelope,
+    operation_id="testEnterpriseLlmAccess",
+)
+async def test_enterprise_llm_access(
+    body: TestEnterpriseLlmAccessRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> EnterpriseLlmConnectionTestEnvelope:
+    result = await _llm_access_service(request).test(
+        actor=_llm_actor(principal),
+        api_key_override=body.api_key.get_secret_value() if body.api_key else None,
+    )
+    return EnterpriseLlmConnectionTestEnvelope(
+        data=EnterpriseLlmConnectionTest(
+            status="succeeded" if result.ok else "failed",
+            provider=result.provider,
+            model=result.model,
+            latency_ms=result.latency_ms,
+            error_code=result.error_code,
+        )
     )
 
 

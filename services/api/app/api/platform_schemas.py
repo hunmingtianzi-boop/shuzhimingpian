@@ -363,6 +363,48 @@ class PlatformServiceHealthEnvelope(PlatformModel):
     data: list[PlatformServiceHealthRecord]
 
 
+class PlatformAssociationSummary(PlatformModel):
+    company_id: uuid.UUID
+    legal_name: str
+    short_name: str | None = None
+    business_tenant_key: str
+    member_count: int = Field(ge=0)
+    allocated_seats: int = Field(ge=0)
+
+
+class PlatformAssociationListEnvelope(PlatformModel):
+    data: list[PlatformAssociationSummary]
+
+
+class PlatformAssociationMember(PlatformModel):
+    id: uuid.UUID
+    association_company_id: uuid.UUID
+    company_id: uuid.UUID
+    legal_name: str
+    short_name: str | None = None
+    business_tenant_key: str
+    member_tier: str | None = None
+    allocated_seats: int = Field(ge=0)
+    benefits: dict[str, object] = Field(default_factory=dict)
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+
+class PlatformAssociationMemberListEnvelope(PlatformModel):
+    data: list[PlatformAssociationMember]
+
+
+class PlatformAssociationMemberEnvelope(PlatformModel):
+    data: PlatformAssociationMember
+
+
+class UpsertPlatformAssociationMemberRequest(PlatformModel):
+    expected_version: int = Field(ge=0)
+    member_tier: str | None = Field(default=None, max_length=80)
+    allocated_seats: int = Field(default=0, ge=0, le=1_000_000)
+    benefits: dict[str, object] = Field(default_factory=dict)
+
+
 class PlatformLlmProfileFields(PlatformModel):
     name: str = Field(min_length=1, max_length=120)
     purpose: Literal["chat_main"] = "chat_main"
@@ -440,6 +482,16 @@ class ActivatePlatformLlmProfileRequest(PlatformModel):
 
 class TestPlatformLlmProfileRequest(PlatformModel):
     api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class DelegateEnterpriseLlmAccessRequest(PlatformModel):
+    platform_profile_id: uuid.UUID
+    mode: Literal["platform_managed", "byok"]
+    daily_budget_cny: float = Field(ge=0)
+    expected_version: int = Field(ge=0)
+    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+    enabled: bool = True
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class PlatformLlmProfileRecord(PlatformModel):
@@ -680,6 +732,7 @@ __all__ = [
     "ConfirmPlatformOnboardingRequest",
     "CreateEnterpriseRequest",
     "CreatePlatformLlmProfileRequest",
+    "DelegateEnterpriseLlmAccessRequest",
     "EnterpriseEnvelope",
     "EnterpriseListEnvelope",
     "EnterpriseListItem",
@@ -689,6 +742,11 @@ __all__ = [
     "PlatformCardProjection",
     "PlatformAuditListEnvelope",
     "PlatformAuditRecord",
+    "PlatformAssociationListEnvelope",
+    "PlatformAssociationMember",
+    "PlatformAssociationMemberEnvelope",
+    "PlatformAssociationMemberListEnvelope",
+    "PlatformAssociationSummary",
     "PlatformCompanyAggregate",
     "PlatformCompanyAggregateListEnvelope",
     "PlatformEnterpriseDetail",
@@ -722,5 +780,6 @@ __all__ = [
     "TestPlatformLlmProfileRequest",
     "TransitionPlatformEnterpriseRequest",
     "UpdatePlatformLlmProfileRequest",
+    "UpsertPlatformAssociationMemberRequest",
     "PlatformSubjectType",
 ]

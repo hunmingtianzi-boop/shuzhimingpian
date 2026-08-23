@@ -1653,7 +1653,7 @@ class PlatformLLMProfile(UUIDPrimaryKeyMixin, TimestampMixin, OptimisticVersionM
             name="max_concurrency_range",
         ),
         CheckConstraint(
-            "max_output_tokens >= 128 AND max_output_tokens <= 8192",
+            "max_output_tokens >= 128 AND max_output_tokens <= 65536",
             name="max_output_tokens_range",
         ),
         CheckConstraint("temperature >= 0 AND temperature <= 2", name="temperature_range"),
@@ -1804,6 +1804,118 @@ class PlatformLLMProfile(UUIDPrimaryKeyMixin, TimestampMixin, OptimisticVersionM
     )
     last_test_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
+
+class CompanyLLMConfiguration(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OptimisticVersionMixin,
+    CompanyScopeMixin,
+    Base,
+):
+    """Company choice within the platform-approved LLM profile catalog."""
+
+    __tablename__ = "company_llm_configurations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["platform_profile_id"],
+            ["platform_llm_profiles.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "company_id",
+            name="uq_company_llm_configurations_scope",
+        ),
+        CheckConstraint(
+            "mode IN ('platform_managed', 'byok')",
+            name="mode_allowed",
+        ),
+        CheckConstraint("daily_budget_cny >= 0", name="daily_budget_non_negative"),
+        CheckConstraint(
+            "(mode = 'platform_managed' AND api_key_ciphertext IS NULL "
+            "AND api_key_key_ref IS NULL AND api_key_hint IS NULL) OR "
+            "(mode = 'byok' AND api_key_ciphertext IS NOT NULL "
+            "AND api_key_key_ref IS NOT NULL AND api_key_hint IS NOT NULL)",
+            name="credential_state",
+        ),
+        CheckConstraint("version > 0", name="version_positive"),
+        Index("ix_company_llm_configurations_profile", "platform_profile_id"),
+    )
+
+    platform_profile_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    mode: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="platform_managed",
+        server_default=text("'platform_managed'"),
+    )
+    api_key_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    api_key_key_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    api_key_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    daily_budget_cny: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0"), server_default=text("0")
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    updated_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    delegated_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    delegated_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class AssociationCompanyMembership(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OptimisticVersionMixin,
+    Base,
+):
+    """Platform-governed cross-company scope without parent-tenant semantics."""
+
+    __tablename__ = "association_company_memberships"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["association_tenant_id", "association_company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["member_tenant_id", "member_company_id"],
+            ["companies.tenant_id", "companies.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "association_company_id",
+            "member_company_id",
+            name="uq_association_company_memberships_pair",
+        ),
+        CheckConstraint(
+            "association_company_id <> member_company_id",
+            name="association_member_distinct",
+        ),
+        CheckConstraint("allocated_seats >= 0", name="allocated_seats_non_negative"),
+        CheckConstraint("version > 0", name="version_positive"),
+        Index("ix_association_memberships_association", "association_company_id"),
+        Index("ix_association_memberships_member", "member_company_id"),
+    )
+
+    association_tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    association_company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    member_tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    member_company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    member_tier: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    allocated_seats: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    benefits: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     updated_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
 
@@ -3266,12 +3378,14 @@ class ScheduledPublishJob(
 
 __all__ = [
     "AIRun",
+    "AssociationCompanyMembership",
     "AuditLog",
     "AuthSession",
     "Card",
     "CardContactField",
     "CaseStudy",
     "Company",
+    "CompanyLLMConfiguration",
     "ConsentRecord",
     "Conversation",
     "DataExportRequest",
@@ -3303,6 +3417,7 @@ __all__ = [
     "PrivacyRequestType",
     "Product",
     "PromptVersion",
+    "PlatformLLMProfile",
     "SecurityEvent",
     "ScheduledPublishJob",
     "ScheduledPublishResourceType",
