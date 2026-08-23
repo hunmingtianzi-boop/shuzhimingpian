@@ -44,6 +44,7 @@ from app.db.models import (
     User,
     Visibility,
 )
+from app.services.platform_identity import business_tenant_key
 
 _SEED_NAMESPACE = uuid.UUID("f2a9d459-8e1b-49fb-94ee-33fc5125deaf")
 
@@ -257,6 +258,11 @@ async def seed_package(
             tenant_id=tenant_id,
             name=package.company.name,
             normalized_name=package.company.name.casefold(),
+            business_tenant_key=business_tenant_key(
+                subject_type="domestic_enterprise",
+                social_credit_code=None,
+                company_id=company_id,
+            ),
             industry=package.company.industry,
             status=LifecycleStatus.ACTIVE,
             settings={

@@ -78,6 +78,26 @@ async def list_enterprises(
         str | None,
         Query(alias="status", pattern="^(active|suspended|disabled)$"),
     ] = None,
+    activity_level: Annotated[
+        str | None,
+        Query(pattern="^(active_30d|inactive_30d)$"),
+    ] = None,
+    has_actionable_tasks: bool | None = None,
+    service_risk: Annotated[
+        str | None,
+        Query(pattern="^(healthy|warning|expired|missing)$"),
+    ] = None,
+    sort_by: Annotated[
+        str,
+        Query(
+            pattern=(
+                "^(company_name|created_at|last_activity_at|visits_30d|"
+                "conversations_30d|consented_leads_30d|actionable_task_count|"
+                "service_valid_until)$"
+            )
+        ),
+    ] = "created_at",
+    sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> EnterpriseListEnvelope:
@@ -87,6 +107,11 @@ async def list_enterprises(
         actor=_actor(principal),
         search=search.strip() if search and search.strip() else None,
         status=status_filter,
+        activity_level=activity_level,
+        has_actionable_tasks=has_actionable_tasks,
+        service_risk=service_risk,
+        sort_by=sort_by,
+        sort_order=sort_order,
         limit=limit,
         offset=offset,
     )

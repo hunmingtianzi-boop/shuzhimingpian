@@ -31,6 +31,25 @@ const dashboard: DashboardOverview = {
   daily: [],
 };
 
+const zeroDailyDashboard: DashboardOverview = {
+  ...dashboard,
+  daily: Array.from({ length: 30 }, (_, index) => ({
+    day: `2026-07-${String(index + 1).padStart(2, "0")}`,
+    visits: 0,
+    conversations: 0,
+    leads: 0,
+  })),
+};
+
+const activeDailyDashboard: DashboardOverview = {
+  ...dashboard,
+  daily: [
+    { day: "2026-07-10", visits: 0, conversations: 0, leads: 0 },
+    { day: "2026-07-11", visits: 3, conversations: 1, leads: 0 },
+    { day: "2026-07-12", visits: 5, conversations: 2, leads: 1 },
+  ],
+};
+
 const employees: EmployeeAnalyticsPage = {
   items: [{
     userId: "user-1",
@@ -172,6 +191,24 @@ describe("OverviewPage employee analytics", () => {
 
     expect(await screen.findByText("没有访问权限")).toBeInTheDocument();
     expect(screen.getByLabelText("核心指标")).toBeInTheDocument();
+  });
+
+  it("replaces an all-zero 30-day table with a compact empty state", async () => {
+    vi.spyOn(workflowApi, "getDashboard").mockResolvedValue(zeroDailyDashboard);
+    vi.spyOn(workflowApi, "listEmployeeAnalytics").mockResolvedValue(employees);
+    renderPage();
+
+    expect(await screen.findByText("最近 30 天暂无业务趋势")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "每日趋势" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the daily trend table when there is real business activity", async () => {
+    vi.spyOn(workflowApi, "getDashboard").mockResolvedValue(activeDailyDashboard);
+    vi.spyOn(workflowApi, "listEmployeeAnalytics").mockResolvedValue(employees);
+    renderPage();
+
+    expect(await screen.findByRole("table", { name: "每日趋势" })).toBeInTheDocument();
+    expect(screen.getByText("2026-07-12")).toBeInTheDocument();
   });
 
   it("runs the AI topic summary for the selected period", async () => {

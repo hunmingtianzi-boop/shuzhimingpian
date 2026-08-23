@@ -357,7 +357,7 @@ describe("platformApi", () => {
     expect(serialized).not.toContain("connection_string");
   });
 
-  it("sends the initial administrator secret only in the create request", async () => {
+  it("creates a cardless enterprise and receives a one-time server credential", async () => {
     const client = {
       post: vi.fn().mockResolvedValue({
         data: {
@@ -366,36 +366,49 @@ describe("platformApi", () => {
           tenant_name: "Acme Tenant",
           company_id: "company-1",
           company_name: "Acme",
+          legal_name: "Acme",
+          short_name: "Acme Tenant",
+          subject_type: "domestic_enterprise",
+          social_credit_code: "91330100MA2ABC1234",
+          business_tenant_key: "91330100MA2ABC1234",
           company_status: "active",
           admin_user_id: "user-1",
           admin_membership_id: "membership-1",
-          initial_card_id: "card-1",
-          initial_card_slug: "c-random",
+          credential_delivery: {
+            account: "admin@acme.test",
+            temporary_password: "one-time-password-2026",
+            expires_at: "2026-07-22T12:00:00Z",
+            shown_once: true,
+          },
           created_at: "2026-07-11T00:00:00Z",
         },
       }),
     } as unknown as ApiClient;
 
     const created = await createPlatformApi(client).createEnterprise({
-      tenantSlug: "acme",
-      tenantName: "Acme Tenant",
-      companyName: "Acme",
+      legalName: "Acme",
+      shortName: "Acme Tenant",
+      subjectType: "domestic_enterprise",
+      socialCreditCode: "91330100MA2ABC1234",
       industry: "AI",
       adminAccount: "admin@acme.test",
       adminDisplayName: "Acme Admin",
-      adminPassword: "Initial-Password-2026!",
-      initialCardTitle: "Acme Card",
     });
 
-    expect(created.initialCardSlug).toBe("c-random");
+    expect(created.initialCardSlug).toBeUndefined();
+    expect(created.credentialDelivery?.temporaryPassword).toBe("one-time-password-2026");
     expect(client.post).toHaveBeenCalledWith(
       "/platform/enterprises",
       expect.objectContaining({
-        tenant_slug: "acme",
-        admin_password: "Initial-Password-2026!",
+        legal_name: "Acme",
+        social_credit_code: "91330100MA2ABC1234",
+        subject_type: "domestic_enterprise",
       }),
     );
-    expect(JSON.stringify(created)).not.toContain("Initial-Password-2026!");
+    expect(client.post).toHaveBeenCalledWith(
+      "/platform/enterprises",
+      expect.not.objectContaining({ admin_password: expect.anything(), initial_card_title: expect.anything() }),
+    );
   });
 
   it("starts assisted onboarding without accepting a platform-selected password", async () => {
@@ -404,8 +417,8 @@ describe("platformApi", () => {
     } as unknown as ApiClient;
     await createPlatformApi(client).startOnboarding({
       displayName: "Acme 首次建企",
-      tenantSlug: "acme",
-      tenantName: "Acme Tenant",
+      legalName: "Acme Tenant",
+      subjectType: "pending_registration",
       adminAccount: "admin@acme.test",
       adminDisplayName: "Acme Admin",
     });
@@ -413,7 +426,8 @@ describe("platformApi", () => {
       "/platform/onboarding",
       expect.objectContaining({
         display_name: "Acme 首次建企",
-        tenant_slug: "acme",
+        legal_name: "Acme Tenant",
+        subject_type: "pending_registration",
       }),
     );
     expect(client.post).toHaveBeenCalledWith(
@@ -713,9 +727,8 @@ describe("platformApi", () => {
     await api.confirmOnboarding("session/one", {
       expectedVersion: 3,
       candidateSelections: [],
-      tenantName: "Acme",
-      companyName: "Acme 商务",
-      initialCardDisplayName: "管理员",
+      legalName: "Acme 商务",
+      subjectType: "pending_registration",
     });
 
     expect(client.post).toHaveBeenNthCalledWith(
@@ -728,8 +741,8 @@ describe("platformApi", () => {
       "/platform/onboarding/session%2Fone/confirm",
       expect.objectContaining({
         expected_version: 3,
-        company_name: "Acme 商务",
-        initial_card_display_name: "管理员",
+        legal_name: "Acme 商务",
+        subject_type: "pending_registration",
         candidate_selections: [],
       }),
     );

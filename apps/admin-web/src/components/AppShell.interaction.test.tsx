@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { adminApi } from "../api/adminApi";
 import { workflowApi } from "../api/workflowApi";
 import type { AuthContextValue } from "../auth/AuthContext";
 import { AuthContext } from "../auth/AuthContext";
@@ -34,6 +35,25 @@ afterEach(() => {
 
 describe("AppShell notification center", () => {
   it("exposes a dedicated navigation entry and opens the route from the stable top-bar link", async () => {
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue({
+      id: "company-1",
+      name: "企业",
+      summary: "",
+      industry: "",
+      region: "",
+      website: "",
+      logoUrl: "",
+      profilePersonalizationPolicyVersion: "profile-personalization-v1",
+      aiOffTopicAnswerMode: "limited",
+      aiOffTopicQuestionLimit: 3,
+      visitNotificationsEnabled: true,
+      visitReportNotificationsEnabled: true,
+      visitNotificationInAppEnabled: true,
+      visitNotificationWecomEnabled: true,
+      visitNotificationRecipientScope: "both",
+      onboardingStatus: "active",
+      version: 1,
+    });
     vi.spyOn(workflowApi, "listNotifications").mockResolvedValue({
       items: [],
       total: 0,
@@ -49,9 +69,13 @@ describe("AppShell notification center", () => {
       </FluentProvider>,
     );
 
-    expect(screen.getByRole("link", { name: "消息中心" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "消息与待办" })).toHaveAttribute(
       "href",
       appHref(APP_PATHS.notifications),
+    );
+    expect(screen.getByRole("link", { name: "禁答主题" })).toHaveAttribute(
+      "href",
+      appHref(APP_PATHS.forbiddenTopics),
     );
 
     const topbarLink = screen.getByRole("link", { name: "通知中心" });

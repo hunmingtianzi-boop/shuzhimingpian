@@ -39,9 +39,12 @@ import {
   adminWorkspaceForPath,
   APP_PATHS,
   appHref,
+  matchEntityDetailPath,
+  matchPlatformEnterprisePath,
   navigate,
   replaceBrowserHref,
   type AppPath,
+  type NavigableAppPath,
   usePathname,
   wecomEntryReturnTo,
   WECOM_ENTRY_PATH,
@@ -56,6 +59,11 @@ const OverviewPage = lazy(() =>
 const VisitsPage = lazy(() =>
   import("./pages/VisitsPage").then((module) => ({
     default: module.VisitsPage,
+  })),
+);
+const VisitDetailPage = lazy(() =>
+  import("./pages/VisitsPage").then((module) => ({
+    default: module.VisitDetailPage,
   })),
 );
 const VisitorProfilesPage = lazy(() =>
@@ -133,6 +141,11 @@ const ProductsPage = lazy(() =>
     default: module.ProductsPage,
   })),
 );
+const ProductDetailPage = lazy(() =>
+  import("./pages/CatalogPage").then((module) => ({
+    default: module.ProductDetailPage,
+  })),
+);
 const CaseStudiesPage = lazy(() =>
   import("./pages/CatalogPage").then((module) => ({
     default: module.CaseStudiesPage,
@@ -148,6 +161,26 @@ const PlatformEnterprisesPage = lazy(() =>
     default: module.PlatformEnterprisesPage,
   })),
 );
+const PlatformEnterprisePage = lazy(() =>
+  import("./pages/PlatformEnterprisePage").then((module) => ({
+    default: module.PlatformEnterprisePage,
+  })),
+);
+const AnswerPolicyPage = lazy(() =>
+  import("./pages/AnswerPolicyPage").then((module) => ({
+    default: module.AnswerPolicyPage,
+  })),
+);
+const NotificationSettingsPage = lazy(() =>
+  import("./pages/NotificationSettingsPage").then((module) => ({
+    default: module.NotificationSettingsPage,
+  })),
+);
+const PrivacySettingsPage = lazy(() =>
+  import("./pages/PrivacySettingsPage").then((module) => ({
+    default: module.PrivacySettingsPage,
+  })),
+);
 const PlatformOverviewPage = lazy(() =>
   import("./pages/PlatformOverviewPage").then((module) => ({
     default: module.PlatformOverviewPage,
@@ -161,16 +194,6 @@ const PlatformLlmSettingsPage = lazy(() =>
 const PlatformOnboardingPage = lazy(() =>
   import("./pages/PlatformOnboardingPage").then((module) => ({
     default: module.PlatformOnboardingPage,
-  })),
-);
-const PlatformEmployeesPage = lazy(() =>
-  import("./pages/PlatformGovernancePages").then((module) => ({
-    default: module.PlatformEmployeesPage,
-  })),
-);
-const PlatformVisitorsPage = lazy(() =>
-  import("./pages/PlatformGovernancePages").then((module) => ({
-    default: module.PlatformVisitorsPage,
   })),
 );
 const PlatformTasksPage = lazy(() =>
@@ -484,6 +507,11 @@ export function PlatformOnboardingRoute() {
     companyName?: string;
     initialCardDisplayName?: string;
     initialCardTitle?: string;
+    legalName?: string;
+    shortName?: string;
+    subjectType?: StartPlatformOnboardingInput["subjectType"];
+    socialCreditCode?: string;
+    industry?: string;
   }>();
   const [projectionRevision, setProjectionRevision] = useState(0);
   const ownerIdRef = useRef(actorId);
@@ -725,9 +753,11 @@ export function PlatformOnboardingRoute() {
           displayName: input.adminDisplayName,
         });
         setInitialReview({
-          tenantName: input.tenantName,
-          companyName: input.tenantName,
-          initialCardDisplayName: input.adminDisplayName,
+          legalName: input.legalName,
+          shortName: input.shortName,
+          subjectType: input.subjectType,
+          socialCreditCode: input.socialCreditCode,
+          industry: input.industry,
         });
         setImportItems([]);
         setImportError(undefined);
@@ -813,8 +843,20 @@ export function PlatformOnboardingRoute() {
   );
 }
 
-function RouteRedirect({ path }: { path: AppPath }) {
-  useEffect(() => navigate(path), [path]);
+function RouteRedirect({
+  path,
+  focus,
+}: {
+  path: NavigableAppPath;
+  focus?: string;
+}) {
+  useEffect(() => {
+    if (focus) {
+      replaceBrowserHref(`${appHref(path)}?focus=${encodeURIComponent(focus)}`);
+      return;
+    }
+    navigate(path);
+  }, [focus, path]);
   return (
     <main className="page-stack">
       <section className="content-panel">
@@ -859,7 +901,25 @@ const commercialFeatureByPath = new Map<string, string>([
   [APP_PATHS.members, "team.members"],
   [APP_PATHS.company, "company.profile"],
   [APP_PATHS.privacyRequests, "privacy.manage"],
+  [APP_PATHS.privacySettings, "privacy.manage"],
+  [APP_PATHS.answerPolicy, "company.profile"],
+  [APP_PATHS.notificationSettings, "company.profile"],
 ]);
+
+function commercialFeatureForPath(pathname: string): string | undefined {
+  const direct = commercialFeatureByPath.get(pathname);
+  if (direct) return direct;
+  const detail = matchEntityDetailPath(pathname);
+  if (!detail) return undefined;
+  return {
+    visit: "customer.visits",
+    "visitor-profile": "customer.profiles",
+    conversation: "ai.conversations",
+    opportunity: "customer.opportunities",
+    lead: "customer.leads",
+    product: "catalog.manage",
+  }[detail.kind];
+}
 
 function CommercialFeatureUnavailable() {
   return (
@@ -901,7 +961,7 @@ export function CurrentPage() {
       />
     );
   }
-  const requiredFeature = commercialFeatureByPath.get(pathname);
+  const requiredFeature = commercialFeatureForPath(pathname);
   if (
     userWorkspace === "enterprise"
     && requiredFeature
@@ -917,11 +977,40 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.platformOnboarding) {
     return <PlatformOnboardingRoute />;
   }
-  if (pathname === APP_PATHS.platformEmployees) return <PlatformEmployeesPage />;
-  if (pathname === APP_PATHS.platformVisitors) return <PlatformVisitorsPage />;
+  const platformEnterprise = matchPlatformEnterprisePath(pathname);
+  if (platformEnterprise) {
+    return (
+      <PlatformEnterprisePage
+        companyId={platformEnterprise.companyId}
+        section={platformEnterprise.section}
+      />
+    );
+  }
+  if (pathname === APP_PATHS.platformEmployees) {
+    return <RouteRedirect path={APP_PATHS.platformOverview} focus="employees" />;
+  }
+  if (pathname === APP_PATHS.platformVisitors) {
+    return <RouteRedirect path={APP_PATHS.platformOverview} focus="visitors" />;
+  }
   if (pathname === APP_PATHS.platformTasks) return <PlatformTasksPage />;
   if (pathname === APP_PATHS.platformAudit) return <PlatformAuditPage />;
   if (pathname === APP_PATHS.platformHealth) return <PlatformHealthPage />;
+  const entityDetail = matchEntityDetailPath(pathname);
+  if (entityDetail?.kind === "visit") {
+    return <VisitDetailPage visitId={entityDetail.id} />;
+  }
+  if (entityDetail?.kind === "product") {
+    return <ProductDetailPage productId={entityDetail.id === "new" ? undefined : entityDetail.id} />;
+  }
+  if (entityDetail?.kind === "visitor-profile") {
+    return <VisitorProfilesPage initialVisitorId={entityDetail.id} />;
+  }
+  if (entityDetail?.kind === "conversation" || entityDetail?.kind === "opportunity") {
+    return <ConversationsPage initialConversationId={entityDetail.id} />;
+  }
+  if (entityDetail?.kind === "lead") {
+    return <LeadsPage initialLeadId={entityDetail.id} />;
+  }
   if (pathname === APP_PATHS.visits) return <VisitsPage />;
   if (pathname === APP_PATHS.visitorProfiles) return <VisitorProfilesPage />;
   if (pathname === APP_PATHS.conversations) return <ConversationsPage />;
@@ -930,9 +1019,12 @@ export function CurrentPage() {
   if (pathname === APP_PATHS.exports) return <ExportsPage />;
   if (pathname === APP_PATHS.knowledgeGaps) return <KnowledgeGapsPage />;
   if (pathname === APP_PATHS.notifications) return <NotificationsPage />;
+  if (pathname === APP_PATHS.notificationSettings) return <NotificationSettingsPage />;
   if (pathname === APP_PATHS.privacyRequests) return <PrivacyRequestsPage />;
+  if (pathname === APP_PATHS.privacySettings) return <PrivacySettingsPage />;
   if (pathname === APP_PATHS.setup) return <CompanySetupPage />;
   if (pathname === APP_PATHS.company) return <CompanyProfilePage />;
+  if (pathname === APP_PATHS.answerPolicy) return <AnswerPolicyPage />;
   if (pathname === APP_PATHS.members) return <MembersPage />;
   if (pathname === APP_PATHS.card) return <CardSettingsPage />;
   if (pathname === APP_PATHS.cards) return <CardsPage />;

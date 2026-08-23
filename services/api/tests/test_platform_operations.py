@@ -44,8 +44,24 @@ class RouteStore:
                 tenant_name="Acme 集团",
                 company_id=self.company_id,
                 company_name="Acme 商务",
+                legal_name="Acme 商务（法定）",
+                short_name="Acme",
+                subject_type="association",
+                business_tenant_key="ORG-ACME-2026",
                 status="active",
+                employee_count=2,
+                card_count=1,
+                published_card_count=1,
+                visits_30d=8,
+                unique_visitors_30d=5,
+                conversations_30d=3,
+                consented_leads_30d=1,
+                actionable_task_count=2,
+                failed_task_count=1,
+                profile_completion=80,
+                service_risk_level="healthy",
                 created_at=self.now,
+                updated_at=self.now,
             )
         ], 1
 
@@ -53,14 +69,17 @@ class RouteStore:
         self.calls.append(("overview", kwargs))
         return PlatformOverviewRecord(
             generated_at=self.now,
-            enterprise_count=1,
-            active_enterprise_count=1,
-            onboarding_count=0,
+            enabled_enterprise_count=1,
+            active_enterprise_30d_count=1,
+            pending_activation_count=0,
             published_card_count=1,
             visits_30d=8,
+            unique_visitors_30d=5,
             conversations_30d=3,
-            leads_30d=1,
+            consented_leads_30d=1,
+            pending_task_count=2,
             failed_task_count=0,
+            service_risk_count=0,
             llm_ready=True,
             import_ready=True,
         )
@@ -73,6 +92,10 @@ class RouteStore:
             tenant_name="Acme 集团",
             company_id=self.company_id,
             company_name="Acme 商务",
+            legal_name="Acme 商务（法定）",
+            short_name="Acme",
+            subject_type="association",
+            business_tenant_key="ORG-ACME-2026",
             status="active",
             version=3,
             onboarding_status="completed",
@@ -81,8 +104,12 @@ class RouteStore:
             card_count=2,
             published_card_count=1,
             visits_30d=8,
+            unique_visitors_30d=5,
             conversations_30d=3,
-            leads_30d=1,
+            consented_leads_30d=1,
+            actionable_task_count=2,
+            failed_task_count=1,
+            service_risk_level="healthy",
             cards=[
                 PlatformCardProjection(
                     id=uuid.uuid4(),
@@ -115,16 +142,27 @@ class RouteStore:
             PlatformCompanyAggregate(
                 company_id=self.company_id,
                 company_name="Acme 商务",
+                legal_name="Acme 商务（法定）",
+                business_tenant_key="ORG-ACME-2026",
+                status="active",
                 employee_count=2,
+                card_count=2,
+                published_card_count=1,
                 visits_30d=8,
                 unique_visitors_30d=5,
-                last_visit_at=self.now,
+                conversations_30d=3,
+                consented_leads_30d=1,
+                actionable_task_count=2,
+                failed_task_count=1,
+                last_activity_at=self.now,
             )
         ], 1
 
-    async def list_tasks(self, **kwargs: Any) -> tuple[list[PlatformTaskRecord], int]:
+    async def list_tasks(
+        self, **kwargs: Any
+    ) -> tuple[list[PlatformTaskRecord], list[dict[str, Any]], int]:
         self.calls.append(("tasks", kwargs))
-        return [
+        records = [
             PlatformTaskRecord(
                 id=uuid.uuid4(),
                 task_type="knowledge_import",
@@ -132,11 +170,23 @@ class RouteStore:
                 status="failed",
                 company_id=self.company_id,
                 company_name="Acme 商务",
+                tenant_slug="acme",
                 error_code="IMPORT_FAILED",
                 created_at=self.now,
                 updated_at=self.now,
             )
-        ], 1
+        ]
+        groups = [
+            {
+                "company_id": self.company_id,
+                "company_name": "Acme 商务",
+                "pending_count": 0,
+                "in_progress_count": 0,
+                "failed_count": 1,
+                "recent_tasks": [records[0].model_dump(mode="json")],
+            }
+        ]
+        return records, groups, 1
 
     async def list_audit(self, **kwargs: Any) -> tuple[list[PlatformAuditRecord], int]:
         self.calls.append(("audit", kwargs))
@@ -259,6 +309,34 @@ def test_governance_projections_are_business_safe_and_paginated(
         assert forbidden not in serialized
 
 
+def test_task_filters_and_company_view_are_forwarded(
+    route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, _ = route_client
+
+    response = client.get(
+        "/api/v1/platform/tasks",
+        params={
+            "view": "company",
+            "company_id": str(store.company_id),
+            "status": "failed",
+            "task_type": "knowledge_import",
+            "limit": 10,
+            "offset": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["view"] == "company"
+    assert payload["groups"][0]["failed_count"] == 1
+    call = next(item for name, item in store.calls if name == "tasks")
+    assert call["view"] == "company"
+    assert call["company_id"] == store.company_id
+    assert call["status"] == "failed"
+    assert call["task_type"] == "knowledge_import"
+
+
 def test_list_forwards_bounded_search_status_and_pagination(
     route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
 ) -> None:
@@ -289,19 +367,23 @@ def test_overview_and_detail_return_allowlisted_projection(
     assert overview.status_code == 200
     assert set(overview.json()["data"]) == {
         "generated_at",
-        "enterprise_count",
-        "active_enterprise_count",
-        "onboarding_count",
+        "enabled_enterprise_count",
+        "active_enterprise_30d_count",
+        "pending_activation_count",
         "published_card_count",
         "visits_30d",
+        "unique_visitors_30d",
         "conversations_30d",
-        "leads_30d",
+        "consented_leads_30d",
+        "pending_task_count",
         "failed_task_count",
+        "service_risk_count",
         "llm_ready",
         "import_ready",
     }
     assert detail.status_code == 200
     payload = detail.json()["data"]
+    assert payload["business_tenant_key"] == "ORG-ACME-2026"
     assert payload["cards"][0]["card_kind"] == "enterprise"
     assert payload["cards"][1]["card_kind"] == "employee"
     assert payload["cards"][0]["share_url"].endswith("/c/published-card")

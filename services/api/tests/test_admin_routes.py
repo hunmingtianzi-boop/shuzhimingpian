@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.admin_schemas import (
     CardProfile,
+    CompanyIdentityProfile,
     CompanyProfile,
     KnowledgeDocumentDetail,
     KnowledgeDocumentRecord,
@@ -29,6 +30,7 @@ class RouteStore:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.company = _company_profile(version=7)
+        self.identity = _company_identity_profile(version=7)
         self.card = _card_profile(version=4)
         self.document, self.draft, self.published = _knowledge_records()
         self.detail = KnowledgeDocumentDetail(
@@ -54,6 +56,27 @@ class RouteStore:
             }
         )
         return self.company
+
+    async def get_company_identity_profile(self, **kwargs: Any) -> CompanyIdentityProfile:
+        self.calls.append(("get_identity", kwargs))
+        return self.identity
+
+    async def update_company_identity_profile(
+        self, **kwargs: Any
+    ) -> CompanyIdentityProfile:
+        self.calls.append(("update_identity", kwargs))
+        body = kwargs["body"]
+        self.identity = self.identity.model_copy(
+            update={
+                "legal_name": body.legal_name,
+                "short_name": body.short_name,
+                "positioning": body.positioning,
+                "profile_facts": body.profile_facts,
+                "profile_tags": body.profile_tags,
+                "version": kwargs["expected_version"] + 1,
+            }
+        )
+        return self.identity
 
     async def get_card(self, **kwargs: Any) -> CardProfile:
         self.calls.append(("get_card", kwargs))
@@ -168,6 +191,26 @@ def _company_profile(*, version: int) -> CompanyProfile:
     )
 
 
+def _company_identity_profile(*, version: int) -> CompanyIdentityProfile:
+    return CompanyIdentityProfile(
+        id=uuid.uuid4(),
+        legal_name="示例企业（法定）",
+        short_name="示例企业",
+        subject_type="association",
+        industry="软件",
+        region="杭州",
+        website="https://example.com",
+        summary="企业简介",
+        positioning="服务制造企业的智能助手",
+        profile_facts=[{"id": "hq", "label": "总部", "value": "杭州"}],
+        profile_tags=["AI", "ToB"],
+        onboarding_status="content_pending",
+        status="active",
+        version=version,
+        updated_at=datetime.now(UTC),
+    )
+
+
 def _card_profile(*, version: int) -> CardProfile:
     return CardProfile(
         id=uuid.uuid4(),
@@ -245,6 +288,7 @@ def test_admin_router_exposes_requested_vertical_slice(
     paths = client.app.openapi()["paths"]
 
     assert set(paths["/api/v1/admin/company/profile"]) == {"get", "put"}
+    assert set(paths["/api/v1/admin/company/identity"]) == {"get", "put"}
     assert set(paths["/api/v1/admin/card"]) == {"get", "put"}
     assert set(paths["/api/v1/admin/setup/complete"]) == {"post"}
     assert set(paths["/api/v1/admin/knowledge/documents"]) == {"get", "post"}
@@ -290,6 +334,45 @@ def test_company_profile_uses_etag_and_if_match_version(
     assert update_call["body"].logo_url == ("/api/v1/public/card-assets/company/logo.webp")
     assert update_call["body"].ai_off_topic_answer_mode == "unlimited"
     assert update_call["body"].ai_off_topic_question_limit == 6
+
+
+def test_company_identity_uses_etag_and_preserves_outward_presentation(
+    route_client: tuple[TestClient, RouteStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, store, _ = route_client
+
+    get_response = client.get("/api/v1/admin/company/identity")
+    put_response = client.put(
+        "/api/v1/admin/company/identity",
+        headers={"If-Match": 'W/"7"'},
+        json={
+            "legal_name": "更新后的法定主体",
+            "short_name": "更新后简称",
+            "subject_type": "association",
+            "industry": "制造业",
+            "region": "上海",
+            "website": "https://example.org",
+            "logo_url": "/api/v1/public/card-assets/company/logo.webp",
+            "summary": "更新后的简介",
+            "positioning": "帮助企业完成智能接待",
+            "profile_facts": [{"id": "hq", "label": "总部", "value": "上海"}],
+            "profile_tags": ["AI", "CRM"],
+        },
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.headers["etag"] == '"7"'
+    assert put_response.status_code == 200
+    assert put_response.headers["etag"] == '"8"'
+    payload = put_response.json()["data"]
+    assert payload["legal_name"] == "更新后的法定主体"
+    assert payload["positioning"] == "帮助企业完成智能接待"
+    assert payload["profile_facts"][0]["value"] == "上海"
+    assert payload["profile_tags"] == ["AI", "CRM"]
+    update_call = next(payload for name, payload in store.calls if name == "update_identity")
+    assert update_call["expected_version"] == 7
+    assert update_call["body"].positioning == "帮助企业完成智能接待"
+    assert update_call["body"].profile_tags == ["AI", "CRM"]
 
 
 def test_legacy_company_update_does_not_reset_ai_answer_boundary() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from datetime import date
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -14,6 +15,7 @@ from cf_worker.domain import (
     OutboxRepository,
     PermanentEventError,
     ReportIntent,
+    VisitDailyDigestSnapshot,
     WeComVisitCard,
 )
 
@@ -27,11 +29,13 @@ _UUID_KEYS_BY_EVENT: dict[str, frozenset[str]] = {
     "visit_summary.generated.v1": frozenset({"summary_id", "conversation_id", "owner_user_id"}),
     "visit.started.v1": frozenset({"visit_id", "card_id"}),
     "visit.report.ready.v1": frozenset({"visit_id", "card_id"}),
+    "visit.daily_digest.ready.v1": frozenset({"company_id"}),
 }
 _OPTIONAL_KEYS_BY_EVENT: dict[str, frozenset[str]] = {
     "privacy_request.created.v1": frozenset({"request_type"}),
     "visit_summary.ready.v1": frozenset({"owner_user_id"}),
     "visit_summary.generated.v1": frozenset({"owner_user_id"}),
+    "visit.daily_digest.ready.v1": frozenset({"digest_date"}),
 }
 _PRIVACY_REQUEST_TYPES = frozenset({"access", "correction", "deletion", "withdraw_consent"})
 
@@ -57,6 +61,8 @@ class EventHandlerRegistry:
             return await self._visit_summary(event, payload)
         if event.event_type in {"visit.started.v1", "visit.report.ready.v1"}:
             return await self._visit_notification(event, payload)
+        if event.event_type == "visit.daily_digest.ready.v1":
+            return await self._visit_daily_digest(event, payload)
         raise PermanentEventError("unsupported_event_type")
 
     async def _data_export(
@@ -254,6 +260,18 @@ class EventHandlerRegistry:
         )
         if snapshot is None:
             raise PermanentEventError("visit_not_found")
+        realtime = report and (
+            snapshot.engagement_level == "high" or snapshot.has_consented_lead
+        )
+        if not realtime:
+            return HandlerResult(
+                handler_name="visit-ordinary-digest-deferred-v1",
+                metadata={
+                    "deferred_to_digest": True,
+                    "engagement_level": snapshot.engagement_level,
+                    "has_consented_lead": snapshot.has_consented_lead,
+                },
+            )
 
         channel_label = {
             "web": "网页",
@@ -353,6 +371,91 @@ class EventHandlerRegistry:
             },
         )
 
+    async def _visit_daily_digest(
+        self,
+        event: OutboxRecord,
+        payload: Mapping[str, Any],
+    ) -> HandlerResult:
+        company_id = _uuid_value(payload, "company_id")
+        if event.aggregate_type != "company" or event.aggregate_id != company_id:
+            raise PermanentEventError("payload_aggregate_mismatch")
+        digest_date = _date_value(payload, "digest_date")
+        snapshot = await self._repository.visit_daily_digest_snapshot(
+            event,
+            digest_date=digest_date,
+        )
+        if snapshot is None:
+            return HandlerResult(
+                handler_name="visit-daily-digest-noop-v1",
+                metadata={"suppressed": True, "reason": "empty_digest"},
+            )
+
+        title = "昨日普通访问汇总"
+        body = (
+            f"昨日共有 {snapshot.visit_count} 次普通访问，"
+            f"{snapshot.unique_visitor_count} 位访客，"
+            f"涉及 {snapshot.card_count} 张名片。"
+        )
+        if snapshot.question_count > 0 or snapshot.share_count > 0:
+            body += (
+                f" AI 提问 {snapshot.question_count} 次，"
+                f"分享 {snapshot.share_count} 次。"
+            )
+        if snapshot.top_card_display_name:
+            body += f" 关注较多的名片：{snapshot.top_card_display_name}。"
+
+        notifications = (
+            tuple(
+                NotificationIntent(
+                    recipient_user_id=recipient,
+                    notification_type="visit_daily_digest_ready",
+                    title=title,
+                    body=body,
+                    resource_type="company",
+                    resource_id=event.company_id,
+                )
+                for recipient in snapshot.recipient_user_ids
+            )
+            if snapshot.in_app_enabled
+            else ()
+        )
+        admin_base_url = self._repository.admin_base_url()
+        report_url = _wecom_visit_daily_digest_entry_url(admin_base_url, snapshot)
+        wecom_delivered = (
+            await self._repository.send_wecom_visit_daily_digest(
+                event,
+                recipient_user_ids=snapshot.recipient_user_ids,
+                card=WeComVisitCard(
+                    title=title,
+                    subtitle=snapshot.top_card_display_name or "企业全部名片",
+                    summary="普通访问已按日汇总，适合低噪声运营跟进。",
+                    emphasis_title=str(snapshot.visit_count),
+                    emphasis_description="普通访问次数",
+                    details=(
+                        ("访客", f"{snapshot.unique_visitor_count} 位"),
+                        ("名片", f"{snapshot.card_count} 张"),
+                        ("AI提问", f"{snapshot.question_count} 次"),
+                        ("分享", f"{snapshot.share_count} 次"),
+                        ("日期", snapshot.digest_date.isoformat()),
+                    ),
+                    action_text="查看访问汇总",
+                    cover_url=_wecom_visit_cover_url(admin_base_url),
+                ),
+                report_url=report_url,
+            )
+            if snapshot.wecom_enabled and report_url is not None
+            else 0
+        )
+        return HandlerResult(
+            handler_name="visit-daily-digest-notification-v1",
+            notifications=notifications,
+            metadata={
+                "recipient_count": len(snapshot.recipient_user_ids),
+                "wecom_delivered": wecom_delivered,
+                "digest_date": snapshot.digest_date.isoformat(),
+            },
+        )
+
 
 def _validated_payload(event: OutboxRecord) -> dict[str, Any]:
     if event.headers.get("contains_pii") is True:
@@ -380,6 +483,16 @@ def _duration_label(seconds: float) -> str:
     return f"{minutes} 分 {remaining} 秒" if remaining else f"{minutes} 分"
 
 
+def _date_value(payload: Mapping[str, Any], key: str) -> date:
+    raw = payload.get(key)
+    if not isinstance(raw, str):
+        raise PermanentEventError("missing_payload_field")
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:  # noqa: PERF203
+        raise PermanentEventError("invalid_payload_field") from exc
+
+
 def _wecom_visit_report_entry_url(
     admin_base_url: str | None,
     visit_id: uuid.UUID,
@@ -399,6 +512,28 @@ def _wecom_visit_report_entry_url(
             parsed.netloc,
             f"{base_path}/wecom/entry",
             urlencode({"return_to": report_path}),
+            "",
+        )
+    )
+
+
+def _wecom_visit_daily_digest_entry_url(
+    admin_base_url: str | None,
+    snapshot: VisitDailyDigestSnapshot,
+) -> str | None:
+    if not admin_base_url:
+        return None
+    parsed = urlsplit(admin_base_url.strip())
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return None
+    base_path = parsed.path.rstrip("/")
+    return_to = f"{base_path}/visits?date={snapshot.digest_date.isoformat()}&view=digest"
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"{base_path}/wecom/entry",
+            urlencode({"return_to": return_to}),
             "",
         )
     )

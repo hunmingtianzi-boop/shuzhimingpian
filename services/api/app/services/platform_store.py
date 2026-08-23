@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 from sqlalchemy import insert, select, text
@@ -22,6 +21,7 @@ from app.api.platform_schemas import (
     PlatformEnterpriseLifecycleRecord,
     PlatformOverviewRecord,
     PlatformTaskRecord,
+    TemporaryCredentialDelivery,
 )
 from app.core.config import Settings
 from app.core.pii import PiiCipher
@@ -31,7 +31,6 @@ from app.db.models import (
     Card,
     CardKind,
     Company,
-    ContentStatus,
     LifecycleStatus,
     Membership,
     MembershipRole,
@@ -44,6 +43,15 @@ from app.db.models import (
     User,
 )
 from app.db.session import set_rls_context
+from app.services.platform_identity import (
+    business_tenant_key as _business_tenant_key,
+)
+from app.services.platform_identity import (
+    generate_temporary_password as _generate_temporary_password,
+)
+from app.services.platform_identity import (
+    tenant_slug_from_business_key as _tenant_slug_from_business_key,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +81,12 @@ _READ_MODEL_STATEMENTS = {
         "SELECT app.platform_operations_company_aggregates(:limit, :offset)"
     ),
     "platform_operations_tasks": text(
-        "SELECT app.platform_operations_tasks(:limit, :offset)"
+        "SELECT app.platform_operations_tasks("
+        ":company_id, :status, :task_type, :updated_from, :updated_to, :limit, :offset)"
+    ),
+    "platform_operations_task_groups": text(
+        "SELECT app.platform_operations_task_groups("
+        ":company_id, :status, :task_type, :updated_from, :updated_to, :limit, :offset)"
     ),
     "platform_operations_audit": text(
         "SELECT app.platform_operations_audit(:limit, :offset)"
@@ -120,9 +133,16 @@ class PlatformStore:
         user_id = uuid.uuid4()
         membership_id = uuid.uuid4()
         credential_id = uuid.uuid4()
-        card_id = uuid.uuid4()
-        card_slug = f"c-{secrets.token_hex(16)}"
+        legal_name = body.legal_name.strip()
+        short_name = body.short_name.strip() if body.short_name else None
+        business_tenant_key = _business_tenant_key(
+            subject_type=body.subject_type,
+            social_credit_code=body.social_credit_code,
+            company_id=company_id,
+        )
+        tenant_slug = _tenant_slug_from_business_key(business_tenant_key)
         now = datetime.now(UTC)
+        temporary_password = _generate_temporary_password()
         async with self._sessions() as session, session.begin():
             await set_rls_context(
                 session,
@@ -133,13 +153,18 @@ class PlatformStore:
             )
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-                {"key": f"platform-enterprise:{body.tenant_slug}"},
+                {"key": f"platform-enterprise:{business_tenant_key}"},
             )
             duplicate_tenant = await session.scalar(
-                select(Tenant.id).where(Tenant.slug == body.tenant_slug)
+                select(Tenant.id).where(Tenant.slug == tenant_slug)
             )
             if duplicate_tenant is not None:
-                raise ApiError(409, "TENANT_SLUG_CONFLICT", "企业租户标识已存在")
+                raise ApiError(409, "TENANT_SLUG_CONFLICT", "系统生成的企业租户标识冲突")
+            duplicate_business_key = await session.scalar(
+                select(Company.id).where(Company.business_tenant_key == business_tenant_key)
+            )
+            if duplicate_business_key is not None:
+                raise ApiError(409, "BUSINESS_TENANT_KEY_CONFLICT", "企业业务标识已存在")
             duplicate_account = await session.scalar(
                 select(StaffCredential.id).where(StaffCredential.account_normalized == account)
             )
@@ -147,17 +172,21 @@ class PlatformStore:
                 raise ApiError(409, "ACCOUNT_CONFLICT", "管理员登录账号已存在")
             tenant = Tenant(
                 id=tenant_id,
-                slug=body.tenant_slug,
-                name=body.tenant_name,
+                slug=tenant_slug,
+                name=short_name or legal_name,
                 tenant_type=TenantType.ENTERPRISE,
                 status=LifecycleStatus.ACTIVE,
-                settings={"slug": body.tenant_slug, "onboarding_status": "initialized"},
+                settings={"slug": tenant_slug, "onboarding_status": "initialized"},
             )
             company = Company(
                 id=company_id,
                 tenant_id=tenant_id,
-                name=body.company_name,
-                normalized_name=" ".join(body.company_name.casefold().split()),
+                name=legal_name,
+                normalized_name=" ".join(legal_name.casefold().split()),
+                short_name=short_name,
+                subject_type=body.subject_type,
+                social_credit_code=body.social_credit_code,
+                business_tenant_key=business_tenant_key,
                 industry=body.industry,
                 status=LifecycleStatus.ACTIVE,
                 settings={
@@ -170,10 +199,11 @@ class PlatformStore:
                         "profile_personalization": "profile-personalization-v1"
                     },
                     "commercial_entitlements": {
-                        "plan_code": "starter",
+                        "plan_code": body.default_plan_code,
                         "billing_cycle": "contract",
                         "contract_price_cny": None,
                         "feature_overrides": {},
+                        "service_valid_until": None,
                     },
                 },
             )
@@ -201,32 +231,11 @@ class PlatformStore:
                 tenant_id=tenant_id,
                 company_id=company_id,
                 account_normalized=account,
-                password_hash=hash_staff_password(body.admin_password.get_secret_value()),
+                password_hash=hash_staff_password(temporary_password),
                 is_enabled=True,
+                must_change_password=True,
+                temporary_password_expires_at=(now + timedelta(days=7)).replace(microsecond=0),
             )
-            card_values = {
-                "id": card_id,
-                "tenant_id": tenant_id,
-                "company_id": company_id,
-                "card_kind": CardKind.ENTERPRISE,
-                "owner_user_id": None,
-                "responsible_user_id": user_id,
-                "slug": card_slug,
-                "display_name": body.company_name,
-                "status": ContentStatus.DRAFT,
-                "settings": {
-                    "title": body.initial_card_title or body.company_name,
-                    "assistant_name": "企业 AI 接待",
-                    "welcome_message": "您好，我可以根据企业已审核资料为您介绍业务。",
-                    "suggested_questions": [],
-                    "policy_versions": {
-                        "privacy": "privacy-v1",
-                        "chat_notice": "chat-notice-v1",
-                        "lead_consent": "lead-consent-v1",
-                        "profile_personalization": "profile-personalization-v1",
-                    },
-                },
-            }
             # These mappers intentionally do not expose ORM relationships. Flush in
             # foreign-key order so SQLAlchemy cannot emit a child row before its
             # parent while onboarding a completely new tenant.
@@ -239,7 +248,6 @@ class PlatformStore:
             # intentionally INSERT-only for cross-tenant membership/card/event/audit
             # data.
             await session.execute(insert(Membership).values(**membership_values))
-            await session.execute(insert(Card).values(**card_values))
             session.add(credential)
             await session.flush()
             await session.execute(
@@ -262,9 +270,9 @@ class PlatformStore:
                 )
             )
             audit_event = {
-                "tenant_slug": body.tenant_slug,
+                "tenant_slug": tenant_slug,
+                "business_tenant_key": business_tenant_key,
                 "admin_membership_id": str(membership_id),
-                "initial_card_id": str(card_id),
             }
             audit_payload = {
                 "tenant_id": str(tenant_id),
@@ -301,15 +309,24 @@ class PlatformStore:
             )
             return EnterpriseRecord(
                 tenant_id=tenant_id,
-                tenant_slug=body.tenant_slug,
+                tenant_slug=tenant_slug,
                 tenant_name=tenant.name,
                 company_id=company_id,
                 company_name=company.name,
+                legal_name=company.name,
+                short_name=company.short_name,
+                subject_type=body.subject_type,
+                social_credit_code=body.social_credit_code,
+                business_tenant_key=business_tenant_key,
                 company_status=company.status.value,
                 admin_user_id=user_id,
                 admin_membership_id=membership_id,
-                initial_card_id=card_id,
-                initial_card_slug=card_slug,
+                credential_delivery=TemporaryCredentialDelivery(
+                    account=account,
+                    temporary_password=temporary_password,
+                    expires_at=credential.temporary_password_expires_at or now,
+                    shown_once=True,
+                ),
                 created_at=now,
             )
 
@@ -319,6 +336,11 @@ class PlatformStore:
         actor: PlatformActor,
         search: str | None,
         status: str | None,
+        activity_level: str | None,
+        has_actionable_tasks: bool | None,
+        service_risk: str | None,
+        sort_by: str,
+        sort_order: str,
         limit: int,
         offset: int,
     ) -> tuple[list[EnterpriseListItem], int]:
@@ -335,17 +357,27 @@ class PlatformStore:
             payload = await session.scalar(
                 text(
                     "SELECT app.platform_operations_enterprises("
-                    ":search, :status, :limit, :offset)"
+                    ":search, :status, :activity_level, :has_actionable_tasks, "
+                    ":service_risk, :sort_by, :sort_order, :limit, :offset)"
                 ),
                 {
                     "search": search,
                     "status": status,
+                    "activity_level": activity_level,
+                    "has_actionable_tasks": has_actionable_tasks,
+                    "service_risk": service_risk,
+                    "sort_by": sort_by,
+                    "sort_order": sort_order,
                     "limit": limit,
                     "offset": offset,
                 },
             )
             data = _json_object(payload)
-            records = [EnterpriseListItem.model_validate(item) for item in data.get("data", [])]
+            records = [
+                _enterprise_list_item_from_payload(item)
+                for item in data.get("data", [])
+                if isinstance(item, dict)
+            ]
             return records, int(data.get("total", 0))
 
     async def get_overview(self, *, actor: PlatformActor) -> PlatformOverviewRecord:
@@ -362,7 +394,7 @@ class PlatformStore:
             payload = await session.scalar(
                 text("SELECT app.platform_operations_overview()")
             )
-            return PlatformOverviewRecord.model_validate(_json_object(payload))
+            return _overview_from_payload(_json_object(payload))
 
     async def get_enterprise_detail(
         self,
@@ -414,7 +446,7 @@ class PlatformStore:
                 .limit(1)
             )
             detail_payload["business_profile"] = list(business_profile or [])
-            return PlatformEnterpriseDetail.model_validate(detail_payload)
+            return _enterprise_detail_from_payload(detail_payload)
 
     async def transition_enterprise(
         self,
@@ -551,13 +583,13 @@ class PlatformStore:
         payload = await self._list_platform_read_model(
             actor=actor,
             function="platform_operations_company_aggregates",
-            limit=limit,
-            offset=offset,
+            params={"limit": limit, "offset": offset},
         )
         return (
             [
-                PlatformCompanyAggregate.model_validate(item)
+                _company_aggregate_from_payload(item)
                 for item in payload.get("data", [])
+                if isinstance(item, dict)
             ],
             int(payload.get("total", 0)),
         )
@@ -566,19 +598,54 @@ class PlatformStore:
         self,
         *,
         actor: PlatformActor,
+        view: str,
+        company_id: uuid.UUID | None,
+        status: str | None,
+        task_type: str | None,
+        updated_from: datetime | None,
+        updated_to: datetime | None,
         limit: int,
         offset: int,
-    ) -> tuple[list[PlatformTaskRecord], int]:
+    ) -> tuple[list[PlatformTaskRecord], list[dict[str, object]], int]:
         payload = await self._list_platform_read_model(
             actor=actor,
             function="platform_operations_tasks",
-            limit=limit,
-            offset=offset,
+            params={
+                "company_id": company_id,
+                "status": status,
+                "task_type": task_type,
+                "updated_from": updated_from,
+                "updated_to": updated_to,
+                "limit": limit,
+                "offset": offset,
+            },
         )
-        return (
-            [PlatformTaskRecord.model_validate(item) for item in payload.get("data", [])],
-            int(payload.get("total", 0)),
-        )
+        records = [
+            _platform_task_from_payload(item)
+            for item in payload.get("data", [])
+            if isinstance(item, dict)
+        ]
+        groups: list[dict[str, object]] = []
+        if view == "company":
+            grouped_payload = await self._list_platform_read_model(
+                actor=actor,
+                function="platform_operations_task_groups",
+                params={
+                    "company_id": company_id,
+                    "status": status,
+                    "task_type": task_type,
+                    "updated_from": updated_from,
+                    "updated_to": updated_to,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+            groups = [
+                item
+                for item in grouped_payload.get("groups", [])
+                if isinstance(item, dict)
+            ]
+        return records, groups, int(payload.get("total", 0))
 
     async def list_audit(
         self,
@@ -590,8 +657,7 @@ class PlatformStore:
         payload = await self._list_platform_read_model(
             actor=actor,
             function="platform_operations_audit",
-            limit=limit,
-            offset=offset,
+            params={"limit": limit, "offset": offset},
         )
         return (
             [PlatformAuditRecord.model_validate(item) for item in payload.get("data", [])],
@@ -603,8 +669,7 @@ class PlatformStore:
         *,
         actor: PlatformActor,
         function: str,
-        limit: int,
-        offset: int,
+        params: dict[str, object],
     ) -> dict[str, object]:
         if actor.role != MembershipRole.PLATFORM_ADMIN.value:
             raise ApiError(403, "FORBIDDEN", "仅平台管理员可查看平台运营数据")
@@ -621,7 +686,7 @@ class PlatformStore:
             )
             payload = await session.scalar(
                 statement,
-                {"limit": limit, "offset": offset},
+                params,
             )
             return _json_object(payload)
 
@@ -655,6 +720,216 @@ def _json_object(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise RuntimeError("platform read model returned an invalid payload")
     return value
+
+
+def _optional_timestamp(value: object) -> object:
+    if value in {"-infinity", "infinity"}:
+        return None
+    return value
+
+
+def _overview_from_payload(payload: dict[str, object]) -> PlatformOverviewRecord:
+    return PlatformOverviewRecord.model_validate(
+        {
+            "generated_at": payload.get("generated_at"),
+            "enabled_enterprise_count": payload.get(
+                "enabled_enterprise_count",
+                payload.get("enterprise_count", 0),
+            ),
+            "active_enterprise_30d_count": payload.get(
+                "active_enterprise_30d_count",
+                payload.get("active_enterprise_count", 0),
+            ),
+            "pending_activation_count": payload.get(
+                "pending_activation_count",
+                payload.get("onboarding_count", 0),
+            ),
+            "published_card_count": payload.get("published_card_count", 0),
+            "visits_30d": payload.get("visits_30d", 0),
+            "unique_visitors_30d": payload.get("unique_visitors_30d", 0),
+            "conversations_30d": payload.get("conversations_30d", 0),
+            "consented_leads_30d": payload.get(
+                "consented_leads_30d",
+                payload.get("leads_30d", 0),
+            ),
+            "pending_task_count": payload.get("pending_task_count", 0),
+            "failed_task_count": payload.get("failed_task_count", 0),
+            "service_risk_count": payload.get("service_risk_count", 0),
+            "llm_ready": payload.get("llm_ready", False),
+            "import_ready": payload.get("import_ready", False),
+        }
+    )
+
+
+def _enterprise_list_item_from_payload(payload: dict[str, object]) -> EnterpriseListItem:
+    tenant_slug = str(payload.get("tenant_slug") or "")
+    company_name = str(payload.get("company_name") or payload.get("legal_name") or "")
+    created_at = payload.get("created_at")
+    return EnterpriseListItem.model_validate(
+        {
+            "tenant_id": payload.get("tenant_id"),
+            "tenant_slug": tenant_slug,
+            "tenant_name": payload.get("tenant_name"),
+            "company_id": payload.get("company_id"),
+            "company_name": company_name,
+            "legal_name": payload.get("legal_name", company_name),
+            "short_name": payload.get("short_name"),
+            "subject_type": payload.get("subject_type", "domestic_enterprise"),
+            "social_credit_code": payload.get("social_credit_code"),
+            "business_tenant_key": payload.get(
+                "business_tenant_key",
+                tenant_slug.upper() if tenant_slug else "UNKNOWN",
+            ),
+            "status": payload.get("status"),
+            "employee_count": payload.get("employee_count", 0),
+            "card_count": payload.get("card_count", 0),
+            "published_card_count": payload.get("published_card_count", 0),
+            "visits_30d": payload.get("visits_30d", 0),
+            "unique_visitors_30d": payload.get("unique_visitors_30d", 0),
+            "conversations_30d": payload.get("conversations_30d", 0),
+            "consented_leads_30d": payload.get(
+                "consented_leads_30d",
+                payload.get("leads_30d", 0),
+            ),
+            "actionable_task_count": payload.get("actionable_task_count", 0),
+            "failed_task_count": payload.get("failed_task_count", 0),
+            "profile_completion": payload.get("profile_completion", 0),
+            "service_valid_until": payload.get("service_valid_until"),
+            "service_risk_level": payload.get("service_risk_level", "missing"),
+            "last_activity_at": _optional_timestamp(payload.get("last_activity_at")),
+            "created_at": created_at,
+            "updated_at": payload.get("updated_at", created_at),
+        }
+    )
+
+
+def _enterprise_detail_from_payload(payload: dict[str, object]) -> PlatformEnterpriseDetail:
+    company_name = str(payload.get("company_name") or payload.get("legal_name") or "")
+    cards = payload.get("cards")
+    return PlatformEnterpriseDetail.model_validate(
+        {
+            "tenant_id": payload.get("tenant_id"),
+            "tenant_slug": payload.get("tenant_slug"),
+            "tenant_name": payload.get("tenant_name"),
+            "company_id": payload.get("company_id"),
+            "company_name": company_name,
+            "legal_name": payload.get("legal_name", company_name),
+            "short_name": payload.get("short_name"),
+            "subject_type": payload.get("subject_type", "domestic_enterprise"),
+            "social_credit_code": payload.get("social_credit_code"),
+            "business_tenant_key": payload.get(
+                "business_tenant_key",
+                str(payload.get("tenant_slug") or "").upper() or "UNKNOWN",
+            ),
+            "status": payload.get("status"),
+            "version": payload.get("version"),
+            "onboarding_status": payload.get("onboarding_status", "content_pending"),
+            "profile_completion": payload.get("profile_completion", 0),
+            "employee_count": payload.get("employee_count", 0),
+            "card_count": payload.get("card_count", 0),
+            "published_card_count": payload.get("published_card_count", 0),
+            "visits_30d": payload.get("visits_30d", 0),
+            "unique_visitors_30d": payload.get("unique_visitors_30d", 0),
+            "conversations_30d": payload.get("conversations_30d", 0),
+            "consented_leads_30d": payload.get(
+                "consented_leads_30d",
+                payload.get("leads_30d", 0),
+            ),
+            "actionable_task_count": payload.get("actionable_task_count", 0),
+            "failed_task_count": payload.get("failed_task_count", 0),
+            "service_valid_until": payload.get("service_valid_until"),
+            "service_risk_level": payload.get("service_risk_level", "missing"),
+            "last_activity_at": _optional_timestamp(payload.get("last_activity_at")),
+            "cards": cards if isinstance(cards, list) else [],
+            "business_profile": payload.get("business_profile", []),
+            "recent_tasks": payload.get("recent_tasks", []),
+            "created_at": payload.get("created_at"),
+            "updated_at": payload.get("updated_at"),
+        }
+    )
+
+
+def _company_aggregate_from_payload(payload: dict[str, object]) -> PlatformCompanyAggregate:
+    company_name = str(payload.get("company_name") or payload.get("legal_name") or "")
+    return PlatformCompanyAggregate.model_validate(
+        {
+            "company_id": payload.get("company_id"),
+            "company_name": company_name,
+            "legal_name": payload.get("legal_name", company_name),
+            "short_name": payload.get("short_name"),
+            "business_tenant_key": payload.get(
+                "business_tenant_key",
+                company_name.upper().replace(" ", "-")[:32] or "UNKNOWN",
+            ),
+            "status": payload.get("status", "active"),
+            "employee_count": payload.get("employee_count", 0),
+            "card_count": payload.get("card_count", 0),
+            "published_card_count": payload.get("published_card_count", 0),
+            "visits_30d": payload.get("visits_30d", 0),
+            "unique_visitors_30d": payload.get("unique_visitors_30d", 0),
+            "conversations_30d": payload.get("conversations_30d", 0),
+            "consented_leads_30d": payload.get(
+                "consented_leads_30d",
+                payload.get("leads_30d", 0),
+            ),
+            "actionable_task_count": payload.get("actionable_task_count", 0),
+            "failed_task_count": payload.get("failed_task_count", 0),
+            "service_valid_until": payload.get("service_valid_until"),
+            "service_risk_level": payload.get("service_risk_level", "missing"),
+            "last_activity_at": _optional_timestamp(
+                payload.get("last_activity_at", payload.get("last_visit_at"))
+            ),
+        }
+    )
+
+
+def _platform_task_from_payload(payload: dict[str, object]) -> PlatformTaskRecord:
+    task_type = str(payload.get("task_type") or "enterprise_risk")
+    if task_type == "outbox":
+        task_type = "enterprise_risk"
+    if task_type not in {
+        "onboarding",
+        "knowledge_import",
+        "content_review",
+        "enterprise_risk",
+        "service_validity",
+    }:
+        task_type = "enterprise_risk"
+    status = _normalize_task_status(str(payload.get("status") or "pending"))
+    return PlatformTaskRecord.model_validate(
+        {
+            "id": payload.get("id"),
+            "task_type": task_type,
+            "business_label": payload.get("business_label", "运营事项"),
+            "status": status,
+            "company_id": payload.get("company_id"),
+            "company_name": payload.get("company_name"),
+            "tenant_slug": payload.get("tenant_slug"),
+            "error_code": payload.get("error_code"),
+            "created_at": payload.get("created_at"),
+            "updated_at": payload.get("updated_at", payload.get("created_at")),
+        }
+    )
+
+
+def _normalize_task_status(value: str) -> str:
+    mapping = {
+        "queued": "pending",
+        "processing": "in_progress",
+        "retry_scheduled": "blocked",
+        "dead_letter": "failed",
+        "failed": "failed",
+        "completed": "completed",
+        "completed_with_errors": "failed",
+        "cancelled": "cancelled",
+        "expired": "expired",
+        "draft": "pending",
+        "review": "pending",
+        "manual_required": "blocked",
+        "ready_to_confirm": "pending",
+        "confirmed": "completed",
+    }
+    return mapping.get(value, value if value in mapping.values() else "pending")
 
 
 __all__ = ["PlatformActor", "PlatformStore"]

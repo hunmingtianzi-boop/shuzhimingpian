@@ -45,6 +45,7 @@ async def test_platform_admin_can_onboard_a_login_ready_enterprise_through_rls()
     ]
     actor_slug = f"platform-integration-{uuid.uuid4().hex[:10]}"
     enterprise_slug = f"enterprise-integration-{uuid.uuid4().hex[:10]}"
+    enterprise_credit_code = f"91330100MA{uuid.uuid4().hex[:8].upper()}"
     try:
         async with owner.begin() as connection:
             await connection.execute(
@@ -56,11 +57,16 @@ async def test_platform_admin_can_onboard_a_login_ready_enterprise_through_rls()
             )
             await connection.execute(
                 text(
-                    "INSERT INTO companies(id,tenant_id,name,normalized_name,status,settings) "
-                    "VALUES (:id,:tenant_id,'Platform Integration',"
-                    "'platform integration','active','{}')"
+                    "INSERT INTO companies("
+                    "id,tenant_id,name,normalized_name,business_tenant_key,status,settings"
+                    ") VALUES (:id,:tenant_id,'Platform Integration',"
+                    "'platform integration',:business_tenant_key,'active','{}')"
                 ),
-                {"id": actor_company_id, "tenant_id": actor_tenant_id},
+                {
+                    "id": actor_company_id,
+                    "tenant_id": actor_tenant_id,
+                    "business_tenant_key": f"org-{actor_company_id.hex[:24]}",
+                },
             )
             await connection.execute(
                 text(
@@ -107,14 +113,14 @@ async def test_platform_admin_can_onboard_a_login_ready_enterprise_through_rls()
             role="platform_admin",
         )
         body = CreateEnterpriseRequest(
-            tenant_slug=enterprise_slug,
-            tenant_name="Integration Enterprise",
-            company_name="Integration Enterprise Co",
+            legal_name="Integration Enterprise Co",
+            short_name="Integration Enterprise",
+            subject_type="domestic_enterprise",
+            social_credit_code=enterprise_credit_code,
             industry="AI",
             admin_account=f"{enterprise_slug}@example.test",
             admin_display_name="Integration Admin",
             admin_password=SecretStr("Integration-Password-2026!"),
-            initial_card_title="Integration Card",
         )
         created = await store.create_enterprise(
             actor=actor,
@@ -125,10 +131,15 @@ async def test_platform_admin_can_onboard_a_login_ready_enterprise_through_rls()
             actor=actor,
             search=None,
             status=None,
+            activity_level=None,
+            has_actionable_tasks=None,
+            service_risk=None,
+            sort_by="created_at",
+            sort_order="desc",
             limit=100,
             offset=0,
         )
-        assert enterprise_slug in {row.tenant_slug for row in rows}
+        assert created.company_id in {row.company_id for row in rows}
         with pytest.raises(ApiError) as duplicate:
             await store.create_enterprise(
                 actor=actor,
@@ -153,7 +164,7 @@ async def test_platform_admin_can_onboard_a_login_ready_enterprise_through_rls()
                     {"company_id": created.company_id},
                 )
             ).one()
-        assert tuple(counts) == (1, 1, 1, 1, 1)
+        assert tuple(counts) == (0, 1, 1, 1, 1)
     finally:
         await runtime.dispose()
         await owner.dispose()
@@ -188,11 +199,16 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             )
             await connection.execute(
                 text(
-                    "INSERT INTO companies(id,tenant_id,name,normalized_name,status,settings) "
-                    "VALUES (:id,:tenant_id,'Platform Onboarding',"
-                    "'platform onboarding','active','{}')"
+                    "INSERT INTO companies("
+                    "id,tenant_id,name,normalized_name,business_tenant_key,status,settings"
+                    ") VALUES (:id,:tenant_id,'Platform Onboarding',"
+                    "'platform onboarding',:business_tenant_key,'active','{}')"
                 ),
-                {"id": actor_company_id, "tenant_id": actor_tenant_id},
+                {
+                    "id": actor_company_id,
+                    "tenant_id": actor_tenant_id,
+                    "business_tenant_key": f"org-{actor_company_id.hex[:24]}",
+                },
             )
             await connection.execute(
                 text(
@@ -287,6 +303,9 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
         created = await service.start(
             actor=actor,
             body=StartPlatformOnboardingRequest(
+                legal_name=enterprise_slug,
+                short_name=enterprise_slug,
+                subject_type="association",
                 tenant_slug=enterprise_slug,
                 tenant_name=None,
                 admin_account=f"{enterprise_slug}@example.test",
@@ -297,8 +316,8 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
         assert created.tenant_name is None
         assert created.admin_account == f"{enterprise_slug}@example.test"
         assert created.admin_display_name == "Document Onboarding Admin"
-        assert created.initial_card_display_name == enterprise_slug
-        assert created.initial_card_title == enterprise_slug
+        assert created.initial_card_display_name is None
+        assert created.initial_card_title is None
         assert "admin_password" not in created.model_dump(mode="json")
 
         other_rows, other_total = await service.list_sessions(
@@ -323,6 +342,9 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
                 onboarding_id=created.id,
                 body=ConfirmPlatformOnboardingRequest(
                     expected_version=created.version,
+                    legal_name="Must Stay Hidden",
+                    short_name="Must Stay Hidden",
+                    subject_type="association",
                     tenant_name="Must Stay Hidden",
                     company_name="Must Stay Hidden",
                     initial_card_display_name="Must Stay Hidden",
@@ -443,9 +465,14 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
         assert closed_imports.value.code == "ONBOARDING_SESSION_CLOSED"
 
         confirm_slug = f"confirm-{uuid.uuid4().hex[:12]}"
+        confirm_legal_name = f"{confirm_slug} Co"
+        confirm_short_name = f"{confirm_slug} Brand"
         confirm_started = await service.start(
             actor=actor,
             body=StartPlatformOnboardingRequest(
+                legal_name=confirm_legal_name,
+                short_name=confirm_short_name,
+                subject_type="association",
                 tenant_slug=confirm_slug,
                 tenant_name="Confirmed Enterprise",
                 admin_account=f"{confirm_slug}@example.test",
@@ -558,8 +585,11 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             )
         failed_confirm_body = ConfirmPlatformOnboardingRequest(
             expected_version=confirm_attached.version,
+            legal_name=confirm_legal_name,
+            short_name=confirm_short_name,
+            subject_type="association",
             tenant_name="Confirmed Enterprise",
-            company_name="Confirmed Enterprise Co",
+            company_name=confirm_legal_name,
             initial_card_display_name="Confirmed Enterprise",
             initial_card_title="Confirmed Enterprise Official Card",
             candidate_selections=[
@@ -611,8 +641,11 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
         assert product_count_after_failure == 1
         confirm_body = ConfirmPlatformOnboardingRequest(
             expected_version=confirm_attached.version,
+            legal_name=confirm_legal_name,
+            short_name=confirm_short_name,
+            subject_type="association",
             tenant_name="Confirmed Enterprise",
-            company_name="Confirmed Enterprise Co",
+            company_name=confirm_legal_name,
             initial_card_display_name="Confirmed Enterprise",
             initial_card_title="Confirmed Enterprise Official Card",
             candidate_selections=[
@@ -713,7 +746,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             "FROM platform_onboarding_sessions AS onboarding "
             "JOIN tenants AS tenant ON tenant.id=onboarding.tenant_id "
             "JOIN companies AS company ON company.id=onboarding.company_id "
-            "JOIN cards AS card ON card.id=onboarding.initial_card_id "
+            "LEFT JOIN cards AS card ON card.id=onboarding.initial_card_id "
             "JOIN memberships AS member ON member.id=onboarding.admin_membership_id "
             "JOIN users AS usr ON usr.id=onboarding.admin_user_id "
             "JOIN staff_credentials AS credential "
@@ -781,7 +814,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             provisional_row.company_name,
             provisional_row.display_name,
             provisional_row.card_title,
-        ) == (enterprise_slug,) * 4
+        ) == (enterprise_slug, enterprise_slug, None, None)
         assert (
             provisional_row.tenant_status,
             provisional_row.company_status,
@@ -789,7 +822,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             provisional_row.user_status,
             provisional_row.card_status,
             provisional_row.is_enabled,
-        ) == ("suspended", "suspended", "suspended", "suspended", "draft", False)
+        ) == ("suspended", "suspended", "suspended", "suspended", None, False)
         assert (
             confirmed_row.tenant_name,
             confirmed_row.company_name,
@@ -797,9 +830,9 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_row.card_title,
         ) == (
             "Confirmed Enterprise",
-            "Confirmed Enterprise Co",
-            "Confirmed Enterprise",
-            "Confirmed Enterprise Official Card",
+            confirm_legal_name,
+            None,
+            None,
         )
         assert (
             confirmed_row.tenant_status,
@@ -808,7 +841,7 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
             confirmed_row.user_status,
             confirmed_row.card_status,
             confirmed_row.is_enabled,
-        ) == ("active", "active", "active", "active", "draft", True)
+        ) == ("active", "active", "active", "active", None, True)
         assert (
             confirmed_ai.prompt_name,
             confirmed_ai.prompt_status,
@@ -831,6 +864,9 @@ async def test_document_onboarding_uses_slug_for_provisional_rows_when_name_is_m
         expiry_started = await service.start(
             actor=actor,
             body=StartPlatformOnboardingRequest(
+                legal_name="Expiry Projection Enterprise",
+                short_name="Expiry Projection Enterprise",
+                subject_type="association",
                 tenant_slug=expiry_slug,
                 tenant_name="Expiry Projection Enterprise",
                 admin_account=f"{expiry_slug}@example.test",

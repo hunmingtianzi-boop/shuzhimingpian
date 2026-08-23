@@ -63,17 +63,42 @@ export type PlatformOnboardingAdminSummary = {
   displayName: string;
 };
 
-type ReviewValues = Omit<
-  ConfirmPlatformOnboardingInput,
-  "expectedVersion" | "candidateSelections"
->;
+type ReviewValues = {
+  legalName: string;
+  shortName: string;
+  subjectType: "domestic_enterprise" | "association" | "overseas" | "pending_registration";
+  socialCreditCode: string;
+  industry: string;
+  summary: string;
+  website: string;
+};
+
+type ReviewSeed = Partial<ReviewValues> & {
+  tenantName?: string;
+  companyName?: string;
+  initialCardDisplayName?: string;
+  initialCardTitle?: string;
+  assistantName?: string;
+  welcomeMessage?: string;
+};
+
+type StartIdentityValues = {
+  displayName: string;
+  legalName: string;
+  shortName: string;
+  subjectType: ReviewValues["subjectType"];
+  socialCreditCode: string;
+  industry: string;
+  adminAccount: string;
+  adminDisplayName: string;
+};
 
 export type PlatformOnboardingPageProps = {
   session?: PlatformOnboardingSession | null;
   sessions?: PlatformOnboardingSession[];
   importItems?: PlatformOnboardingImportItem[];
   adminSummary?: PlatformOnboardingAdminSummary;
-  initialReview?: Partial<ReviewValues>;
+  initialReview?: ReviewSeed;
   llmAvailability: "ready" | "unavailable" | "failed";
   resourceStatus?: "ready" | "loading" | "permission" | "error";
   resourceError?: PlatformOnboardingOperationError;
@@ -121,67 +146,61 @@ type BusyOperation =
   | "cancel"
   | "regenerate";
 
-const emptyStart: StartPlatformOnboardingInput = {
+const emptyStart: StartIdentityValues = {
   displayName: "",
-  tenantSlug: "",
-  tenantName: "",
+  legalName: "",
+  shortName: "",
+  subjectType: "domestic_enterprise",
+  socialCreditCode: "",
+  industry: "",
   adminAccount: "",
   adminDisplayName: "",
 };
 
 const emptyReview: ReviewValues = {
-  tenantName: "",
-  companyName: "",
+  legalName: "",
+  shortName: "",
+  subjectType: "domestic_enterprise",
+  socialCreditCode: "",
   industry: "",
   summary: "",
   website: "",
-  initialCardDisplayName: "",
-  initialCardTitle: "",
-  assistantName: "",
-  welcomeMessage: "",
 };
 
-const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+const socialCreditCodePattern = /^[0-9A-Z]{18}$/;
 
 const reviewFieldMeta: Array<{
   key: keyof ReviewValues;
   label: string;
   area?: boolean;
   required?: boolean;
-  group: "enterprise" | "card";
+  group: "identity" | "presentation";
 }> = [
-  { key: "tenantName", label: "租户名称", required: true, group: "enterprise" },
-  { key: "companyName", label: "企业名称", required: true, group: "enterprise" },
-  { key: "industry", label: "行业", group: "enterprise" },
-  { key: "website", label: "企业网站", group: "enterprise" },
-  { key: "summary", label: "企业简介", area: true, group: "enterprise" },
-  {
-    key: "initialCardDisplayName",
-    label: "初始名片姓名",
-    required: true,
-    group: "card",
-  },
-  { key: "initialCardTitle", label: "初始名片职位", group: "card" },
-  { key: "assistantName", label: "AI 助手名称", group: "card" },
-  { key: "welcomeMessage", label: "欢迎语", area: true, group: "card" },
+  { key: "legalName", label: "企业正式名称", required: true, group: "identity" },
+  { key: "shortName", label: "企业简称", group: "identity" },
+  { key: "subjectType", label: "主体类型", required: true, group: "identity" },
+  { key: "socialCreditCode", label: "统一社会信用代码", group: "identity" },
+  { key: "industry", label: "行业", group: "identity" },
+  { key: "website", label: "企业网站", group: "presentation" },
+  { key: "summary", label: "企业简介", area: true, group: "presentation" },
 ];
 
 const suggestionFieldMap: Record<string, keyof ReviewValues> = {
-  tenant_name: "tenantName",
-  tenantName: "tenantName",
-  company_name: "companyName",
-  companyName: "companyName",
+  legal_name: "legalName",
+  legalName: "legalName",
+  company_name: "legalName",
+  companyName: "legalName",
+  short_name: "shortName",
+  shortName: "shortName",
+  tenant_name: "shortName",
+  tenantName: "shortName",
+  subject_type: "subjectType",
+  subjectType: "subjectType",
+  social_credit_code: "socialCreditCode",
+  socialCreditCode: "socialCreditCode",
   industry: "industry",
   website: "website",
   summary: "summary",
-  initial_card_display_name: "initialCardDisplayName",
-  initialCardDisplayName: "initialCardDisplayName",
-  initial_card_title: "initialCardTitle",
-  initialCardTitle: "initialCardTitle",
-  assistant_name: "assistantName",
-  assistantName: "assistantName",
-  welcome_message: "welcomeMessage",
-  welcomeMessage: "welcomeMessage",
 };
 
 const businessProfileLabels: Record<string, string> = {
@@ -301,6 +320,60 @@ function formatDateTime(value?: string): string {
       }).format(date);
 }
 
+function normalizeSocialCreditCode(value: string): string {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function reviewSeedFromSession(
+  session: PlatformOnboardingSession,
+  initialReview?: ReviewSeed,
+): ReviewValues {
+  const socialCreditCode = normalizeSocialCreditCode(initialReview?.socialCreditCode ?? "");
+  const legalName = initialReview?.legalName
+    ?? initialReview?.companyName
+    ?? session.legalName
+    ?? session.tenantName
+    ?? "";
+  const shortName = initialReview?.shortName
+    ?? session.shortName
+    ?? initialReview?.tenantName
+    ?? "";
+  return {
+    ...emptyReview,
+    ...initialReview,
+    legalName,
+    shortName,
+    socialCreditCode,
+    subjectType:
+      initialReview?.subjectType
+      ?? session.subjectType
+      ?? (socialCreditCode ? "domestic_enterprise" : "pending_registration"),
+    industry: initialReview?.industry ?? session.industry ?? "",
+  };
+}
+
+function confirmationPayload(
+  review: ReviewValues,
+  sessionVersion: number,
+  candidateSelections: Array<{ id: string; expectedVersion: number; applyFields: string[] }>,
+): ConfirmPlatformOnboardingInput {
+  const legalName = review.legalName.trim();
+  const shortName = review.shortName.trim();
+  const subjectType = review.subjectType;
+  const socialCreditCode = normalizeSocialCreditCode(review.socialCreditCode);
+  return {
+    expectedVersion: sessionVersion,
+    candidateSelections,
+    legalName,
+    shortName: shortName || undefined,
+    subjectType,
+    socialCreditCode: socialCreditCode || undefined,
+    industry: review.industry.trim() || undefined,
+    summary: review.summary.trim() || undefined,
+    website: review.website.trim() || undefined,
+  };
+}
+
 const stepLabels = ["基础信息", "上传解析", "智能分析", "人工确认", "完成"];
 
 function sessionStep(session?: PlatformOnboardingSession | null): number {
@@ -388,20 +461,25 @@ function OperationError({
 function StartPanel({
   busy,
   onStart,
+  onPrepared,
 }: {
   busy: boolean;
   onStart: (input: StartPlatformOnboardingInput) => Promise<void>;
+  onPrepared?: (draft: StartIdentityValues) => void;
 }) {
   const [input, setInput] = useState(emptyStart);
   const [attempted, setAttempted] = useState(false);
+  const normalizedCreditCode = normalizeSocialCreditCode(input.socialCreditCode);
   const valid =
-    slugPattern.test(input.tenantSlug) &&
+    Boolean(input.legalName.trim()) &&
     Boolean(input.adminAccount.trim()) &&
-    Boolean(input.adminDisplayName.trim());
+    Boolean(input.adminDisplayName.trim()) &&
+    (!input.shortName || input.shortName.trim().length >= 2) &&
+    (input.subjectType !== "domestic_enterprise" || socialCreditCodePattern.test(normalizedCreditCode));
 
-  const update = <K extends keyof StartPlatformOnboardingInput>(
+  const update = <K extends keyof StartIdentityValues>(
     key: K,
-    value: StartPlatformOnboardingInput[K],
+    value: StartIdentityValues[K],
   ) => setInput((current) => ({ ...current, [key]: value }));
 
   return (
@@ -410,7 +488,7 @@ function StartPanel({
         <span>步骤 1 / 5</span>
         <h2 id="onboarding-start-title">填写开通基础信息</h2>
         <p>
-          先填写无法从资料中安全判断的账号信息。企业确认前，管理员不能登录，名片也不会公开。
+          先锁定企业身份和管理员交付信息。企业确认前，管理员不能登录，也不会创建任何名片。
         </p>
       </div>
       <form
@@ -419,7 +497,19 @@ function StartPanel({
         onSubmit={(event) => {
           event.preventDefault();
           setAttempted(true);
-          if (valid && !busy) void onStart(input);
+          if (valid && !busy) {
+            onPrepared?.(input);
+            void onStart({
+              displayName: input.displayName.trim() || input.shortName.trim() || input.legalName.trim(),
+              legalName: input.legalName.trim(),
+              shortName: input.shortName.trim() || undefined,
+              subjectType: input.subjectType,
+              socialCreditCode: normalizedCreditCode || undefined,
+              industry: input.industry.trim() || undefined,
+              adminAccount: input.adminAccount.trim(),
+              adminDisplayName: input.adminDisplayName.trim(),
+            });
+          }
         }}
       >
         <Field label="任务名称（可选）" hint="留空时系统会按企业名称、日期和序号生成。">
@@ -429,23 +519,65 @@ function StartPanel({
           />
         </Field>
         <Field
-          label="租户标识"
+          label="企业正式名称"
           required
-          validationState={attempted && !slugPattern.test(input.tenantSlug) ? "error" : "none"}
+          validationState={attempted && !input.legalName.trim() ? "error" : "none"}
+          validationMessage={attempted && !input.legalName.trim() ? "请输入企业正式名称。" : undefined}
+        >
+          <Input
+            value={input.legalName}
+            onChange={(_, data) => update("legalName", data.value)}
+          />
+        </Field>
+        <Field label="企业简称" hint="用于运营展示；留空时沿用正式名称。">
+          <Input
+            value={input.shortName}
+            onChange={(_, data) => update("shortName", data.value)}
+          />
+        </Field>
+        <Field label="主体类型" required>
+          <select
+            aria-label="主体类型"
+            className={styles.nativeSelect}
+            value={input.subjectType}
+            onChange={(event) =>
+              update(
+                "subjectType",
+                event.target.value as StartIdentityValues["subjectType"],
+              )
+            }
+          >
+            <option value="domestic_enterprise">国内企业</option>
+            <option value="association">协会 / 机构</option>
+            <option value="overseas">境外主体</option>
+            <option value="pending_registration">筹备中</option>
+          </select>
+        </Field>
+        <Field
+          label="统一社会信用代码"
+          validationState={
+            attempted && input.subjectType === "domestic_enterprise" && !socialCreditCodePattern.test(normalizedCreditCode)
+              ? "error"
+              : "none"
+          }
           validationMessage={
-            attempted && !slugPattern.test(input.tenantSlug)
-              ? "使用 3–64 位小写字母、数字和连字符。"
-              : undefined
+            attempted && input.subjectType === "domestic_enterprise" && !socialCreditCodePattern.test(normalizedCreditCode)
+              ? "国内企业必须填写 18 位统一社会信用代码。"
+              : input.subjectType === "domestic_enterprise"
+                ? "将作为唯一业务租户标识，底层隔离仍使用不可变 UUID。"
+                : "协会、境外主体和筹备企业可以留空，由服务端生成稳定标识。"
           }
         >
           <Input
-            value={input.tenantSlug}
-            autoComplete="off"
-            onChange={(_, data) => update("tenantSlug", data.value.toLowerCase())}
+            value={input.socialCreditCode}
+            onChange={(_, data) => update("socialCreditCode", normalizeSocialCreditCode(data.value))}
           />
         </Field>
-        <Field label="租户名称（可稍后从建议补充）">
-          <Input value={input.tenantName ?? ""} onChange={(_, data) => update("tenantName", data.value)} />
+        <Field label="行业">
+          <Input
+            value={input.industry}
+            onChange={(_, data) => update("industry", data.value)}
+          />
         </Field>
         <Field label="管理员账号" required>
           <Input
@@ -462,7 +594,7 @@ function StartPanel({
         </Field>
         <div className={styles.credentialNotice}>
           <strong>初始密码由系统在确认建企时生成</strong>
-          <span>只展示一次、7 天有效；企业管理员首次登录必须修改。</span>
+          <span>当前初始化只创建隔离企业与管理员交付信息，不创建任何名片或公开链接。</span>
         </div>
         <div className={styles.startActions}>
           <Button appearance="primary" type="submit" disabled={busy || (attempted && !valid)}>
@@ -627,7 +759,7 @@ export function PlatformOnboardingPage({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string>();
   const [review, setReview] = useState<ReviewValues>(emptyReview);
-  const [reviewed, setReviewed] = useState({ enterprise: false, admin: false, card: false });
+  const [reviewed, setReviewed] = useState({ identity: false, admin: false });
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [confirmedSession, setConfirmedSession] = useState<PlatformOnboardingSession>();
@@ -640,6 +772,7 @@ export function PlatformOnboardingPage({
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [confirmedDraftCount, setConfirmedDraftCount] = useState(0);
   const [activeWorkspaceStep, setActiveWorkspaceStep] = useState<"analysis" | "review">("analysis");
+  const [localIdentitySeed, setLocalIdentitySeed] = useState<ReviewSeed>();
   const cancelOpenerRef = useRef<HTMLButtonElement>(null);
   const previousSessionId = useRef<string | undefined>(undefined);
   const candidateSelectionSessionId = useRef<string | undefined>(undefined);
@@ -647,12 +780,13 @@ export function PlatformOnboardingPage({
   useEffect(() => {
     if (!session || previousSessionId.current === session.id) return;
     previousSessionId.current = session.id;
-    setReview({
-      ...emptyReview,
-      ...initialReview,
-      tenantName: initialReview?.tenantName ?? session.tenantName ?? "",
-    });
-    setReviewed({ enterprise: false, admin: false, card: false });
+    setReview(
+      reviewSeedFromSession(session, {
+        ...initialReview,
+        ...localIdentitySeed,
+      }),
+    );
+    setReviewed({ identity: false, admin: false });
     setSelectedFiles([]);
     setFileError(undefined);
     setOperationError(undefined);
@@ -669,7 +803,7 @@ export function PlatformOnboardingPage({
     setConfirmedDraftCount(
       session.contentReview?.candidates.filter((candidate) => candidate.status === "accepted").length ?? 0,
     );
-  }, [initialReview, session]);
+  }, [initialReview, localIdentitySeed, session]);
 
   useEffect(() => {
     if (session?.status === "confirmed" && session.confirmedEnterprise) {
@@ -712,7 +846,7 @@ export function PlatformOnboardingPage({
   const deliveryUrls = useMemo(
     () =>
       completedEnterprise
-        ? buildOnboardingDeliveryUrls(completedEnterprise.initialCardSlug)
+        ? buildOnboardingDeliveryUrls(completedEnterprise.initialCardSlug || completedEnterprise.tenantSlug)
         : undefined,
     [completedEnterprise],
   );
@@ -724,9 +858,10 @@ export function PlatformOnboardingPage({
   const reviewValid = useMemo(
     () =>
       Boolean(
-        review.tenantName.trim() &&
-          review.companyName.trim() &&
-          review.initialCardDisplayName.trim(),
+        review.legalName.trim() &&
+          review.subjectType &&
+          (review.subjectType !== "domestic_enterprise"
+            || socialCreditCodePattern.test(normalizeSocialCreditCode(review.socialCreditCode))),
       ),
     [review],
   );
@@ -739,9 +874,8 @@ export function PlatformOnboardingPage({
       : session?.status === "processing");
   const confirmationReady =
     reviewValid &&
-    reviewed.enterprise &&
+    reviewed.identity &&
     reviewed.admin &&
-    reviewed.card &&
     !importsProcessing;
   const insightCount = (session?.businessProfile?.length ?? 0) + (session?.suggestions.length ?? 0);
   const hasInsights = insightCount > 0;
@@ -782,12 +916,11 @@ export function PlatformOnboardingPage({
   };
 
   const updateReview = <K extends keyof ReviewValues>(key: K, value: ReviewValues[K]) => {
-    setReview((current) => ({ ...current, [key]: value }));
-    if (reviewFieldMeta.find((field) => field.key === key)?.group === "enterprise") {
-      setReviewed((current) => ({ ...current, enterprise: false }));
-    } else {
-      setReviewed((current) => ({ ...current, card: false }));
-    }
+    setReview((current) => ({
+      ...current,
+      [key]: key === "socialCreditCode" ? normalizeSocialCreditCode(String(value)) : value,
+    }));
+    setReviewed((current) => ({ ...current, identity: false }));
   };
 
   const chooseFiles = (files: File[]) => {
@@ -956,6 +1089,15 @@ export function PlatformOnboardingPage({
       {!session && (
         <StartPanel
           busy={busy === "start"}
+          onPrepared={(draft) =>
+            setLocalIdentitySeed({
+              legalName: draft.legalName,
+              shortName: draft.shortName,
+              subjectType: draft.subjectType,
+              socialCreditCode: normalizeSocialCreditCode(draft.socialCreditCode),
+              industry: draft.industry,
+            })
+          }
           onStart={(input) => run("start", () => onStart(input))}
         />
       )}
@@ -967,19 +1109,32 @@ export function PlatformOnboardingPage({
             <span>步骤 5 / 5</span>
             <h2 id="onboarding-result-title">企业已由服务端确认激活</h2>
             <p>
-              {completedEnterprise.companyName}（{completedEnterprise.tenantSlug}）已生成唯一企业、管理员身份和一张未发布初始名片。
+              {completedEnterprise.companyName} 已生成唯一企业与管理员身份；本轮按新方案交付为零名片起步，企业登录后再自行创建内容和名片。
             </p>
             <p className={styles.draftResultSummary}>
-              本次已接收 {confirmedDraftCount} 条资料草稿；可在企业后台的企业资料、核心业务、案例与知识 FAQ 中继续审核，系统没有自动发布。
+              本次已接收 {confirmedDraftCount} 条资料草稿；企业可在后台继续审核资料、核心业务、案例与 FAQ，系统没有自动发布任何对外内容。
             </p>
             <dl>
               <div><dt>企业 ID</dt><dd>{completedEnterprise.companyId}</dd></div>
-              <div><dt>初始名片 ID</dt><dd>{completedEnterprise.initialCardId}</dd></div>
-              <div><dt>名片状态</dt><dd><StatusBadge status="draft" /></dd></div>
+              <div><dt>企业状态</dt><dd><StatusBadge status={completedEnterprise.status} /></dd></div>
+              <div><dt>当前名片交付</dt><dd>0 张</dd></div>
               {adminSummary?.account && (
                 <div><dt>企业管理员账号</dt><dd>{adminSummary.account}</dd></div>
               )}
             </dl>
+            {(completedEnterprise.initialCardId || completedEnterprise.initialCardSlug) && (
+              <details className={styles.technicalDetails}>
+                <summary>查看 legacy 兼容回执</summary>
+                <dl>
+                  {completedEnterprise.initialCardId && (
+                    <div><dt>旧初始名片 ID</dt><dd>{completedEnterprise.initialCardId}</dd></div>
+                  )}
+                  {completedEnterprise.initialCardSlug && (
+                    <div><dt>旧初始名片标识</dt><dd>{completedEnterprise.initialCardSlug}</dd></div>
+                  )}
+                </dl>
+              </details>
+            )}
             {completedSession.credentialDelivery && (
               <section className={styles.credentialDelivery} aria-label="一次性企业管理员凭证">
                 <div>
@@ -1033,21 +1188,8 @@ export function PlatformOnboardingPage({
             <section className={styles.deliveryPanel} aria-labelledby="onboarding-delivery-title">
               <div>
                 <h3 id="onboarding-delivery-title">网址与交付入口</h3>
-                <p>请将企业后台交给管理员。初始名片保持草稿，审核发布后，下方固定网址即可对外访问。</p>
+                <p>请将企业后台和一次性凭据交给管理员。当前不会提供公开名片网址，因为企业还没有创建名片。</p>
               </div>
-              <Field label="企业名片固定网址" hint="当前为草稿；发布后该网址立即生效。">
-                <div className={styles.deliveryUrlField}>
-                  <Input value={deliveryUrls.cardUrl} readOnly />
-                  <Button
-                    icon={<Copy24Regular />}
-                    aria-label="复制企业名片网址"
-                    onClick={() => void copyUrl(deliveryUrls.cardUrl, "企业名片网址")}
-                  />
-                </div>
-              </Field>
-              <span className={styles.deliveryPendingLink} aria-label="企业名片尚未发布">
-                草稿暂不可访问，企业管理员发布后生效
-              </span>
               <Field label="企业管理后台">
                 <div className={styles.deliveryUrlField}>
                   <Input value={deliveryUrls.adminUrl} readOnly />
@@ -1066,6 +1208,9 @@ export function PlatformOnboardingPage({
               >
                 打开企业管理后台
               </a>
+              <span className={styles.deliveryPendingLink} aria-label="企业尚无公开名片">
+                当前没有公开名片网址；企业管理员登录后创建并发布名片，才会生成对外访问链接。
+              </span>
               {copyNotice && (
                 <MessageBar intent="success"><MessageBarBody>{copyNotice}</MessageBarBody></MessageBar>
               )}
@@ -1463,15 +1608,18 @@ export function PlatformOnboardingPage({
                   event.preventDefault();
                   if (!confirmationReady) return;
                   void run("confirm", async () => {
-                    const confirmed = await onConfirm(session.id, {
-                      ...review,
-                      expectedVersion: session.version,
-                      candidateSelections: selectedCandidates.map((candidate) => ({
-                        id: candidate.id,
-                        expectedVersion: candidate.version,
-                        applyFields: candidateApplyFields(candidate),
-                      })),
-                    });
+                    const confirmed = await onConfirm(
+                      session.id,
+                      confirmationPayload(
+                        review,
+                        session.version,
+                        selectedCandidates.map((candidate) => ({
+                          id: candidate.id,
+                          expectedVersion: candidate.version,
+                          applyFields: candidateApplyFields(candidate),
+                        })),
+                      ),
+                    );
                     if (
                       confirmed?.status === "confirmed" &&
                       confirmed.confirmedEnterprise
@@ -1483,9 +1631,51 @@ export function PlatformOnboardingPage({
                 }}
               >
                 <fieldset>
-                  <legend>企业信息</legend>
+                  <legend>企业身份</legend>
                   <div className={styles.formGrid}>
-                    {reviewFieldMeta.filter((field) => field.group === "enterprise").map((field) => (
+                    {reviewFieldMeta.filter((field) => field.group === "identity").map((field) => (
+                      <Field key={field.key} label={field.label} required={field.required}>
+                        {field.key === "subjectType" ? (
+                          <select
+                            aria-label={field.label}
+                            className={styles.nativeSelect}
+                            value={review.subjectType}
+                            onChange={(event) =>
+                              updateReview(
+                                "subjectType",
+                                event.target.value as ReviewValues["subjectType"],
+                              )
+                            }
+                          >
+                            <option value="domestic_enterprise">国内企业</option>
+                            <option value="association">协会 / 机构</option>
+                            <option value="overseas">境外主体</option>
+                            <option value="pending_registration">筹备中</option>
+                          </select>
+                        ) : field.area ? (
+                          <Textarea
+                            aria-label={field.label}
+                            value={review[field.key]}
+                            resize="vertical"
+                            onChange={(_, data) => updateReview(field.key, data.value)}
+                          />
+                        ) : (
+                          <Input
+                            aria-label={field.label}
+                            value={review[field.key]}
+                            type="text"
+                            onChange={(_, data) => updateReview(field.key, data.value)}
+                          />
+                        )}
+                      </Field>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <fieldset>
+                  <legend>对外展示补充</legend>
+                  <div className={styles.formGrid}>
+                    {reviewFieldMeta.filter((field) => field.group === "presentation").map((field) => (
                       <Field key={field.key} label={field.label} required={field.required}>
                         {field.area ? (
                           <Textarea
@@ -1516,30 +1706,23 @@ export function PlatformOnboardingPage({
                   </dl>
                 </fieldset>
 
-                <fieldset>
-                  <legend>初始草稿名片</legend>
-                  <div className={styles.formGrid}>
-                    {reviewFieldMeta.filter((field) => field.group === "card").map((field) => (
-                      <Field key={field.key} label={field.label} required={field.required}>
-                        {field.area ? (
-                          <Textarea
-                            aria-label={field.label}
-                            value={review[field.key]}
-                            resize="vertical"
-                            onChange={(_, data) => updateReview(field.key, data.value)}
-                          />
-                        ) : (
-                          <Input
-                            aria-label={field.label}
-                            value={review[field.key]}
-                            onChange={(_, data) => updateReview(field.key, data.value)}
-                          />
-                        )}
-                      </Field>
-                    ))}
-                  </div>
-                  <p className={styles.draftNote}>初始名片只创建为草稿，不会自动发布或生成公开链接。</p>
-                </fieldset>
+                {(session.initialCardDisplayName || session.initialCardTitle) && (
+                  <fieldset>
+                    <legend>Legacy 兼容字段（只读）</legend>
+                    <div className={styles.legacyReviewNotice}>
+                      <strong>旧会话仍携带初始名片字段</strong>
+                      <span>本轮不再要求确认或编辑这些字段；它们只作为兼容读值保留，平台确认不会再把“初始名片”视为正式交付结果。</span>
+                    </div>
+                    <dl className={styles.adminSummary}>
+                      {session.initialCardDisplayName && (
+                        <div><dt>旧初始名片姓名</dt><dd>{session.initialCardDisplayName}</dd></div>
+                      )}
+                      {session.initialCardTitle && (
+                        <div><dt>旧初始名片职位</dt><dd>{session.initialCardTitle}</dd></div>
+                      )}
+                    </dl>
+                  </fieldset>
+                )}
 
                 {candidates.length > 0 && (
                   <section className={styles.candidateConfirmationSummary} aria-label="候选导入确认摘要">
@@ -1556,11 +1739,11 @@ export function PlatformOnboardingPage({
                 <fieldset className={styles.confirmationGate}>
                   <legend>显式确认门</legend>
                   <Checkbox
-                    checked={reviewed.enterprise}
+                    checked={reviewed.identity}
                     onChange={(_, data) =>
-                      setReviewed((current) => ({ ...current, enterprise: data.checked === true }))
+                      setReviewed((current) => ({ ...current, identity: data.checked === true }))
                     }
-                    label="我已逐项复核企业信息"
+                    label="我已逐项复核企业身份与对外展示信息"
                   />
                   <Checkbox
                     checked={reviewed.admin}
@@ -1568,13 +1751,6 @@ export function PlatformOnboardingPage({
                       setReviewed((current) => ({ ...current, admin: data.checked === true }))
                     }
                     label="我已核对管理员账号与交付对象"
-                  />
-                  <Checkbox
-                    checked={reviewed.card}
-                    onChange={(_, data) =>
-                      setReviewed((current) => ({ ...current, card: data.checked === true }))
-                    }
-                    label="我已核对初始名片，并确认保持草稿"
                   />
                 </fieldset>
 

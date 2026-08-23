@@ -47,6 +47,8 @@ class WorkerSettings(BaseSettings):
     visit_report_poll_seconds: float = Field(default=5.0, ge=5, le=600)
     visit_report_idle_seconds: int = Field(default=35, ge=10, le=86_400)
     visit_report_batch_size: int = Field(default=100, ge=1, le=500)
+    visit_daily_digest_poll_seconds: int = Field(default=3_600, ge=300, le=86_400)
+    visit_daily_digest_batch_size: int = Field(default=100, ge=1, le=500)
     platform_onboarding_retention_purge_seconds: int = Field(default=3_600, ge=60, le=86_400)
     scheduled_publish_poll_seconds: float = Field(default=5.0, ge=1, le=300)
     scheduled_publish_batch_size: int = Field(default=10, ge=1, le=100)

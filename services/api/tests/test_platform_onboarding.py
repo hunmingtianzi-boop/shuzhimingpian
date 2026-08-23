@@ -100,10 +100,11 @@ class RouteService:
             status="draft",
             tenant_slug="acme-demo",
             tenant_name="Acme",
+            legal_name="Acme 法定名称",
+            short_name="Acme",
+            subject_type="association",
             admin_account="admin@acme.test",
             admin_display_name="Acme Admin",
-            initial_card_display_name="Acme",
-            initial_card_title="Acme Official Card",
             version=1,
             import_batch_ids=[batch_id],
             content_review=content_review,
@@ -306,8 +307,8 @@ def test_open_session_review_projection_never_includes_a_password(
     payload = response.json()["data"]
     assert payload["admin_account"] == "admin@acme.test"
     assert payload["admin_display_name"] == "Acme Admin"
-    assert payload["initial_card_display_name"] == "Acme"
-    assert payload["initial_card_title"] == "Acme Official Card"
+    assert payload["legal_name"] == "Acme 法定名称"
+    assert payload["short_name"] == "Acme"
     assert payload["content_review"]["counts"] == {
         "accepted": 1,
         "pending_review": 1,
@@ -331,8 +332,9 @@ def test_start_rename_confirm_selection_and_credential_regeneration_contract(
         "/api/v1/platform/onboarding",
         json={
             "display_name": "Acme 首批资料交接",
-            "tenant_slug": "acme-demo",
-            "tenant_name": "Acme",
+            "legal_name": "Acme 法定名称",
+            "short_name": "Acme",
+            "subject_type": "association",
             "admin_account": "admin@acme.test",
             "admin_display_name": "Acme Admin",
         },
@@ -353,9 +355,9 @@ def test_start_rename_confirm_selection_and_credential_regeneration_contract(
         f"/api/v1/platform/onboarding/{service.record.id}/confirm",
         json={
             "expected_version": 1,
-            "tenant_name": "Acme",
-            "company_name": "Acme",
-            "initial_card_display_name": "Acme",
+            "legal_name": "Acme 法定名称",
+            "short_name": "Acme",
+            "subject_type": "association",
             "candidate_selections": [
                 {
                     "id": str(candidate_id),

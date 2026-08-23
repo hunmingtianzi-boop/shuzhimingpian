@@ -20,42 +20,88 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular,
+  ArrowClockwise24Regular,
   Book24Regular,
   Dismiss24Regular,
   Search24Regular,
 } from "@fluentui/react-icons";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 
 import { ApiError } from "../api/client";
 import { platformApi } from "../api/platformApi";
-import type { CreatePlatformEnterpriseInput } from "../api/types";
+import type {
+  PlatformCompanyAggregate,
+  PlatformTaskProjection,
+} from "../api/types";
 import { FormFeedback } from "../components/FormFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import { StatusBadge } from "../components/StatusBadge";
 import { useResource } from "../hooks/useResource";
-import { APP_PATHS, navigate } from "../routing";
+import {
+  APP_PATHS,
+  navigate,
+  platformEnterprisePath,
+} from "../routing";
 import { formatTimestamp } from "../utils/format";
-import { PlatformEnterpriseDrawer } from "./PlatformEnterpriseDrawer";
 import styles from "./PlatformEnterpriseDrawer.module.css";
 
-const emptyInput: CreatePlatformEnterpriseInput = {
-  tenantSlug: "",
-  tenantName: "",
-  companyName: "",
+type DirectEnterpriseFormValues = {
+  legalName: string;
+  shortName: string;
+  subjectType: "domestic_enterprise" | "association" | "overseas" | "pending_registration";
+  socialCreditCode: string;
+  industry: string;
+  adminAccount: string;
+  adminDisplayName: string;
+  defaultPlan: "starter" | "professional" | "enterprise";
+};
+
+type CredentialNotice = {
+  companyName: string;
+  account: string;
+  temporaryPassword: string;
+  expiresAt: string;
+  subjectType: DirectEnterpriseFormValues["subjectType"];
+  socialCreditCode?: string;
+  defaultPlan: DirectEnterpriseFormValues["defaultPlan"];
+};
+
+const emptyInput: DirectEnterpriseFormValues = {
+  legalName: "",
+  shortName: "",
+  subjectType: "domestic_enterprise",
+  socialCreditCode: "",
   industry: "",
   adminAccount: "",
   adminDisplayName: "",
-  adminPassword: "",
-  initialCardTitle: "",
+  defaultPlan: "starter",
 };
 
-const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+const socialCreditCodePattern = /^[0-9A-Z]{18}$/;
+
+function normalizeSocialCreditCode(value: string): string {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
 
 function toApiError(value: unknown): ApiError {
   return value instanceof ApiError
     ? value
     : new ApiError("创建企业时发生未知错误。", { code: "UNKNOWN_ERROR" });
+}
+
+function taskAttentionCount(tasks: PlatformTaskProjection[] | undefined, companyId: string): number {
+  return (
+    tasks?.filter(
+      (task) =>
+        task.companyId === companyId &&
+        ["pending", "queued", "processing", "running", "review", "manual_required", "failed", "error", "blocked", "expired"].includes(task.status),
+    ).length ?? 0
+  );
+}
+
+function lastActivityLabel(aggregate: PlatformCompanyAggregate | undefined): string {
+  return aggregate?.lastVisitAt ? formatTimestamp(aggregate.lastVisitAt) : "暂无访问";
 }
 
 export function PlatformEnterprisesPage() {
@@ -64,9 +110,7 @@ export function PlatformEnterprisesPage() {
   const [statusFilter, setStatusFilter] = useState<
     "" | "active" | "suspended" | "disabled"
   >("");
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>();
-  const detailTriggerRef = useRef<HTMLButtonElement>(null);
-  const resource = useResource(
+  const enterpriseResource = useResource(
     () =>
       platformApi.listEnterprises({
         search: search || undefined,
@@ -75,24 +119,44 @@ export function PlatformEnterprisesPage() {
       }),
     `${search}:${statusFilter}`,
   );
+  const aggregateResource = useResource(
+    () => platformApi.listCompanyAggregates(),
+    `${search}:${statusFilter}`,
+  );
+  const taskResource = useResource(
+    () => platformApi.listTasks(),
+    `${search}:${statusFilter}`,
+  );
+  const overviewResource = useResource(
+    () => platformApi.getOverview(),
+    `${search}:${statusFilter}`,
+  );
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState(emptyInput);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
+  const [credentialNotice, setCredentialNotice] = useState<CredentialNotice>();
+  const normalizedCreditCode = normalizeSocialCreditCode(input.socialCreditCode);
   const valid =
-    slugPattern.test(input.tenantSlug) &&
-    Boolean(input.tenantName.trim()) &&
-    Boolean(input.companyName.trim()) &&
+    Boolean(input.legalName.trim()) &&
     Boolean(input.adminAccount.trim()) &&
     Boolean(input.adminDisplayName.trim()) &&
-    input.adminPassword.length >= 12;
+    (input.subjectType !== "domestic_enterprise" || socialCreditCodePattern.test(normalizedCreditCode));
 
-  const update = <K extends keyof CreatePlatformEnterpriseInput>(
+  const update = <K extends keyof DirectEnterpriseFormValues>(
     field: K,
-    value: CreatePlatformEnterpriseInput[K],
+    value: DirectEnterpriseFormValues[K],
   ) => setInput((current) => ({ ...current, [field]: value }));
+
+  const aggregateMap = useMemo(
+    () =>
+      new Map(
+        (aggregateResource.data ?? []).map((item) => [item.companyId, item] as const),
+      ),
+    [aggregateResource.data],
+  );
 
   const showCreate = () => {
     setInput(emptyInput);
@@ -101,15 +165,17 @@ export function PlatformEnterprisesPage() {
     setOpen(true);
   };
 
-  const applyFilters = () => {
-    const next = searchDraft.trim();
-    if (next === search) resource.reload();
-    setSearch(next);
+  const reloadAll = () => {
+    enterpriseResource.reload();
+    aggregateResource.reload();
+    taskResource.reload();
+    overviewResource.reload();
   };
 
-  const showDetail = (companyId: string, trigger: HTMLButtonElement) => {
-    detailTriggerRef.current = trigger;
-    setSelectedCompanyId(companyId);
+  const applyFilters = () => {
+    const next = searchDraft.trim();
+    if (next === search) reloadAll();
+    setSearch(next);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -119,13 +185,34 @@ export function PlatformEnterprisesPage() {
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const created = await platformApi.createEnterprise(input);
-      setNotice(
-        `企业 ${created.companyName} 已开通，初始名片标识为 ${created.initialCardSlug}。`,
-      );
+      const created = await platformApi.createEnterprise({
+        legalName: input.legalName.trim(),
+        shortName: input.shortName.trim() || undefined,
+        subjectType: input.subjectType,
+        socialCreditCode: normalizedCreditCode || undefined,
+        industry: input.industry,
+        adminAccount: input.adminAccount,
+        adminDisplayName: input.adminDisplayName,
+        defaultPlanCode: input.defaultPlan,
+      });
+      if (!created.credentialDelivery) {
+        throw new ApiError("企业已创建，但服务端未返回一次性管理员凭据。", {
+          code: "CREDENTIAL_DELIVERY_MISSING",
+        });
+      }
+      setNotice(`企业 ${created.companyName} 已开通，当前为零名片状态。`);
+      setCredentialNotice({
+        companyName: created.companyName,
+        account: created.credentialDelivery.account,
+        temporaryPassword: created.credentialDelivery.temporaryPassword,
+        expiresAt: created.credentialDelivery.expiresAt,
+        subjectType: input.subjectType,
+        socialCreditCode: normalizedCreditCode || undefined,
+        defaultPlan: input.defaultPlan,
+      });
       setInput(emptyInput);
       setOpen(false);
-      resource.reload();
+      reloadAll();
     } catch (caught) {
       setError(toApiError(caught));
     } finally {
@@ -134,13 +221,20 @@ export function PlatformEnterprisesPage() {
   };
 
   return (
-    <main className="page-stack">
+    <main className="page-stack platform-console">
       <PageHeader
         title="企业中心"
-        description="直接开通一个空白企业，或上传甲方资料生成待复核草稿；确认前不会公开。"
+        description="企业列表连接独立详情页；平台只开通企业身份、管理员与隔离空间，名片由企业自行创建。"
         actions={
-          resource.status === "permission" ? undefined : (
+          enterpriseResource.status === "permission" ? undefined : (
             <>
+              <Button
+                appearance="subtle"
+                icon={<ArrowClockwise24Regular />}
+                onClick={reloadAll}
+              >
+                刷新
+              </Button>
               <Button
                 appearance="secondary"
                 icon={<Book24Regular />}
@@ -149,7 +243,7 @@ export function PlatformEnterprisesPage() {
                 从甲方资料创建
               </Button>
               <Button appearance="primary" icon={<Add24Regular />} onClick={showCreate}>
-                直接开通空白企业
+                直接开通企业
               </Button>
             </>
           )
@@ -160,6 +254,64 @@ export function PlatformEnterprisesPage() {
         <MessageBar intent="success">
           <MessageBarBody>{notice}</MessageBarBody>
         </MessageBar>
+      )}
+
+      {credentialNotice && (
+        <section className="content-panel">
+          <div className={styles.sectionTitle}>
+            <div>
+              <strong>一次性管理员凭据</strong>
+              <p>
+                本次只创建企业与管理员，不创建名片。当前旧 API 不返回凭据有效期，以下密码仅在此提示中显示一次。
+              </p>
+            </div>
+          </div>
+          <div className={styles.credentialGrid}>
+            <div>
+              <span>企业</span>
+              <strong>{credentialNotice.companyName}</strong>
+            </div>
+            <div>
+              <span>管理员账号</span>
+              <strong>{credentialNotice.account}</strong>
+            </div>
+            <div>
+              <span>一次性密码</span>
+              <strong>{credentialNotice.temporaryPassword}</strong>
+            </div>
+            <div>
+              <span>名片交付</span>
+              <strong>0 张</strong>
+            </div>
+          </div>
+          <div className={styles.legacyNotice}>
+            <strong>企业身份已由服务端确认</strong>
+            <p>
+              默认套餐 {credentialNotice.defaultPlan}；一次性密码有效至
+              {formatTimestamp(credentialNotice.expiresAt)}。平台没有创建名片或公开链接。
+            </p>
+          </div>
+        </section>
+      )}
+
+      {overviewResource.status === "ready" && overviewResource.data && (
+        <section className={styles.summaryStrip} aria-label="企业中心摘要">
+          <article>
+            <span>已启用企业</span>
+            <strong>{overviewResource.data.activeEnterpriseCount}</strong>
+            <p>共 {overviewResource.data.enterpriseCount} 家企业</p>
+          </article>
+          <article>
+            <span>近 30 天访问</span>
+            <strong>{overviewResource.data.visits30d}</strong>
+            <p>对话 {overviewResource.data.conversations30d} · 留资 {overviewResource.data.leads30d}</p>
+          </article>
+          <article>
+            <span>需处理任务</span>
+            <strong>{overviewResource.data.failedTaskCount + overviewResource.data.onboardingCount}</strong>
+            <p>待建企 {overviewResource.data.onboardingCount} · 异常 {overviewResource.data.failedTaskCount}</p>
+          </article>
+        </section>
       )}
 
       <section className="content-panel filter-panel" aria-label="企业筛选">
@@ -179,7 +331,7 @@ export function PlatformEnterprisesPage() {
         </Select>
         <Input
           aria-label="搜索企业"
-          placeholder="企业名称、租户名称或标识"
+          placeholder="企业名称、工作区名称或技术标识"
           value={searchDraft}
           onChange={(_, data) => setSearchDraft(data.value)}
           onKeyDown={(event) => event.key === "Enter" && applyFilters()}
@@ -203,26 +355,26 @@ export function PlatformEnterprisesPage() {
       </section>
 
       <section className="content-panel catalog-panel">
-        {resource.status !== "ready" && (
+        {enterpriseResource.status !== "ready" && (
           <ResourceState
-            status={resource.status}
+            status={enterpriseResource.status}
             title={
-              resource.status === "empty"
+              enterpriseResource.status === "empty"
                 ? search || statusFilter
                   ? "没有符合条件的企业"
                   : "尚未开通企业"
                 : undefined
             }
             description={
-              resource.status === "empty"
+              enterpriseResource.status === "empty"
                 ? search || statusFilter
                   ? "调整关键词或状态后重新搜索。"
                   : "开通后，企业管理员可登录并维护自己的资料和名片。"
-                : resource.error?.message
+                : enterpriseResource.error?.message
             }
-            errorCode={resource.error?.code}
-            requestId={resource.error?.requestId}
-            onRetry={resource.status === "error" ? resource.reload : undefined}
+            errorCode={enterpriseResource.error?.code}
+            requestId={enterpriseResource.error?.requestId}
+            onRetry={enterpriseResource.status === "error" ? enterpriseResource.reload : undefined}
             emptyAction={
               <Button appearance="primary" icon={<Add24Regular />} onClick={showCreate}>
                 开通第一家企业
@@ -231,75 +383,114 @@ export function PlatformEnterprisesPage() {
           />
         )}
 
-        {resource.status === "ready" && resource.data && (
+        {enterpriseResource.status === "ready" && enterpriseResource.data && (
           <div className={`table-scroll ${styles.desktopTable}`}>
             <Table aria-label="平台企业列表" size="small">
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>租户</TableHeaderCell>
                   <TableHeaderCell>企业</TableHeaderCell>
+                  <TableHeaderCell>工作区</TableHeaderCell>
                   <TableHeaderCell>状态</TableHeaderCell>
-                  <TableHeaderCell>开通时间</TableHeaderCell>
+                  <TableHeaderCell>成员 / 访问</TableHeaderCell>
+                  <TableHeaderCell>最近活动</TableHeaderCell>
+                  <TableHeaderCell>任务</TableHeaderCell>
                   <TableHeaderCell>操作</TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {resource.data.map((item) => (
-                  <TableRow key={item.companyId}>
-                    <TableCell>
-                      <strong>{item.tenantName}</strong>
-                      <div className="cell-secondary">{item.tenantSlug}</div>
-                    </TableCell>
-                    <TableCell>{item.companyName}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={item.status} />
-                    </TableCell>
-                    <TableCell>{formatTimestamp(item.createdAt)}</TableCell>
-                    <TableCell>
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        onClick={(event) =>
-                          showDetail(item.companyId, event.currentTarget)
-                        }
-                      >
-                        查看详情
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {enterpriseResource.data.map((item) => {
+                  const aggregate = aggregateMap.get(item.companyId);
+                  const attentionCount = taskAttentionCount(taskResource.data, item.companyId);
+                  return (
+                    <TableRow key={item.companyId}>
+                      <TableCell>
+                        <button
+                          className={styles.entityLink}
+                          onClick={() => navigate(platformEnterprisePath(item.companyId, "overview"))}
+                          type="button"
+                        >
+                          {item.companyName}
+                        </button>
+                        <div className="cell-secondary">开通于 {formatTimestamp(item.createdAt)}</div>
+                      </TableCell>
+                      <TableCell>
+                        <strong>{item.tenantName}</strong>
+                        <div className="cell-secondary">{item.tenantSlug}</div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell>
+                        {aggregate ? `${aggregate.employeeCount} 人 / ${aggregate.visits30d} 次` : "聚合中"}
+                      </TableCell>
+                      <TableCell>{lastActivityLabel(aggregate)}</TableCell>
+                      <TableCell>{attentionCount > 0 ? `${attentionCount} 项待处理` : "正常"}</TableCell>
+                      <TableCell>
+                        <Button
+                          appearance="secondary"
+                          size="small"
+                          onClick={() => navigate(platformEnterprisePath(item.companyId, "overview"))}
+                        >
+                          进入详情
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         )}
 
-        {resource.status === "ready" && resource.data && (
+        {enterpriseResource.status === "ready" && enterpriseResource.data && (
           <div className={styles.mobileRecords} aria-label="平台企业列表">
-            {resource.data.map((item) => (
-              <article className={styles.recordCard} key={item.companyId}>
-                <div className={styles.recordHeader}>
-                  <strong>{item.companyName}</strong>
-                  <StatusBadge status={item.status} />
-                </div>
-                <p>
-                  {item.tenantName} · {item.tenantSlug}
-                </p>
-                <div className={styles.recordActions}>
-                  <span className="cell-secondary">
-                    {formatTimestamp(item.createdAt)}
-                  </span>
-                  <Button
-                    appearance="secondary"
-                    size="small"
-                    onClick={(event) =>
-                      showDetail(item.companyId, event.currentTarget)
-                    }
-                  >
-                    查看详情
-                  </Button>
-                </div>
-              </article>
-            ))}
+            {enterpriseResource.data.map((item) => {
+              const aggregate = aggregateMap.get(item.companyId);
+              const attentionCount = taskAttentionCount(taskResource.data, item.companyId);
+              return (
+                <article className={styles.recordCard} key={item.companyId}>
+                  <div className={styles.recordHeader}>
+                    <div className={styles.recordTitle}>
+                      <button
+                        className={styles.entityLink}
+                        onClick={() => navigate(platformEnterprisePath(item.companyId, "overview"))}
+                        type="button"
+                      >
+                        {item.companyName}
+                      </button>
+                      <p>
+                        {item.tenantName} · {item.tenantSlug}
+                      </p>
+                    </div>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <dl className={styles.recordFacts}>
+                    <div>
+                      <dt>成员 / 访问</dt>
+                      <dd>{aggregate ? `${aggregate.employeeCount} / ${aggregate.visits30d}` : "聚合中"}</dd>
+                    </div>
+                    <div>
+                      <dt>最近活动</dt>
+                      <dd>{lastActivityLabel(aggregate)}</dd>
+                    </div>
+                    <div>
+                      <dt>任务</dt>
+                      <dd>{attentionCount > 0 ? `${attentionCount} 项待处理` : "正常"}</dd>
+                    </div>
+                  </dl>
+                  <div className={styles.recordActions}>
+                    <span className="cell-secondary">{formatTimestamp(item.createdAt)}</span>
+                    <Button
+                      appearance="secondary"
+                      size="small"
+                      onClick={() => navigate(platformEnterprisePath(item.companyId, "overview"))}
+                    >
+                      进入详情
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -313,36 +504,47 @@ export function PlatformEnterprisesPage() {
         <DialogSurface>
           <form onSubmit={submit} noValidate>
             <DialogBody>
-              <DialogTitle>开通隔离企业</DialogTitle>
+              <DialogTitle>直接开通企业</DialogTitle>
               <DialogContent className="catalog-editor-form">
                 <FormFeedback error={error} />
                 <div className="form-grid two-column">
+                  <Field label="企业正式名称" required>
+                    <Input
+                      value={input.legalName}
+                      onChange={(_, data) => update("legalName", data.value)}
+                    />
+                  </Field>
+                  <Field label="企业简称">
+                    <Input
+                      value={input.shortName}
+                      onChange={(_, data) => update("shortName", data.value)}
+                    />
+                  </Field>
+                  <Field label="主体类型" required>
+                    <Select
+                      value={input.subjectType}
+                      onChange={(_, data) => update("subjectType", data.value as DirectEnterpriseFormValues["subjectType"])}
+                    >
+                      <option value="domestic_enterprise">国内企业</option>
+                      <option value="association">协会 / 机构</option>
+                      <option value="overseas">境外主体</option>
+                      <option value="pending_registration">筹备中</option>
+                    </Select>
+                  </Field>
                   <Field
-                    label="租户标识"
-                    required
-                    validationState={attempted && !slugPattern.test(input.tenantSlug) ? "error" : "none"}
+                    label="统一社会信用代码"
+                    validationState={attempted && input.subjectType === "domestic_enterprise" && !socialCreditCodePattern.test(normalizedCreditCode) ? "error" : "none"}
                     validationMessage={
-                      attempted && !slugPattern.test(input.tenantSlug)
-                        ? "使用 3–64 位小写字母、数字和连字符。"
-                        : undefined
+                      attempted && input.subjectType === "domestic_enterprise" && !socialCreditCodePattern.test(normalizedCreditCode)
+                        ? "国内企业必须填写 18 位统一社会信用代码。"
+                        : input.subjectType === "domestic_enterprise"
+                          ? "该代码将作为唯一业务租户标识，底层隔离仍使用不可变 UUID。"
+                          : "协会、境外主体和筹备企业可留空，由系统生成稳定业务标识。"
                     }
                   >
                     <Input
-                      value={input.tenantSlug}
-                      onChange={(_, data) => update("tenantSlug", data.value.toLowerCase())}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field label="租户名称" required>
-                    <Input
-                      value={input.tenantName}
-                      onChange={(_, data) => update("tenantName", data.value)}
-                    />
-                  </Field>
-                  <Field label="企业名称" required>
-                    <Input
-                      value={input.companyName}
-                      onChange={(_, data) => update("companyName", data.value)}
+                      value={input.socialCreditCode}
+                      onChange={(_, data) => update("socialCreditCode", normalizeSocialCreditCode(data.value))}
                     />
                   </Field>
                   <Field label="行业">
@@ -364,28 +566,15 @@ export function PlatformEnterprisesPage() {
                       onChange={(_, data) => update("adminDisplayName", data.value)}
                     />
                   </Field>
-                  <Field
-                    label="初始密码"
-                    required
-                    validationState={attempted && input.adminPassword.length < 12 ? "error" : "none"}
-                    validationMessage={
-                      attempted && input.adminPassword.length < 12
-                        ? "初始密码至少 12 个字符，并通过安全渠道交付。"
-                        : undefined
-                    }
-                  >
-                    <Input
-                      type="password"
-                      value={input.adminPassword}
-                      onChange={(_, data) => update("adminPassword", data.value)}
-                      autoComplete="new-password"
-                    />
-                  </Field>
-                  <Field label="初始名片标题">
-                    <Input
-                      value={input.initialCardTitle}
-                      onChange={(_, data) => update("initialCardTitle", data.value)}
-                    />
+                  <Field label="默认套餐">
+                    <Select
+                      value={input.defaultPlan}
+                      onChange={(_, data) => update("defaultPlan", data.value as DirectEnterpriseFormValues["defaultPlan"])}
+                    >
+                      <option value="starter">Starter</option>
+                      <option value="professional">Professional</option>
+                      <option value="enterprise">Enterprise</option>
+                    </Select>
                   </Field>
                 </div>
               </DialogContent>
@@ -401,15 +590,6 @@ export function PlatformEnterprisesPage() {
           </form>
         </DialogSurface>
       </Dialog>
-
-      {selectedCompanyId && (
-        <PlatformEnterpriseDrawer
-          companyId={selectedCompanyId}
-          returnFocusRef={detailTriggerRef}
-          onChanged={resource.reload}
-          onClose={() => setSelectedCompanyId(undefined)}
-        />
-      )}
     </main>
   );
 }

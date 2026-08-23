@@ -28,6 +28,9 @@ VISIT_ROLLOUT_GUARD_MIGRATION = (
 WECOM_SUITE_DELIVERY_MIGRATION = (
     ROOT / "services/api/migrations/versions/20260819_0043_worker_wecom_suite_delivery.py"
 )
+VISIT_DAILY_DIGEST_MIGRATION = (
+    ROOT / "services/api/migrations/versions/20260823_0048_visit_daily_digest_notifications.py"
+)
 CONTENT_IMPORT_MIGRATION = (
     ROOT
     / "services/api/migrations/versions/20260819_0044_progressive_content_import.py"
@@ -163,9 +166,22 @@ def test_wecom_suite_authorization_is_exposed_only_for_the_claimed_scope() -> No
     sql = WECOM_SUITE_DELIVERY_MIGRATION.read_text(encoding="utf-8").lower()
     assert "security definer" in sql
     assert "set search_path = pg_catalog, public, app" in sql
+    assert "to_regclass('public.wecom_enterprise_scopes')" in sql
+    assert "to_regclass('public.wecom_enterprise_authorizations')" in sql
     assert "scope.tenant_id = p_tenant_id" in sql
     assert "scope.company_id = p_company_id" in sql
     assert "authz.status = 'active'" in sql
+    assert "grant execute on function" in sql
+    assert "cf_ai_card_worker" in sql
+    assert "bypassrls" not in sql
+
+
+def test_visit_daily_digest_scheduler_is_deduplicated_and_worker_only() -> None:
+    sql = VISIT_DAILY_DIGEST_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "security definer" in sql
+    assert "visit-daily-digest:" in sql
+    assert "ordinary_visit_digest_enabled" in sql
+    assert "on conflict (tenant_id, company_id, deduplication_key) do nothing" in sql
     assert "grant execute on function" in sql
     assert "cf_ai_card_worker" in sql
     assert "bypassrls" not in sql

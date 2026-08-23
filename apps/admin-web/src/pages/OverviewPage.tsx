@@ -282,6 +282,9 @@ function EnterpriseReadinessPanel() {
 
 function DashboardContent({ data }: { data: DashboardOverview }) {
   const auth = useAuth();
+  const hasMeaningfulDailyTrend = data.daily.some(
+    (item) => item.visits > 0 || item.conversations > 0 || item.leads > 0,
+  );
   const steps = [
     { label: "访问", value: data.visits, path: APP_PATHS.visits, permission: "visits.read", allowCardOwner: true },
     { label: "对话", value: data.conversations, path: APP_PATHS.conversations, permission: "conversations.read", allowCardOwner: true },
@@ -341,12 +344,12 @@ function DashboardContent({ data }: { data: DashboardOverview }) {
             <p>访问、对话和线索均来自真实业务记录。</p>
           </div>
         </div>
-        {data.daily.length === 0 ? (
+        {!hasMeaningfulDailyTrend ? (
           <ResourceState
             compact
             status="empty"
-            title="当前周期暂无趋势数据"
-            description="访客开始访问后，日维度统计会显示在这里。"
+            title={`最近 ${data.periodDays} 天暂无业务趋势`}
+            description="当访问、对话或线索出现真实变化后，这里才会展开每日趋势表。"
           />
         ) : (
           <div className="table-scroll">

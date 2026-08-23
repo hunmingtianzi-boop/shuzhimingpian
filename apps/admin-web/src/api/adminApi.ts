@@ -17,6 +17,11 @@ import type {
   CaseStudyInput,
   CompanyProfile,
   CompanyProfileInput,
+  CompanyIdentityProfile,
+  CompanyIdentityProfileInput,
+  CompanyAnswerPolicy,
+  CompanyNotificationSettings,
+  CompanyPrivacySettings,
   ContentVisibility,
   ForbiddenAction,
   ForbiddenTopic,
@@ -137,6 +142,85 @@ function normalizeCompany(payload: unknown): CompanyProfile {
     onboardingStatus: optionalString(raw.onboarding_status) || "content_pending",
     version: optionalNumber(raw.version),
     updatedAt: optionalString(raw.updated_at) || undefined,
+  };
+}
+
+function normalizeCompanyIdentity(payload: unknown): CompanyIdentityProfile {
+  const raw = requireRecord(payload, "企业身份");
+  const subjectType = optionalString(raw.subject_type) || "pending_registration";
+  const profileFacts = Array.isArray(raw.profile_facts) ? raw.profile_facts.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    const id = optionalString(value.id);
+    const label = optionalString(value.label);
+    const factValue = optionalString(value.value);
+    return id && label && factValue ? [{ id, label, value: factValue }] : [];
+  }) : [];
+  if (![
+    "domestic_enterprise", "association", "overseas", "pending_registration",
+  ].includes(subjectType)) {
+    throw new ApiError("企业身份接口返回了未知主体类型。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    id: requireString(raw.id, "企业身份 id"),
+    legalName: requireString(raw.legal_name, "企业正式名称"),
+    shortName: optionalString(raw.short_name) || undefined,
+    subjectType: subjectType as CompanyIdentityProfile["subjectType"],
+    socialCreditCode: optionalString(raw.social_credit_code) || undefined,
+    industry: optionalString(raw.industry),
+    region: optionalString(raw.region),
+    website: optionalString(raw.website),
+    logoUrl: optionalString(raw.logo_url),
+    positioning: optionalString(raw.positioning) || undefined,
+    profileFacts,
+    profileTags: normalizeStringArray(raw.profile_tags).slice(0, 3),
+    summary: optionalString(raw.summary),
+    status: requireString(raw.status, "企业状态"),
+    onboardingStatus: requireString(raw.onboarding_status, "企业开通状态"),
+    version: optionalNumber(raw.version) ?? 1,
+    updatedAt: requireString(raw.updated_at, "企业身份更新时间"),
+  };
+}
+
+function normalizeAnswerPolicy(payload: unknown): CompanyAnswerPolicy {
+  const raw = requireRecord(payload, "回答策略");
+  const mode = optionalString(raw.ai_off_topic_answer_mode) || "limited";
+  if (!["blocked", "limited", "unlimited"].includes(mode)) {
+    throw new ApiError("回答策略接口返回了未知模式。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    aiOffTopicAnswerMode: mode as CompanyAnswerPolicy["aiOffTopicAnswerMode"],
+    aiOffTopicQuestionLimit: optionalNumber(raw.ai_off_topic_question_limit) ?? 3,
+    version: optionalNumber(raw.version) ?? 1,
+    updatedAt: requireString(raw.updated_at, "回答策略更新时间"),
+  };
+}
+
+function normalizeNotificationSettings(payload: unknown): CompanyNotificationSettings {
+  const raw = requireRecord(payload, "通知设置");
+  const scope = optionalString(raw.visit_notification_recipient_scope) || "both";
+  if (!["admins", "responsible", "both"].includes(scope)) {
+    throw new ApiError("通知设置接口返回了未知接收范围。", { code: "INVALID_API_RESPONSE" });
+  }
+  return {
+    visitNotificationsEnabled: raw.visit_notifications_enabled !== false,
+    visitReportNotificationsEnabled: raw.visit_report_notifications_enabled !== false,
+    visitNotificationInAppEnabled: raw.visit_notification_in_app_enabled !== false,
+    visitNotificationWecomEnabled: raw.visit_notification_wecom_enabled !== false,
+    visitNotificationRecipientScope: scope as CompanyNotificationSettings["visitNotificationRecipientScope"],
+    ordinaryVisitDigestEnabled: raw.ordinary_visit_digest_enabled !== false,
+    version: optionalNumber(raw.version) ?? 1,
+    updatedAt: requireString(raw.updated_at, "通知设置更新时间"),
+  };
+}
+
+function normalizePrivacySettings(payload: unknown): CompanyPrivacySettings {
+  const raw = requireRecord(payload, "数据与隐私设置");
+  return {
+    profilePersonalizationPolicyVersion:
+      requireString(raw.profile_personalization_policy_version, "画像政策版本"),
+    visitorProfileRetentionDays: optionalNumber(raw.visitor_profile_retention_days) ?? 365,
+    version: optionalNumber(raw.version) ?? 1,
+    updatedAt: requireString(raw.updated_at, "数据与隐私设置更新时间"),
   };
 }
 
@@ -1186,6 +1270,97 @@ export function createAdminApi(client: ApiClient) {
       "/admin/company/profile",
       companyPayload(input),
       { version: input.version },
+    );
+  },
+
+  async getCompanyIdentity(): Promise<CompanyIdentityProfile> {
+    return normalizeCompanyIdentity(await client.get("/admin/company/identity"));
+  },
+
+  async updateCompanyIdentity(
+    input: CompanyIdentityProfileInput & { version: number },
+  ): Promise<CompanyIdentityProfile> {
+    return normalizeCompanyIdentity(
+      await client.put(
+        "/admin/company/identity",
+        {
+          legal_name: input.legalName.trim(),
+          short_name: nullableString(input.shortName ?? ""),
+          subject_type: input.subjectType,
+          social_credit_code: nullableString(input.socialCreditCode ?? ""),
+          industry: nullableString(input.industry),
+          region: nullableString(input.region),
+          website: nullableString(input.website),
+          logo_url: nullableString(input.logoUrl),
+          positioning: nullableString(input.positioning ?? ""),
+          profile_facts: (input.profileFacts ?? []).slice(0, 4).map((fact) => ({
+            id: fact.id,
+            label: fact.label.trim(),
+            value: fact.value.trim(),
+          })),
+          profile_tags: (input.profileTags ?? []).map((value) => value.trim()).filter(Boolean).slice(0, 3),
+          summary: input.summary.trim(),
+        },
+        { version: input.version },
+      ),
+    );
+  },
+
+  async getAnswerPolicy(): Promise<CompanyAnswerPolicy> {
+    return normalizeAnswerPolicy(await client.get("/admin/ai/answer-policy"));
+  },
+
+  async updateAnswerPolicy(input: CompanyAnswerPolicy): Promise<CompanyAnswerPolicy> {
+    return normalizeAnswerPolicy(
+      await client.put(
+        "/admin/ai/answer-policy",
+        {
+          ai_off_topic_answer_mode: input.aiOffTopicAnswerMode,
+          ai_off_topic_question_limit: input.aiOffTopicQuestionLimit,
+        },
+        { version: input.version },
+      ),
+    );
+  },
+
+  async getNotificationSettings(): Promise<CompanyNotificationSettings> {
+    return normalizeNotificationSettings(await client.get("/admin/notifications/settings"));
+  },
+
+  async updateNotificationSettings(
+    input: CompanyNotificationSettings,
+  ): Promise<CompanyNotificationSettings> {
+    return normalizeNotificationSettings(
+      await client.put(
+        "/admin/notifications/settings",
+        {
+          visit_notifications_enabled: input.visitNotificationsEnabled,
+          visit_report_notifications_enabled: input.visitReportNotificationsEnabled,
+          visit_notification_in_app_enabled: input.visitNotificationInAppEnabled,
+          visit_notification_wecom_enabled: input.visitNotificationWecomEnabled,
+          visit_notification_recipient_scope: input.visitNotificationRecipientScope,
+          ordinary_visit_digest_enabled: input.ordinaryVisitDigestEnabled,
+        },
+        { version: input.version },
+      ),
+    );
+  },
+
+  async getPrivacySettings(): Promise<CompanyPrivacySettings> {
+    return normalizePrivacySettings(await client.get("/admin/privacy/settings"));
+  },
+
+  async updatePrivacySettings(input: CompanyPrivacySettings): Promise<CompanyPrivacySettings> {
+    return normalizePrivacySettings(
+      await client.put(
+        "/admin/privacy/settings",
+        {
+          profile_personalization_policy_version:
+            input.profilePersonalizationPolicyVersion.trim(),
+          visitor_profile_retention_days: input.visitorProfileRetentionDays,
+        },
+        { version: input.version },
+      ),
     );
   },
 

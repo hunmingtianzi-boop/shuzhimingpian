@@ -32,6 +32,13 @@ def test_celery_uses_redis_late_ack_and_visibility_larger_than_database_lease() 
         "queue": "outbox.poll",
         "expires": settings.visit_report_poll_seconds * 2,
     }
+    visit_digests = celery_app.conf.beat_schedule["enqueue-visit-daily-digests"]
+    assert visit_digests["task"] == "cf_worker.enqueue_visit_daily_digests"
+    assert visit_digests["schedule"] == settings.visit_daily_digest_poll_seconds
+    assert visit_digests["options"] == {
+        "queue": "outbox.poll",
+        "expires": settings.visit_daily_digest_poll_seconds,
+    }
     onboarding_retention = celery_app.conf.beat_schedule[
         "purge-expired-platform-onboarding-sessions"
     ]

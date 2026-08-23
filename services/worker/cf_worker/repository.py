@@ -4,7 +4,7 @@ import csv
 import io
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -35,6 +35,7 @@ from cf_worker.domain import (
     HandlerResult,
     NotificationIntent,
     OutboxRecord,
+    VisitDailyDigestSnapshot,
     VisitNotificationSnapshot,
     WeComVisitCard,
 )
@@ -269,6 +270,15 @@ class PostgresOutboxRepository:
                     "batch_size": self._settings.visit_report_batch_size,
                     "idle_seconds": self._settings.visit_report_idle_seconds,
                 },
+            )
+            return max(int(inserted or 0), 0)
+
+    async def enqueue_visit_daily_digests(self) -> int:
+        """Queue one ordinary-visit digest event per company/day when needed."""
+        async with self._engine.begin() as connection:
+            inserted = await connection.scalar(
+                text("SELECT app.enqueue_visit_daily_digests(:batch_size)"),
+                {"batch_size": self._settings.visit_daily_digest_batch_size},
             )
             return max(int(inserted or 0), 0)
 
@@ -1080,6 +1090,18 @@ class PostgresOutboxRepository:
                               AND action.visit_id = visit.id
                               AND action.event_type = 'cta_click'
                           ) AS cta_count
+                          ,
+                          EXISTS (
+                            SELECT 1
+                            FROM conversations AS conversation
+                            JOIN leads AS lead
+                              ON lead.tenant_id = conversation.tenant_id
+                             AND lead.company_id = conversation.company_id
+                             AND lead.conversation_id = conversation.id
+                            WHERE conversation.tenant_id = visit.tenant_id
+                              AND conversation.company_id = visit.company_id
+                              AND conversation.visit_id = visit.id
+                          ) AS has_consented_lead
                         FROM visits AS visit
                         JOIN cards AS card
                           ON card.id = visit.card_id
@@ -1187,6 +1209,217 @@ class PostgresOutboxRepository:
             share_count=share_count,
             cta_count=cta_count,
             engagement_level=engagement_level,
+            has_consented_lead=bool(row["has_consented_lead"]),
+        )
+
+    async def visit_daily_digest_snapshot(
+        self,
+        event: OutboxRecord,
+        *,
+        digest_date: date,
+    ) -> VisitDailyDigestSnapshot | None:
+        if event.aggregate_type != "company" or event.aggregate_id != event.company_id:
+            raise RuntimeError("visit_daily_digest_event_mismatch")
+        start_at = datetime.combine(digest_date, datetime.min.time(), tzinfo=UTC)
+        end_at = start_at + timedelta(days=1)
+        async with self._engine.begin() as connection:
+            await self._set_scope(connection, event.tenant_id, event.company_id)
+            row = (
+                (
+                    await connection.execute(
+                        text(
+                            """
+                        WITH visit_metrics AS (
+                          SELECT
+                            visit.id,
+                            visit.visitor_id,
+                            visit.card_id,
+                            card.display_name AS card_display_name,
+                            card.responsible_user_id,
+                            (
+                              SELECT count(message.id)
+                              FROM conversations AS conversation
+                              JOIN messages AS message
+                                ON message.conversation_id = conversation.id
+                               AND message.tenant_id = conversation.tenant_id
+                               AND message.company_id = conversation.company_id
+                              WHERE conversation.tenant_id = visit.tenant_id
+                                AND conversation.company_id = visit.company_id
+                                AND conversation.visit_id = visit.id
+                                AND message.role = 'user'
+                            ) AS question_count,
+                            (
+                              SELECT count(action.id)
+                              FROM visit_events AS action
+                              WHERE action.tenant_id = visit.tenant_id
+                                AND action.company_id = visit.company_id
+                                AND action.visit_id = visit.id
+                                AND action.event_type = 'share'
+                            ) AS share_count,
+                            (
+                              SELECT count(action.id)
+                              FROM visit_events AS action
+                              WHERE action.tenant_id = visit.tenant_id
+                                AND action.company_id = visit.company_id
+                                AND action.visit_id = visit.id
+                                AND action.event_type = 'cta_click'
+                            ) AS cta_count,
+                            EXISTS (
+                              SELECT 1
+                              FROM conversations AS conversation
+                              JOIN leads AS lead
+                                ON lead.tenant_id = conversation.tenant_id
+                               AND lead.company_id = conversation.company_id
+                               AND lead.conversation_id = conversation.id
+                              WHERE conversation.tenant_id = visit.tenant_id
+                                AND conversation.company_id = visit.company_id
+                                AND conversation.visit_id = visit.id
+                            ) AS has_consented_lead
+                          FROM visits AS visit
+                          JOIN cards AS card
+                            ON card.id = visit.card_id
+                           AND card.tenant_id = visit.tenant_id
+                           AND card.company_id = visit.company_id
+                          WHERE visit.tenant_id = :tenant_id
+                            AND visit.company_id = :company_id
+                            AND visit.started_at >= :start_at
+                            AND visit.started_at < :end_at
+                        ),
+                        ordinary_visits AS (
+                          SELECT *
+                          FROM visit_metrics
+                          WHERE question_count < 3
+                            AND cta_count = 0
+                            AND has_consented_lead IS FALSE
+                        )
+                        SELECT
+                          company.settings AS company_settings,
+                          count(*)::integer AS visit_count,
+                          count(
+                            DISTINCT ordinary_visits.visitor_id
+                          )::integer AS unique_visitor_count,
+                          count(DISTINCT ordinary_visits.card_id)::integer AS card_count,
+                          coalesce(
+                            sum(ordinary_visits.question_count), 0
+                          )::integer AS question_count,
+                          coalesce(sum(ordinary_visits.share_count), 0)::integer AS share_count,
+                          (
+                            SELECT ov.card_display_name
+                            FROM ordinary_visits AS ov
+                            GROUP BY ov.card_display_name
+                            ORDER BY count(*) DESC, ov.card_display_name
+                            LIMIT 1
+                          ) AS top_card_display_name
+                        FROM companies AS company
+                        LEFT JOIN ordinary_visits ON ordinary_visits.card_id IS NOT NULL
+                        WHERE company.id = :company_id
+                          AND company.tenant_id = :tenant_id
+                        GROUP BY company.settings
+                        """
+                        ),
+                        {
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                            "start_at": start_at,
+                            "end_at": end_at,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None or int(row["visit_count"] or 0) == 0:
+                return None
+
+            company_settings = row["company_settings"]
+            if not isinstance(company_settings, dict):
+                company_settings = {}
+            preferences = company_settings.get("visit_notifications")
+            if not isinstance(preferences, dict):
+                preferences = {}
+            enabled = preferences.get("enabled") is not False
+            digest_enabled = preferences.get("ordinary_visit_digest_enabled") is not False
+            in_app_enabled = (
+                enabled
+                and digest_enabled
+                and preferences.get("in_app_enabled") is not False
+            )
+            wecom_enabled = (
+                enabled
+                and digest_enabled
+                and preferences.get("wecom_enabled") is not False
+            )
+            recipient_scope = preferences.get("recipient_scope")
+            if recipient_scope not in {"admins", "responsible", "both"}:
+                recipient_scope = "both"
+
+            recipients: list[uuid.UUID] = []
+            if recipient_scope in {"responsible", "both"}:
+                responsible_ids = (
+                    await connection.scalars(
+                        text(
+                            """
+                            WITH visit_metrics AS (
+                              SELECT DISTINCT card.responsible_user_id
+                              FROM visits AS visit
+                              JOIN cards AS card
+                                ON card.id = visit.card_id
+                               AND card.tenant_id = visit.tenant_id
+                               AND card.company_id = visit.company_id
+                              WHERE visit.tenant_id = :tenant_id
+                                AND visit.company_id = :company_id
+                                AND visit.started_at >= :start_at
+                                AND visit.started_at < :end_at
+                            )
+                            SELECT responsible_user_id
+                            FROM visit_metrics
+                            WHERE responsible_user_id IS NOT NULL
+                            """
+                        ),
+                        {
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                            "start_at": start_at,
+                            "end_at": end_at,
+                        },
+                    )
+                ).all()
+                recipients.extend(responsible_ids)
+            if recipient_scope in {"admins", "both"}:
+                admin_ids = (
+                    await connection.scalars(
+                        text(
+                            """
+                            SELECT user_id
+                            FROM memberships
+                            WHERE tenant_id = :tenant_id
+                              AND company_id = :company_id
+                              AND role = 'company_admin'
+                              AND status = 'active'
+                            ORDER BY created_at, id
+                            """
+                        ),
+                        {
+                            "tenant_id": event.tenant_id,
+                            "company_id": event.company_id,
+                        },
+                    )
+                ).all()
+                recipients.extend(admin_ids)
+
+        return VisitDailyDigestSnapshot(
+            digest_date=digest_date,
+            recipient_user_ids=tuple(dict.fromkeys(recipients)),
+            in_app_enabled=in_app_enabled,
+            wecom_enabled=wecom_enabled,
+            visit_count=int(row["visit_count"] or 0),
+            unique_visitor_count=int(row["unique_visitor_count"] or 0),
+            card_count=int(row["card_count"] or 0),
+            question_count=int(row["question_count"] or 0),
+            share_count=int(row["share_count"] or 0),
+            top_card_display_name=(
+                str(row["top_card_display_name"]) if row["top_card_display_name"] else None
+            ),
         )
 
     async def send_wecom_visit_notification(
@@ -1255,6 +1488,21 @@ class PostgresOutboxRepository:
                 raise RuntimeError(exc.code) from exc
             delivered += 1
         return delivered
+
+    async def send_wecom_visit_daily_digest(
+        self,
+        event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        card: WeComVisitCard,
+        report_url: str,
+    ) -> int:
+        return await self.send_wecom_visit_notification(
+            event,
+            recipient_user_ids=recipient_user_ids,
+            card=card,
+            report_url=report_url,
+        )
 
     async def build_export(
         self,

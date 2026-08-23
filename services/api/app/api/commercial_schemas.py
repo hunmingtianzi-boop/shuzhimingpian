@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -41,6 +42,7 @@ class CommercialEntitlementRecord(CommercialModel):
     plan_code: Literal["starter", "professional", "enterprise"]
     billing_cycle: Literal["monthly", "yearly", "contract"]
     contract_price_cny: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    service_valid_until: datetime | None = None
     feature_overrides: dict[str, bool]
     features: dict[str, bool]
     limit_overrides: dict[str, int | None]
@@ -59,6 +61,7 @@ class UpdateCommercialEntitlementRequest(CommercialModel):
     plan_code: Literal["starter", "professional", "enterprise"]
     billing_cycle: Literal["monthly", "yearly", "contract"] = "contract"
     contract_price_cny: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    service_valid_until: datetime | None = None
     feature_overrides: dict[str, bool] = Field(default_factory=dict)
     limit_overrides: dict[str, int | None] = Field(default_factory=dict)
 

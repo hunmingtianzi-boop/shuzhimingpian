@@ -113,3 +113,22 @@ Implementation MUST start in a new exact run under `openspec/changes/unify-platf
 - Failed document-assisted onboarding is route-hidden and unfinished sessions are locked; ordinary enterprise creation/import remains available, confirmed enterprises are never deleted, and provisional credentials remain disabled.
 - Failed enterprise navigation/card presentation reverts locally without data changes.
 - Import changes reuse the current parser/Worker; never delete existing import batches/drafts, activate a provisional resource, or replace the parser/Worker to make a smoke pass.
+
+## 8. P0 shared contract and backend
+
+- [x] 8.1 Freeze P0/P1 route, schema, identity, metric, task and settings contracts; validate OpenSpec apply and current migration head.
+- [x] 8.2 Implement additive identity/cardless-onboarding migration, shared provisioner and compatibility tests.
+- [x] 8.3 Implement platform operations v2 read models, filters, normalized tasks and forbidden-field tests.
+- [x] 8.4 Split company identity, answer policy, notification preferences and data/privacy APIs with rolling-deploy compatibility.
+
+## 9. P0/P1 UI and worker consumers
+
+- [x] 9.1 Implement platform navigation cleanup, independent enterprise detail, overview/list filters and task dual views.
+- [x] 9.2 Implement enterprise work-domain navigation, dynamic object detail routes and real cross-object/reference links.
+- [x] 9.3 Implement identity/answer/notification/privacy surfaces and real-time/daily notification policy.
+
+## 10. P0/P1 verification
+
+- [x] 10.1 Run focused migration/API/RLS/security/worker/OpenAPI/admin tests and scope review.
+- [ ] 10.2 Run real platform and enterprise desktop/390px journeys and capture representative evidence.
+- [ ] 10.3 Complete proof mapping and independent Checker review; do not commit or push without separate authorization.

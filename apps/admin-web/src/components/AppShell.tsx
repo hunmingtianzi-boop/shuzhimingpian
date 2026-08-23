@@ -24,14 +24,15 @@ import {
   Navigation24Regular,
   PeopleTeam24Regular,
   PeopleSettings24Regular,
-  ShieldLock24Regular,
   ShieldError24Regular,
+  ShieldLock24Regular,
   SignOut24Regular,
   Sparkle24Regular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
+import { adminApi } from "../api/adminApi";
 import { workflowApi } from "../api/workflowApi";
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
@@ -49,10 +50,12 @@ type NavItem = {
   path: AppPath;
   label: string;
   icon: ComponentType;
+  sectionLabel?: string;
   permission?: string;
   allowCardOwner?: boolean;
   role?: string;
   feature?: string;
+  setupOnlyWhenIncomplete?: boolean;
 };
 
 const navGroups: Array<{ label: string; items: NavItem[] }> = [
@@ -60,44 +63,52 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
     label: "工作台",
     items: [
       { path: APP_PATHS.overview, label: "业务概览", icon: Home24Regular },
-      { path: APP_PATHS.notifications, label: "消息中心", icon: Alert24Regular },
-      { path: APP_PATHS.setup, label: "开通向导", icon: Sparkle24Regular, permission: "company.write", feature: "card.core" },
+      { path: APP_PATHS.notifications, label: "消息与待办", icon: Alert24Regular },
+      {
+        path: APP_PATHS.setup,
+        label: "完成开通",
+        icon: Sparkle24Regular,
+        permission: "company.write",
+        feature: "card.core",
+        setupOnlyWhenIncomplete: true,
+      },
     ],
   },
   {
-    label: "客户经营",
+    label: "客户增长",
     items: [
       { path: APP_PATHS.visits, label: "访问记录", icon: Eye24Regular, permission: "visits.read", allowCardOwner: true, feature: "customer.visits" },
       { path: APP_PATHS.visitorProfiles, label: "访客画像", icon: PeopleTeam24Regular, permission: "visits.read", allowCardOwner: true, feature: "customer.profiles" },
       { path: APP_PATHS.conversations, label: "AI 对话", icon: Chat24Regular, permission: "conversations.read", allowCardOwner: true, feature: "ai.conversations" },
       { path: APP_PATHS.opportunities, label: "潜在机会", icon: Lightbulb24Regular, permission: "conversations.read", allowCardOwner: true, feature: "customer.opportunities" },
-      { path: APP_PATHS.leads, label: "销售线索", icon: PeopleTeam24Regular, permission: "leads.read", allowCardOwner: true, feature: "customer.leads" },
-      { path: APP_PATHS.exports, label: "数据导出", icon: ArrowDownload24Regular, permission: "exports.read", allowCardOwner: true, feature: "data.exports" },
     ],
   },
   {
-    label: "AI 与知识",
+    label: "内容与智能",
     items: [
-      { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true, feature: "knowledge.manage" },
-      { path: APP_PATHS.knowledge, label: "知识 FAQ", icon: Book24Regular, permission: "knowledge.read", feature: "knowledge.manage" },
-      { path: APP_PATHS.imports, label: "资料导入", icon: DocumentArrowUp24Regular, permission: "knowledge.read", feature: "knowledge.import" },
-      { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read", feature: "knowledge.manage" },
-    ],
-  },
-  {
-    label: "内容与名片",
-    items: [
-      { path: APP_PATHS.cards, label: "名片管理", icon: ContactCardGroup24Regular, permission: "card.read", feature: "card.core" },
-      { path: APP_PATHS.products, label: "产品管理", icon: Box24Regular, permission: "catalog.read", feature: "catalog.manage" },
-      { path: APP_PATHS.cases, label: "案例管理", icon: Briefcase24Regular, permission: "catalog.read", feature: "catalog.manage" },
+      { path: APP_PATHS.company, label: "企业资料", icon: Building24Regular, permission: "company.read", feature: "company.profile", sectionLabel: "内容资产" },
+      { path: APP_PATHS.products, label: "产品管理", icon: Box24Regular, permission: "catalog.read", feature: "catalog.manage", sectionLabel: "内容资产" },
+      { path: APP_PATHS.cases, label: "案例管理", icon: Briefcase24Regular, permission: "catalog.read", feature: "catalog.manage", sectionLabel: "内容资产" },
+      { path: APP_PATHS.knowledge, label: "知识 FAQ", icon: Book24Regular, permission: "knowledge.read", feature: "knowledge.manage", sectionLabel: "内容资产" },
+      { path: APP_PATHS.cards, label: "名片管理", icon: ContactCardGroup24Regular, permission: "card.read", feature: "card.core", sectionLabel: "名片与发布" },
+      { path: APP_PATHS.imports, label: "资料导入", icon: DocumentArrowUp24Regular, permission: "knowledge.read", feature: "knowledge.import", sectionLabel: "知识优化" },
+      { path: APP_PATHS.forbiddenTopics, label: "禁答主题", icon: ShieldError24Regular, permission: "forbidden_topic.read", feature: "knowledge.manage", sectionLabel: "知识优化" },
+      { path: APP_PATHS.knowledgeGaps, label: "知识缺口", icon: Lightbulb24Regular, permission: "knowledge.read", allowCardOwner: true, feature: "knowledge.manage", sectionLabel: "知识优化" },
+      { path: APP_PATHS.answerPolicy, label: "回答策略", icon: Chat24Regular, permission: "company.read", feature: "company.profile", sectionLabel: "AI 设置" },
     ],
   },
   {
     label: "企业治理",
     items: [
       { path: APP_PATHS.members, label: "企业员工", icon: PeopleSettings24Regular, permission: "members.manage", feature: "team.members" },
-      { path: APP_PATHS.company, label: "企业资料", icon: Building24Regular, permission: "company.read", feature: "company.profile" },
+      { path: APP_PATHS.privacySettings, label: "数据与隐私", icon: ShieldLock24Regular, permission: "privacy.manage", feature: "privacy.manage" },
       { path: APP_PATHS.privacyRequests, label: "隐私请求", icon: ShieldLock24Regular, permission: "privacy.manage", feature: "privacy.manage" },
+    ],
+  },
+  {
+    label: "更多工具",
+    items: [
+      { path: APP_PATHS.exports, label: "数据导出", icon: ArrowDownload24Regular, permission: "exports.read", allowCardOwner: true, feature: "data.exports" },
     ],
   },
 ];
@@ -107,22 +118,19 @@ const platformNavGroups: Array<{ label: string; items: NavItem[] }> = [
     label: "平台运营",
     items: [
       { path: APP_PATHS.platformOverview, label: "运营概览", icon: Home24Regular, role: "platform_admin" },
-      { path: APP_PATHS.platformEmployees, label: "员工概览", icon: PeopleSettings24Regular, permission: "platform.analytics.read", role: "platform_admin" },
-      { path: APP_PATHS.platformVisitors, label: "访客概览", icon: Eye24Regular, permission: "platform.analytics.read", role: "platform_admin" },
+      { path: APP_PATHS.platformTasks, label: "运营任务", icon: Briefcase24Regular, permission: "platform.task.read", role: "platform_admin" },
     ],
   },
   {
-    label: "企业入驻",
+    label: "企业开通",
     items: [
-      { path: APP_PATHS.platformEnterprises, label: "企业管理", icon: Building24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
+      { path: APP_PATHS.platformEnterprises, label: "企业中心", icon: Building24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
       { path: APP_PATHS.platformOnboarding, label: "资料辅助建企", icon: Book24Regular, permission: "platform.enterprise.manage", role: "platform_admin" },
     ],
   },
   {
-    label: "治理与运维",
+    label: "平台能力",
     items: [
-      { path: APP_PATHS.platformTasks, label: "任务中心", icon: Briefcase24Regular, permission: "platform.task.read", role: "platform_admin" },
-      { path: APP_PATHS.platformAudit, label: "审计记录", icon: ShieldLock24Regular, permission: "platform.audit.read", role: "platform_admin" },
       { path: APP_PATHS.platformHealth, label: "服务健康", icon: Alert24Regular, permission: "platform.health.read", role: "platform_admin" },
     ],
   },
@@ -131,7 +139,7 @@ const platformNavGroups: Array<{ label: string; items: NavItem[] }> = [
     items: [
       {
         path: APP_PATHS.platformLlmSettings,
-        label: "LLM API 配置",
+        label: "AI 平台配置",
         icon: Lightbulb24Regular,
         permission: "platform.llm.manage",
         role: "platform_admin",
@@ -161,7 +169,17 @@ export function hasCommercialFeature(
   return !feature || entitlements === undefined || entitlements.features[feature] === true;
 }
 
-function Navigation({ onNavigate }: { onNavigate?: () => void }) {
+function navPathMatches(itemPath: string, pathname: string): boolean {
+  return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
+}
+
+function Navigation({
+  onNavigate,
+  setupIncomplete,
+}: {
+  onNavigate?: () => void;
+  setupIncomplete?: boolean;
+}) {
   const pathname = usePathname();
   const auth = useAuth();
   const groups = auth.user?.role === "platform_admin" ? platformNavGroups : navGroups;
@@ -172,29 +190,37 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
           (item) =>
             (!item.role || auth.user?.role === item.role) &&
             hasNavPermission(auth.user, item.permission, item.allowCardOwner) &&
-            hasCommercialFeature(auth.entitlements, item.feature),
+            hasCommercialFeature(auth.entitlements, item.feature) &&
+            (!item.setupOnlyWhenIncomplete || setupIncomplete),
         );
         if (visibleItems.length === 0) return null;
+        let lastSectionLabel: string | undefined;
         return (
           <div className="nav-group" key={group.label}>
-            <span className="nav-group-label">{group.label}</span>
+            <div className="nav-group-heading">
+              <span className="nav-group-label">{group.label}</span>
+            </div>
             {visibleItems.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.path;
+              const active = navPathMatches(item.path, pathname);
+              const showSection = item.sectionLabel && item.sectionLabel !== lastSectionLabel;
+              lastSectionLabel = item.sectionLabel;
               return (
-                <a
-                  key={item.path}
-                  href={appHref(item.path)}
-                  className={active ? "nav-link active" : "nav-link"}
-                  aria-current={active ? "page" : undefined}
-                  onClick={(event) => {
-                    onInternalLinkClick(event, item.path);
-                    onNavigate?.();
-                  }}
-                >
-                  <Icon />
-                  <span>{item.label}</span>
-                </a>
+                <div key={item.path} className="nav-entry">
+                  {showSection ? <span className="nav-section-label">{item.sectionLabel}</span> : null}
+                  <a
+                    href={appHref(item.path)}
+                    className={active ? "nav-link active" : "nav-link"}
+                    aria-current={active ? "page" : undefined}
+                    onClick={(event) => {
+                      onInternalLinkClick(event, item.path);
+                      onNavigate?.();
+                    }}
+                  >
+                    <Icon />
+                    <span>{item.label}</span>
+                  </a>
+                </div>
               );
             })}
           </div>
@@ -222,6 +248,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [setupIncomplete, setSetupIncomplete] = useState(false);
   const isPlatform = auth.user?.role === "platform_admin";
 
   useEffect(() => {
@@ -249,11 +276,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [auth.user?.id, isPlatform]);
 
+  useEffect(() => {
+    if (isPlatform || !auth.user) return undefined;
+    let cancelled = false;
+    void adminApi.getCompanyProfile().then(
+      (profile) => {
+        if (!cancelled) {
+          setSetupIncomplete(!["active", "completed"].includes(profile.onboardingStatus || ""));
+        }
+      },
+      () => {
+        if (!cancelled) {
+          setSetupIncomplete(false);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user?.id, isPlatform]);
+
   return (
     <div className={isPlatform ? "app-shell platform-shell" : "app-shell"}>
       <aside className="shell-sidebar">
         <Brand platform={isPlatform} />
-        <Navigation />
+        <Navigation setupIncomplete={setupIncomplete} />
         <div className="sidebar-footer">
           <span>已登录</span>
           <strong>{auth.user?.displayName}</strong>
@@ -335,7 +382,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
-          <Navigation onNavigate={() => setMobileOpen(false)} />
+          <Navigation onNavigate={() => setMobileOpen(false)} setupIncomplete={setupIncomplete} />
         </DrawerBody>
       </OverlayDrawer>
       {!isPlatform && hasNavPermission(auth.user, "knowledge.read") && (

@@ -83,7 +83,7 @@ Evidence:
 - A platform admin can start a provisional onboarding session, upload a supported file through current `knowledge_import`, and receive sourced/editable enterprise and initial-card suggestions.
 - Provisional credentials cannot log in, provisional cards cannot be public, enterprise roles receive 403, and a session cannot access another session's tenant/import data.
 - LLM failure preserves parsed drafts and allows manual completion; document text is treated as untrusted and cannot trigger tools, external URLs, secret access or automatic activation/publication.
-- Confirm with the current `expected_version` is idempotent and produces exactly one active enterprise/admin plus one employee-independent enterprise official draft card. Selected valid candidates materialize through the existing review service into traceable unpublished enterprise/product/case/FAQ content; invalid, ignored and unselected candidates remain review history. Stale confirmation returns 409.
+- Confirm with the current `expected_version` is idempotent and produces exactly one active enterprise/admin, one one-time temporary credential and zero cards. Selected valid candidates materialize through the existing review service into traceable unpublished enterprise/product/case/FAQ content; invalid, ignored and unselected candidates remain review history. Stale confirmation returns 409.
 - A one-time temporary password can be regenerated only while first password change is still required; the old password is invalid immediately and plaintext appears in one response only.
 - Platform onboarding/import tasks use editable human-readable names with optimistic conflict handling. Open sessions expire after 24 hours; cancelled/failed/expired provisional resources are cleaned only after 30 days and confirmed enterprises are excluded.
 
@@ -146,10 +146,33 @@ openspec validate unify-platform-enterprise-llm-import-control-plane --strict
 ## Real Smoke Set
 
 1. Platform admin: create/update profile → test → activate → complete one real Chat; verify secret is not returned.
-2. Platform admin: start document-assisted onboarding → upload one small supported file through current `knowledge_import` → generate or manually complete sourced suggestions → confirm once → observe one enterprise/admin and one employee-independent enterprise official draft card.
+2. Platform admin: start document-assisted onboarding → upload one small supported file through current `knowledge_import` → generate or manually complete sourced suggestions → confirm once → observe one enterprise/admin, one one-time credential and zero cards/public URLs.
 3. Platform admin: enterprise list → detail → all cards → open a published public page.
 4. Enterprise admin: create/edit/publish one enterprise official card without selecting an employee, open the same card from enterprise card management, and verify employee-card management stays separate; draft/disabled cards have no public link.
 5. Enterprise admin: upload one small supported file → wait for Worker → see draft → keep draft or publish one item explicitly.
 6. Failure/permission: one unsupported file error plus one cross-role, cross-tenant or cross-onboarding-session denial; observe that an unconfirmed provisional credential cannot log in.
 
 Visual evidence is limited to representative LLM desktop, onboarding review desktop/390px, enterprise detail desktop/390px, enterprise cards desktop and import 390px screenshots. Add one keyboard-focus spot-check; do not run pixel-diff or full a11y/performance suites unless a focused failure requires expansion.
+
+### AC9 — Cardless enterprise provisioning
+
+- New direct and assisted enterprises have zero cards and no share URL after confirmation.
+- Tenant/company/admin/temp credential/default entitlements are atomic and retry remains idempotent.
+- Historical initial-card sessions remain readable; stale versions fail without partial activation.
+
+### AC10 — Unified platform operations
+
+- Employee/visitor aggregate navigation is absent and old URLs redirect to overview focus.
+- Enterprise detail routes refresh into the same company/section and never use the old full-detail drawer.
+- Overview/list/detail share server definitions and task views exclude successful outbox events.
+
+### AC11 — Enterprise work-domain IA and object links
+
+- Only the active work domain expands at desktop and 390px.
+- Customer and content/card links resolve real IDs under existing permission and entitlement checks.
+
+### AC12 — Settings separation and notification noise control
+
+- Company profile stops carrying answer, notification and privacy-retention controls after client cutover.
+- Separate settings preserve optimistic version and audit behavior.
+- Consented lead/high-intent events notify in real time; ordinary visits use an idempotent daily digest.

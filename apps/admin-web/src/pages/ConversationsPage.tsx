@@ -262,7 +262,11 @@ function ConversationDrawer({ id, onClose }: { id: string; onClose: () => void }
   );
 }
 
-export function ConversationsPage() {
+export function ConversationsPage({
+  initialConversationId,
+}: {
+  initialConversationId?: string;
+} = {}) {
   const initialVisitorId = new URLSearchParams(window.location.search).get("visitorId")?.trim() || "";
   const [offset, setOffset] = useState(0);
   const [status, setStatus] = useState<ConversationStatus | "">("");
@@ -270,7 +274,9 @@ export function ConversationsPage() {
   const [cardId, setCardId] = useState("");
   const [visitorDraft, setVisitorDraft] = useState(initialVisitorId);
   const [visitorId, setVisitorId] = useState(initialVisitorId);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(
+    initialConversationId,
+  );
   const resource = useResource(
     () =>
       workflowApi.listConversations({

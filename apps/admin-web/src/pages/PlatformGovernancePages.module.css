@@ -10,6 +10,14 @@
 .filterGroup { display: flex; flex-wrap: wrap; gap: 6px; }
 .attention { color: #9b5c00; font-size: 13px; }
 .noResults { margin: 18px 0 0; color: var(--colorNeutralForeground3); }
+.companyTaskGrid { display: grid; gap: 12px; }
+.companyTaskCard { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--colorNeutralStroke2); border-radius: 12px; background: var(--colorNeutralBackground1); }
+.companyTaskHeader { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.companyTaskHeader > div { display: grid; gap: 4px; }
+.companyTaskHeader span,
+.companyTaskCard ul li span { color: var(--colorNeutralForeground3); font-size: 12px; }
+.companyTaskCard ul { display: grid; gap: 10px; margin: 0; padding-left: 18px; }
+.companyTaskCard ul li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .healthGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .healthGrid article header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .healthGrid article p { margin: 14px 0 0; color: var(--colorNeutralForeground2); }
@@ -17,4 +25,4 @@
 .healthMeta div { display: grid; gap: 2px; }
 .healthMeta dt { color: var(--colorNeutralForeground3); font-size: 12px; }
 .healthMeta dd { margin: 0; font-size: 13px; }
-@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .toolbar { align-items: stretch; flex-direction: column; } .search { min-width: 100%; } .table thead { display: none; } .table tbody, .table tr { display: grid; gap: 10px; } .table tr { padding: 14px; border: 1px solid var(--colorNeutralStroke2); border-radius: 10px; } .table td { display: grid; grid-template-columns: minmax(88px, 0.42fr) 1fr; gap: 12px; padding: 0; border: 0; } .table td::before { content: attr(data-label); color: var(--colorNeutralForeground3); font-size: 12px; } }
+@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .toolbar { align-items: stretch; flex-direction: column; } .search { min-width: 100%; } .table thead { display: none; } .table tbody, .table tr { display: grid; gap: 10px; } .table tr { padding: 14px; border: 1px solid var(--colorNeutralStroke2); border-radius: 10px; } .table td { display: grid; grid-template-columns: minmax(88px, 0.42fr) 1fr; gap: 12px; padding: 0; border: 0; } .table td::before { content: attr(data-label); color: var(--colorNeutralForeground3); font-size: 12px; } .companyTaskHeader, .companyTaskCard ul li { align-items: stretch; flex-direction: column; } }

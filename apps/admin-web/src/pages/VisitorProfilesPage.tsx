@@ -205,10 +205,16 @@ function ProfileDetail({ visitorId, onClose }: { visitorId: string; onClose: () 
   );
 }
 
-export function VisitorProfilesPage() {
+export function VisitorProfilesPage({
+  initialVisitorId,
+}: {
+  initialVisitorId?: string;
+} = {}) {
   const { user } = useAuth();
   const [offset, setOffset] = useState(0);
-  const [selectedVisitorId, setSelectedVisitorId] = useState<string>();
+  const [selectedVisitorId, setSelectedVisitorId] = useState<string | undefined>(
+    initialVisitorId,
+  );
   const canRead = hasPermission(user, "visits.read", { allowCardOwner: true });
   const resource = useResource(
     () => canRead

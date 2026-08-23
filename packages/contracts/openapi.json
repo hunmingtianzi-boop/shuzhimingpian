@@ -482,6 +482,466 @@
         }
       }
     },
+    "/admin/company/identity": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Company Identity Profile",
+        "operationId": "getCompanyIdentityProfile",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyIdentityProfileEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Company Identity Profile",
+        "operationId": "updateCompanyIdentityProfile",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyIdentityProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyIdentityProfileEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/ai/answer-policy": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Company Answer Policy",
+        "operationId": "getCompanyAnswerPolicy",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyAnswerPolicyEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Company Answer Policy",
+        "operationId": "updateCompanyAnswerPolicy",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyAnswerPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyAnswerPolicyEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/notifications/settings": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Company Notification Settings",
+        "operationId": "getCompanyNotificationSettings",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyNotificationSettingsEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Company Notification Settings",
+        "operationId": "updateCompanyNotificationSettings",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyNotificationSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyNotificationSettingsEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/privacy/settings": {
+      "get": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Get Company Privacy Settings",
+        "operationId": "getCompanyPrivacySettings",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyPrivacySettingsEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Content"
+        ],
+        "summary": "Update Company Privacy Settings",
+        "operationId": "updateCompanyPrivacySettings",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyPrivacySettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyPrivacySettingsEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/card": {
       "get": {
         "tags": [
@@ -8581,6 +9041,78 @@
             }
           },
           {
+            "name": "activity_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(active_30d|inactive_30d)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity Level"
+            }
+          },
+          {
+            "name": "has_actionable_tasks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Actionable Tasks"
+            }
+          },
+          {
+            "name": "service_risk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(healthy|warning|expired|missing)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Risk"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(company_name|created_at|last_activity_at|visits_30d|conversations_30d|consented_leads_30d|actionable_task_count|service_valid_until)$",
+              "default": "created_at",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(asc|desc)$",
+              "default": "desc",
+              "title": "Sort Order"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -10155,6 +10687,102 @@
         "summary": "List Platform Tasks",
         "operationId": "listPlatformTasks",
         "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(timeline|company)$",
+              "default": "timeline",
+              "title": "View"
+            }
+          },
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(pending|in_progress|blocked|failed|completed|cancelled|expired)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(onboarding|knowledge_import|content_review|enterprise_risk|service_validity)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Type"
+            }
+          },
+          {
+            "name": "updated_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated From"
+            }
+          },
+          {
+            "name": "updated_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated To"
+            }
+          },
           {
             "name": "limit",
             "in": "query",
@@ -16021,6 +16649,18 @@
             ],
             "title": "Contract Price Cny"
           },
+          "service_valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Valid Until"
+          },
           "feature_overrides": {
             "additionalProperties": {
               "type": "boolean"
@@ -16231,6 +16871,51 @@
         ],
         "title": "CommercialPlanRecord"
       },
+      "CompanyAnswerPolicy": {
+        "properties": {
+          "ai_off_topic_answer_mode": {
+            "$ref": "#/components/schemas/OffTopicAnswerMode",
+            "default": "limited"
+          },
+          "ai_off_topic_question_limit": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Ai Off Topic Question Limit",
+            "default": 3
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "updated_at"
+        ],
+        "title": "CompanyAnswerPolicy"
+      },
+      "CompanyAnswerPolicyEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyAnswerPolicy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CompanyAnswerPolicyEnvelope"
+      },
       "CompanyCardPluginInstallation": {
         "properties": {
           "plugin_id": {
@@ -16262,6 +16947,285 @@
           "grants"
         ],
         "title": "CompanyCardPluginInstallation"
+      },
+      "CompanyIdentityProfile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type",
+            "default": "domestic_enterprise"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "positioning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positioning"
+          },
+          "profile_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyProfileFact"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Profile Facts"
+          },
+          "profile_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Profile Tags"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "onboarding_status": {
+            "type": "string",
+            "title": "Onboarding Status"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "legal_name",
+          "status",
+          "onboarding_status",
+          "version",
+          "updated_at"
+        ],
+        "title": "CompanyIdentityProfile"
+      },
+      "CompanyIdentityProfileEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyIdentityProfile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CompanyIdentityProfileEnvelope"
+      },
+      "CompanyNotificationSettings": {
+        "properties": {
+          "visit_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Notifications Enabled",
+            "default": true
+          },
+          "visit_report_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Report Notifications Enabled",
+            "default": true
+          },
+          "visit_notification_in_app_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification In App Enabled",
+            "default": true
+          },
+          "visit_notification_wecom_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification Wecom Enabled",
+            "default": true
+          },
+          "visit_notification_recipient_scope": {
+            "type": "string",
+            "enum": [
+              "admins",
+              "responsible",
+              "both"
+            ],
+            "title": "Visit Notification Recipient Scope",
+            "default": "both"
+          },
+          "ordinary_visit_digest_enabled": {
+            "type": "boolean",
+            "title": "Ordinary Visit Digest Enabled",
+            "default": true
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "updated_at"
+        ],
+        "title": "CompanyNotificationSettings"
+      },
+      "CompanyNotificationSettingsEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyNotificationSettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CompanyNotificationSettingsEnvelope"
+      },
+      "CompanyPrivacySettings": {
+        "properties": {
+          "profile_personalization_policy_version": {
+            "type": "string",
+            "title": "Profile Personalization Policy Version"
+          },
+          "visitor_profile_retention_days": {
+            "type": "integer",
+            "maximum": 730.0,
+            "minimum": 1.0,
+            "title": "Visitor Profile Retention Days"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_personalization_policy_version",
+          "visitor_profile_retention_days",
+          "version",
+          "updated_at"
+        ],
+        "title": "CompanyPrivacySettings"
+      },
+      "CompanyPrivacySettingsEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompanyPrivacySettings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CompanyPrivacySettingsEnvelope"
       },
       "CompanyProfile": {
         "properties": {
@@ -16478,17 +17442,47 @@
             "minimum": 1.0,
             "title": "Expected Version"
           },
-          "tenant_name": {
+          "legal_name": {
             "type": "string",
             "maxLength": 200,
             "minLength": 1,
-            "title": "Tenant Name"
+            "title": "Legal Name"
           },
-          "company_name": {
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
             "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Company Name"
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type",
+            "default": "domestic_enterprise"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18,
+                "minLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
           },
           "industry": {
             "anyOf": [
@@ -16527,10 +17521,43 @@
             ],
             "title": "Website"
           },
+          "tenant_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Name"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
           "initial_card_display_name": {
-            "type": "string",
-            "maxLength": 120,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Initial Card Display Name"
           },
           "initial_card_title": {
@@ -16582,9 +17609,7 @@
         "type": "object",
         "required": [
           "expected_version",
-          "tenant_name",
-          "company_name",
-          "initial_card_display_name"
+          "legal_name"
         ],
         "title": "ConfirmPlatformOnboardingRequest"
       },
@@ -17635,24 +18660,47 @@
       },
       "CreateEnterpriseRequest": {
         "properties": {
-          "tenant_slug": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 3,
-            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
-            "title": "Tenant Slug"
-          },
-          "tenant_name": {
+          "legal_name": {
             "type": "string",
             "maxLength": 200,
             "minLength": 1,
-            "title": "Tenant Name"
+            "title": "Legal Name"
           },
-          "company_name": {
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
             "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Company Name"
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type",
+            "default": "domestic_enterprise"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18,
+                "minLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
           },
           "industry": {
             "anyOf": [
@@ -17678,11 +18726,61 @@
             "minLength": 1,
             "title": "Admin Display Name"
           },
-          "admin_password": {
+          "default_plan_code": {
             "type": "string",
-            "format": "password",
-            "title": "Admin Password",
-            "writeOnly": true
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Default Plan Code",
+            "default": "starter"
+          },
+          "tenant_slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Slug"
+          },
+          "tenant_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Name"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "admin_password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Password"
           },
           "initial_card_title": {
             "anyOf": [
@@ -17700,12 +18798,9 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "tenant_slug",
-          "tenant_name",
-          "company_name",
+          "legal_name",
           "admin_account",
-          "admin_display_name",
-          "admin_password"
+          "admin_display_name"
         ],
         "title": "CreateEnterpriseRequest"
       },
@@ -18909,7 +20004,14 @@
             "title": "Tenant Slug"
           },
           "tenant_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Tenant Name"
           },
           "company_id": {
@@ -18921,14 +20023,145 @@
             "type": "string",
             "title": "Company Name"
           },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
+          },
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "employee_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Employee Count"
+          },
+          "card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Card Count"
+          },
+          "published_card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Published Card Count"
+          },
+          "visits_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Visits 30D"
+          },
+          "unique_visitors_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Visitors 30D"
+          },
+          "conversations_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Conversations 30D"
+          },
+          "consented_leads_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Consented Leads 30D"
+          },
+          "actionable_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Actionable Task Count"
+          },
+          "failed_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Task Count"
+          },
+          "profile_completion": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Profile Completion"
+          },
+          "service_valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Valid Until"
+          },
+          "service_risk_level": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "warning",
+              "expired",
+              "missing"
+            ],
+            "title": "Service Risk Level",
+            "default": "missing"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "additionalProperties": false,
@@ -18936,11 +20169,24 @@
         "required": [
           "tenant_id",
           "tenant_slug",
-          "tenant_name",
           "company_id",
           "company_name",
+          "legal_name",
+          "subject_type",
+          "business_tenant_key",
           "status",
-          "created_at"
+          "employee_count",
+          "card_count",
+          "published_card_count",
+          "visits_30d",
+          "unique_visitors_30d",
+          "conversations_30d",
+          "consented_leads_30d",
+          "actionable_task_count",
+          "failed_task_count",
+          "profile_completion",
+          "created_at",
+          "updated_at"
         ],
         "title": "EnterpriseListItem"
       },
@@ -19007,7 +20253,14 @@
             "title": "Tenant Slug"
           },
           "tenant_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Tenant Name"
           },
           "company_id": {
@@ -19018,6 +20271,46 @@
           "company_name": {
             "type": "string",
             "title": "Company Name"
+          },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
           },
           "company_status": {
             "type": "string",
@@ -19033,13 +20326,37 @@
             "format": "uuid",
             "title": "Admin Membership Id"
           },
+          "credential_delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemporaryCredentialDelivery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "initial_card_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Initial Card Id"
           },
           "initial_card_slug": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Initial Card Slug"
           },
           "created_at": {
@@ -19053,14 +20370,14 @@
         "required": [
           "tenant_id",
           "tenant_slug",
-          "tenant_name",
           "company_id",
           "company_name",
+          "legal_name",
+          "subject_type",
+          "business_tenant_key",
           "company_status",
           "admin_user_id",
           "admin_membership_id",
-          "initial_card_id",
-          "initial_card_slug",
           "created_at"
         ],
         "title": "EnterpriseRecord"
@@ -24018,10 +25335,43 @@
             "type": "string",
             "title": "Company Name"
           },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
           "employee_count": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Employee Count"
+          },
+          "card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Card Count"
+          },
+          "published_card_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Published Card Count"
           },
           "visits_30d": {
             "type": "integer",
@@ -24033,7 +25383,27 @@
             "minimum": 0.0,
             "title": "Unique Visitors 30D"
           },
-          "last_visit_at": {
+          "conversations_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Conversations 30D"
+          },
+          "consented_leads_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Consented Leads 30D"
+          },
+          "actionable_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Actionable Task Count"
+          },
+          "failed_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Task Count"
+          },
+          "service_valid_until": {
             "anyOf": [
               {
                 "type": "string",
@@ -24043,7 +25413,30 @@
                 "type": "null"
               }
             ],
-            "title": "Last Visit At"
+            "title": "Service Valid Until"
+          },
+          "service_risk_level": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "warning",
+              "expired",
+              "missing"
+            ],
+            "title": "Service Risk Level",
+            "default": "missing"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
           }
         },
         "additionalProperties": false,
@@ -24051,9 +25444,18 @@
         "required": [
           "company_id",
           "company_name",
+          "legal_name",
+          "business_tenant_key",
+          "status",
           "employee_count",
+          "card_count",
+          "published_card_count",
           "visits_30d",
-          "unique_visitors_30d"
+          "unique_visitors_30d",
+          "conversations_30d",
+          "consented_leads_30d",
+          "actionable_task_count",
+          "failed_task_count"
         ],
         "title": "PlatformCompanyAggregate"
       },
@@ -24104,7 +25506,14 @@
             "title": "Tenant Slug"
           },
           "tenant_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Tenant Name"
           },
           "company_id": {
@@ -24115,6 +25524,46 @@
           "company_name": {
             "type": "string",
             "title": "Company Name"
+          },
+          "legal_name": {
+            "type": "string",
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "business_tenant_key": {
+            "type": "string",
+            "title": "Business Tenant Key"
           },
           "status": {
             "type": "string",
@@ -24155,15 +25604,65 @@
             "minimum": 0.0,
             "title": "Visits 30D"
           },
+          "unique_visitors_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Visitors 30D"
+          },
           "conversations_30d": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Conversations 30D"
           },
-          "leads_30d": {
+          "consented_leads_30d": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Leads 30D"
+            "title": "Consented Leads 30D"
+          },
+          "actionable_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Actionable Task Count"
+          },
+          "failed_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Task Count"
+          },
+          "service_valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Valid Until"
+          },
+          "service_risk_level": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "warning",
+              "expired",
+              "missing"
+            ],
+            "title": "Service Risk Level",
+            "default": "missing"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
           },
           "cards": {
             "items": {
@@ -24179,6 +25678,13 @@
             },
             "type": "array",
             "title": "Business Profile"
+          },
+          "recent_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformTaskRecord"
+            },
+            "type": "array",
+            "title": "Recent Tasks"
           },
           "created_at": {
             "type": "string",
@@ -24196,9 +25702,11 @@
         "required": [
           "tenant_id",
           "tenant_slug",
-          "tenant_name",
           "company_id",
           "company_name",
+          "legal_name",
+          "subject_type",
+          "business_tenant_key",
           "status",
           "version",
           "onboarding_status",
@@ -24207,8 +25715,11 @@
           "card_count",
           "published_card_count",
           "visits_30d",
+          "unique_visitors_30d",
           "conversations_30d",
-          "leads_30d",
+          "consented_leads_30d",
+          "actionable_task_count",
+          "failed_task_count",
           "created_at",
           "updated_at"
         ],
@@ -24741,6 +26252,67 @@
             ],
             "title": "Tenant Name"
           },
+          "legal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "domestic_enterprise",
+                  "association",
+                  "overseas",
+                  "pending_registration"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Type"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
           "admin_account": {
             "anyOf": [
               {
@@ -25037,20 +26609,20 @@
             "format": "date-time",
             "title": "Generated At"
           },
-          "enterprise_count": {
+          "enabled_enterprise_count": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Enterprise Count"
+            "title": "Enabled Enterprise Count"
           },
-          "active_enterprise_count": {
+          "active_enterprise_30d_count": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Active Enterprise Count"
+            "title": "Active Enterprise 30D Count"
           },
-          "onboarding_count": {
+          "pending_activation_count": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Onboarding Count"
+            "title": "Pending Activation Count"
           },
           "published_card_count": {
             "type": "integer",
@@ -25062,20 +26634,35 @@
             "minimum": 0.0,
             "title": "Visits 30D"
           },
+          "unique_visitors_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Visitors 30D"
+          },
           "conversations_30d": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Conversations 30D"
           },
-          "leads_30d": {
+          "consented_leads_30d": {
             "type": "integer",
             "minimum": 0.0,
-            "title": "Leads 30D"
+            "title": "Consented Leads 30D"
+          },
+          "pending_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pending Task Count"
           },
           "failed_task_count": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Failed Task Count"
+          },
+          "service_risk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Service Risk Count"
           },
           "llm_ready": {
             "type": "boolean",
@@ -25090,14 +26677,17 @@
         "type": "object",
         "required": [
           "generated_at",
-          "enterprise_count",
-          "active_enterprise_count",
-          "onboarding_count",
+          "enabled_enterprise_count",
+          "active_enterprise_30d_count",
+          "pending_activation_count",
           "published_card_count",
           "visits_30d",
+          "unique_visitors_30d",
           "conversations_30d",
-          "leads_30d",
+          "consented_leads_30d",
+          "pending_task_count",
           "failed_task_count",
+          "service_risk_count",
           "llm_ready",
           "import_ready"
         ],
@@ -25180,14 +26770,75 @@
         ],
         "title": "PlatformServiceHealthRecord"
       },
+      "PlatformTaskCompanyGroup": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "pending_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pending Count"
+          },
+          "in_progress_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "In Progress Count"
+          },
+          "failed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Count"
+          },
+          "recent_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformTaskRecord"
+            },
+            "type": "array",
+            "title": "Recent Tasks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id",
+          "company_name",
+          "pending_count",
+          "in_progress_count",
+          "failed_count"
+        ],
+        "title": "PlatformTaskCompanyGroup"
+      },
       "PlatformTaskListEnvelope": {
         "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "timeline",
+              "company"
+            ],
+            "title": "View",
+            "default": "timeline"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/PlatformTaskRecord"
             },
             "type": "array",
             "title": "Data"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformTaskCompanyGroup"
+            },
+            "type": "array",
+            "title": "Groups"
           },
           "total": {
             "type": "integer",
@@ -25224,6 +26875,13 @@
           },
           "task_type": {
             "type": "string",
+            "enum": [
+              "onboarding",
+              "knowledge_import",
+              "content_review",
+              "enterprise_risk",
+              "service_validity"
+            ],
             "title": "Task Type"
           },
           "business_label": {
@@ -25232,6 +26890,15 @@
           },
           "status": {
             "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "blocked",
+              "failed",
+              "completed",
+              "cancelled",
+              "expired"
+            ],
             "title": "Status"
           },
           "company_id": {
@@ -25242,6 +26909,17 @@
           "company_name": {
             "type": "string",
             "title": "Company Name"
+          },
+          "tenant_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Slug"
           },
           "error_code": {
             "anyOf": [
@@ -27261,11 +28939,82 @@
             ],
             "title": "Display Name"
           },
-          "tenant_slug": {
+          "legal_name": {
             "type": "string",
-            "maxLength": 64,
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type",
+            "default": "domestic_enterprise"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18,
+                "minLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "admin_account": {
+            "type": "string",
+            "maxLength": 200,
             "minLength": 3,
-            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "title": "Admin Account"
+          },
+          "admin_display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Admin Display Name"
+          },
+          "tenant_slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Tenant Slug"
           },
           "tenant_name": {
@@ -27280,24 +29029,12 @@
               }
             ],
             "title": "Tenant Name"
-          },
-          "admin_account": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 3,
-            "title": "Admin Account"
-          },
-          "admin_display_name": {
-            "type": "string",
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Admin Display Name"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "tenant_slug",
+          "legal_name",
           "admin_account",
           "admin_display_name"
         ],
@@ -27936,6 +29673,18 @@
             ],
             "title": "Contract Price Cny"
           },
+          "service_valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Valid Until"
+          },
           "feature_overrides": {
             "additionalProperties": {
               "type": "boolean"
@@ -27966,6 +29715,26 @@
         ],
         "title": "UpdateCommercialEntitlementRequest"
       },
+      "UpdateCompanyAnswerPolicyRequest": {
+        "properties": {
+          "ai_off_topic_answer_mode": {
+            "$ref": "#/components/schemas/OffTopicAnswerMode"
+          },
+          "ai_off_topic_question_limit": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Ai Off Topic Question Limit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ai_off_topic_answer_mode",
+          "ai_off_topic_question_limit"
+        ],
+        "title": "UpdateCompanyAnswerPolicyRequest"
+      },
       "UpdateCompanyCardPluginRequest": {
         "properties": {
           "enabled": {
@@ -27987,6 +29756,209 @@
           "enabled"
         ],
         "title": "UpdateCompanyCardPluginRequest"
+      },
+      "UpdateCompanyIdentityProfileRequest": {
+        "properties": {
+          "legal_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Legal Name"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name"
+          },
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "domestic_enterprise",
+              "association",
+              "overseas",
+              "pending_registration"
+            ],
+            "title": "Subject Type",
+            "default": "domestic_enterprise"
+          },
+          "social_credit_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18,
+                "minLength": 18
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Social Credit Code"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2083,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Summary",
+            "default": ""
+          },
+          "positioning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positioning"
+          },
+          "profile_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CompanyProfileFact"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Profile Facts"
+          },
+          "profile_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Profile Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "legal_name"
+        ],
+        "title": "UpdateCompanyIdentityProfileRequest"
+      },
+      "UpdateCompanyNotificationSettingsRequest": {
+        "properties": {
+          "visit_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Notifications Enabled"
+          },
+          "visit_report_notifications_enabled": {
+            "type": "boolean",
+            "title": "Visit Report Notifications Enabled"
+          },
+          "visit_notification_in_app_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification In App Enabled"
+          },
+          "visit_notification_wecom_enabled": {
+            "type": "boolean",
+            "title": "Visit Notification Wecom Enabled"
+          },
+          "visit_notification_recipient_scope": {
+            "type": "string",
+            "enum": [
+              "admins",
+              "responsible",
+              "both"
+            ],
+            "title": "Visit Notification Recipient Scope"
+          },
+          "ordinary_visit_digest_enabled": {
+            "type": "boolean",
+            "title": "Ordinary Visit Digest Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "visit_notifications_enabled",
+          "visit_report_notifications_enabled",
+          "visit_notification_in_app_enabled",
+          "visit_notification_wecom_enabled",
+          "visit_notification_recipient_scope"
+        ],
+        "title": "UpdateCompanyNotificationSettingsRequest"
+      },
+      "UpdateCompanyPrivacySettingsRequest": {
+        "properties": {
+          "profile_personalization_policy_version": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Profile Personalization Policy Version"
+          },
+          "visitor_profile_retention_days": {
+            "type": "integer",
+            "maximum": 730.0,
+            "minimum": 1.0,
+            "title": "Visitor Profile Retention Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_personalization_policy_version",
+          "visitor_profile_retention_days"
+        ],
+        "title": "UpdateCompanyPrivacySettingsRequest"
       },
       "UpdateCompanyProfileRequest": {
         "properties": {

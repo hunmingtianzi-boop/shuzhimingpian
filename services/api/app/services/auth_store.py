@@ -554,6 +554,14 @@ class AuthStore:
                 Membership.status == LifecycleStatus.ACTIVE,
             )
         )
+        credential = await session.scalar(
+            select(StaffCredential).where(
+                StaffCredential.membership_id == membership_id,
+                StaffCredential.user_id == user_id,
+                StaffCredential.tenant_id == tenant_id,
+                StaffCredential.company_id == company_id,
+            )
+        )
         if (
             membership is None
             or membership.id != membership_id
@@ -602,7 +610,10 @@ class AuthStore:
             display_name=user.display_name,
             role=membership.role.value,
             permissions=tuple(dict.fromkeys(membership.permissions)),
-            must_change_password=_PASSWORD_CHANGE_PERMISSION in membership.permissions,
+            must_change_password=bool(
+                (credential is not None and credential.must_change_password)
+                or _PASSWORD_CHANGE_PERMISSION in membership.permissions
+            ),
         )
 
     def _record_failed_attempt(

@@ -16,6 +16,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowClockwise24Regular,
+  ArrowRight24Regular,
   Dismiss24Regular,
   Eye24Regular,
   ShieldCheckmark24Regular,
@@ -31,6 +32,7 @@ import { PaginationBar } from "../components/PaginationBar";
 import { ResourceState } from "../components/ResourceState";
 import { StatusBadge } from "../components/StatusBadge";
 import { useResource } from "../hooks/useResource";
+import { APP_PATHS, navigate } from "../routing";
 import { formatTimestamp } from "../utils/format";
 
 const PAGE_SIZE = 20;
@@ -157,8 +159,19 @@ export function PrivacyRequestsPage() {
     <main className="page-stack">
       <PageHeader
         title="隐私请求"
-        description="核验并处理访问、更正、删除和撤回同意请求，完成后保留可审计状态。"
-        actions={<Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>}
+        description="这里处理具体隐私权利请求；长期访客画像授权与政策版本已拆到“数据与隐私”设置。"
+        actions={
+          <>
+            <Button
+              appearance="secondary"
+              icon={<ArrowRight24Regular />}
+              onClick={() => navigate(APP_PATHS.privacySettings)}
+            >
+              数据与隐私
+            </Button>
+            <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
+          </>
+        }
       />
       <section className="content-panel filter-panel" aria-label="隐私请求筛选">
         <Select

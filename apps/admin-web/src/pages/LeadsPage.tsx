@@ -320,10 +320,14 @@ function LeadDrawer({
   );
 }
 
-export function LeadsPage() {
+export function LeadsPage({
+  initialLeadId,
+}: {
+  initialLeadId?: string;
+} = {}) {
   const [offset, setOffset] = useState(0);
   const [status, setStatus] = useState<LeadStatus | "">("");
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialLeadId);
   const resource = useResource(
     () => workflowApi.listLeads({ limit: PAGE_SIZE, offset, status: status || undefined }),
     `${offset}:${status}`,

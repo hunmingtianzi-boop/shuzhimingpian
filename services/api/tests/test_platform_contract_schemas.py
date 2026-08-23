@@ -26,6 +26,10 @@ def test_platform_enterprise_detail_is_an_explicit_private_field_free_projection
             "tenant_name": "Acme Tenant",
             "company_id": uuid4(),
             "company_name": "Acme",
+            "legal_name": "Acme Legal",
+            "short_name": "Acme",
+            "subject_type": "domestic_enterprise",
+            "business_tenant_key": "91310101MA1EXAMPLE",
             "status": "active",
             "version": 2,
             "onboarding_status": "content_pending",
@@ -34,8 +38,11 @@ def test_platform_enterprise_detail_is_an_explicit_private_field_free_projection
             "card_count": 2,
             "published_card_count": 1,
             "visits_30d": 12,
+            "unique_visitors_30d": 7,
             "conversations_30d": 4,
-            "leads_30d": 1,
+            "consented_leads_30d": 1,
+            "actionable_task_count": 2,
+            "failed_task_count": 0,
             "cards": [
                 {
                     "id": uuid4(),
@@ -124,7 +131,8 @@ def test_onboarding_requests_cannot_select_a_target_scope(field: str) -> None:
     with pytest.raises(ValidationError):
         StartPlatformOnboardingRequest.model_validate(
             {
-                "tenant_slug": "acme",
+                "legal_name": "Acme",
+                "subject_type": "association",
                 "admin_account": "admin@acme.test",
                 "admin_display_name": "Acme Admin",
                 field: str(uuid4()),
@@ -139,10 +147,10 @@ def test_onboarding_session_read_model_hides_provisional_scope_ids() -> None:
             "display_name": "Acme·资料导入·2026-08-14·第 1 次",
             "status": "draft",
             "tenant_slug": "acme",
+            "legal_name": "Acme Legal",
+            "subject_type": "domestic_enterprise",
             "admin_account": "admin@acme.test",
             "admin_display_name": "Acme Admin",
-            "initial_card_display_name": "Acme",
-            "initial_card_title": "Acme Official Card",
             "version": 1,
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
@@ -155,8 +163,7 @@ def test_onboarding_session_read_model_hides_provisional_scope_ids() -> None:
     assert "admin_password" not in payload
     assert payload["admin_account"] == "admin@acme.test"
     assert payload["admin_display_name"] == "Acme Admin"
-    assert payload["initial_card_display_name"] == "Acme"
-    assert payload["initial_card_title"] == "Acme Official Card"
+    assert payload["legal_name"] == "Acme Legal"
     assert set(payload).isdisjoint(PLATFORM_FORBIDDEN_RESPONSE_FIELDS)
 
     with pytest.raises(ValidationError):
@@ -172,6 +179,8 @@ def test_terminal_onboarding_session_allows_review_projection_to_be_redacted() -
             "display_name": "Acme·资料导入·2026-08-14·第 1 次",
             "status": "cancelled",
             "tenant_slug": "acme",
+            "legal_name": "Acme Legal",
+            "subject_type": "association",
             "version": 2,
             "admin_account": None,
             "admin_display_name": None,

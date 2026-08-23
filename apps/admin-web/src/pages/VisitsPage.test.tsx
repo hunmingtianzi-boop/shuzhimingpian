@@ -1,12 +1,13 @@
 import { FluentProvider } from "@fluentui/react-components";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Visit, VisitDetail } from "../api/types";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Visit, VisitDetail } from "../api/types";
 import { workflowApi } from "../api/workflowApi";
+import { appHref, visitDetailPath } from "../routing";
 import { adminLightTheme } from "../theme";
-import { VisitsPage } from "./VisitsPage";
+import { VisitDetailPage, VisitsPage } from "./VisitsPage";
 
 const visit: Visit = {
   id: "visit-1",
@@ -86,15 +87,13 @@ const detail: VisitDetail = {
   },
 };
 
-describe("VisitsPage visit report", () => {
+describe("VisitsPage", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("shows page dwell, AI questions, answers, actions and evidence-based analysis", async () => {
+  it("uses a dedicated detail href instead of opening an inline drawer", async () => {
     vi.spyOn(workflowApi, "listVisits").mockResolvedValue({
       items: [visit], total: 1, limit: 20, offset: 0,
     });
-    vi.spyOn(workflowApi, "getVisit").mockResolvedValue(detail);
-    const user = userEvent.setup();
 
     render(
       <FluentProvider theme={adminLightTheme}>
@@ -102,16 +101,26 @@ describe("VisitsPage visit report", () => {
       </FluentProvider>,
     );
 
-    expect(await screen.findByText("微信访客（未识别）")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "查看" }));
+    const link = await screen.findByRole("link", { name: "查看详情" });
+    expect(link).toHaveAttribute("href", appHref(visitDetailPath("visit-1")));
+    expect(screen.queryByRole("heading", { name: "智能行为分析" })).not.toBeInTheDocument();
+  });
 
-    expect(await screen.findByRole("heading", { name: "智能行为分析" })).toBeInTheDocument();
+  it("shows single-visit evidence while keeping long-term profile boundaries explicit", async () => {
+    vi.spyOn(workflowApi, "getVisit").mockResolvedValue(detail);
+
+    render(
+      <FluentProvider theme={adminLightTheme}>
+        <VisitDetailPage visitId="visit-1" />
+      </FluentProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "访问详情" })).toBeInTheDocument();
+    expect(screen.getByText("一次访问详情不等于长期访客档案")).toBeInTheDocument();
     expect(screen.getByText("本次访问表现出较强咨询意向。")).toBeInTheDocument();
     expect(screen.getAllByText("产品 A")).toHaveLength(2);
     expect(screen.getByText("怎么合作？")).toBeInTheDocument();
     expect(screen.getByText("请留下联系方式，我们会尽快联系。")).toBeInTheDocument();
-    expect(screen.getAllByText("打开联系表单").length).toBeGreaterThan(0);
-    expect(screen.getByText("实际记录")).toBeInTheDocument();
   });
 
   it("refreshes the visit status when the workbench becomes visible again", async () => {

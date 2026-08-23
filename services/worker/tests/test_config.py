@@ -66,6 +66,15 @@ def test_visit_report_uses_the_short_exit_confirmation_window() -> None:
     assert settings.visit_report_poll_seconds == 5
 
 
+def test_visit_daily_digest_schedule_is_bounded() -> None:
+    settings = WorkerSettings(_env_file=None)
+
+    assert settings.visit_daily_digest_poll_seconds == 3_600
+    assert settings.visit_daily_digest_batch_size == 100
+    with pytest.raises(ValidationError):
+        WorkerSettings(visit_daily_digest_poll_seconds=299)
+
+
 def test_platform_onboarding_retention_purge_interval_is_bounded() -> None:
     assert (
         WorkerSettings(_env_file=None).platform_onboarding_retention_purge_seconds
@@ -90,4 +99,4 @@ def test_content_import_poll_and_lease_are_bounded() -> None:
 
 def test_production_rejects_local_worker_identity() -> None:
     with pytest.raises(ValidationError):
-        WorkerSettings(app_env="production")
+        WorkerSettings(_env_file=None, app_env="production")

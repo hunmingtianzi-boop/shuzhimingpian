@@ -122,14 +122,44 @@ async def list_platform_company_aggregates(
 async def list_platform_tasks(
     request: Request,
     principal: StaffDependency,
+    view: Annotated[str, Query(pattern="^(timeline|company)$")] = "timeline",
+    company_id: uuid.UUID | None = None,
+    task_status: Annotated[
+        str | None,
+        Query(
+            alias="status",
+            pattern="^(pending|in_progress|blocked|failed|completed|cancelled|expired)$",
+        ),
+    ] = None,
+    task_type: Annotated[
+        str | None,
+        Query(pattern="^(onboarding|knowledge_import|content_review|enterprise_risk|service_validity)$"),
+    ] = None,
+    updated_from: datetime | None = None,
+    updated_to: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PlatformTaskListEnvelope:
     _require_platform_admin(principal)
-    records, total = await _store(request).list_tasks(
-        actor=_actor(principal), limit=limit, offset=offset
+    records, groups, total = await _store(request).list_tasks(
+        actor=_actor(principal),
+        view=view,
+        company_id=company_id,
+        status=task_status,
+        task_type=task_type,
+        updated_from=updated_from,
+        updated_to=updated_to,
+        limit=limit,
+        offset=offset,
     )
-    return PlatformTaskListEnvelope(data=records, total=total, limit=limit, offset=offset)
+    return PlatformTaskListEnvelope(
+        view=view,
+        data=records,
+        groups=groups,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(

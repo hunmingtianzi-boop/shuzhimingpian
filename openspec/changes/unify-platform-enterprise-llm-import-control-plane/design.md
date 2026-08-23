@@ -12,7 +12,7 @@
 
 - 第一实施批先完成安全可用的 `chat_main` 多 profile LLM 配置，并让真实访客 Chat 无需重启采用当前主配置。
 - 在一个管理应用中形成角色隔离的平台与企业工作区，完善平台企业下钻、开通交付、聚合运营、任务/审计/健康和公开名片跳转。
-- 在平台开通与交付中增加资料辅助建企：临时企业范围隔离导入，LLM 基于解析草稿生成带来源建议，人工确认后才激活企业、管理员和初始草稿名片。
+- 在平台开通与交付中增加资料辅助建企：临时企业范围隔离导入，LLM 基于解析草稿生成带来源建议，人工确认后只激活企业、管理员和内容草稿；名片由企业管理员后续创建。
 - 保留企业端现有业务模块和 API，通过导航重组、状态完整性与逐名片公开预览提升可用性。
 - 保持当前 `knowledge_import` 唯一导入链路、端点、解析/Worker、默认草稿和租户隔离合同，并用少量真实证据确认 UI 改造后仍正常。
 - 冻结开发、Local Compose 和生产反代三类端口/base-path 合同，避免参考仓库路由实现破坏 `/c/admin/` 部署。
@@ -95,11 +95,11 @@
 
 资料辅助建企采用受控五步编排：
 
-1. 平台管理员提供无法从资料安全推导的租户标识、管理员账号/显示名和初始密码，系统创建不可登录、不可公开、普通列表不可见的临时 tenant/company 与版本化开通会话。
+1. 平台管理员提供企业主体类型、信用代码或例外身份、管理员账号/显示名；系统生成内部标识和不可登录、不可公开、普通列表不可见的临时 tenant/company、版本化开通会话与禁用凭据。临时密码只在确认时由服务端生成。
 2. 专用平台开通入口只接收 `onboarding_session_id`；服务端从会话推导临时 tenant/company，再复用当前 `knowledge_import` 格式校验、MinIO、store/parser、批次状态和 Worker。客户端不能选择任意目标租户，平台也不获得企业登录会话。
-3. 文件解析成功后，已激活的 `chat_main` profile 只读取解析草稿文本，生成企业名称、行业、简介、网站、产品/案例摘要和初始名片内容建议。每个建议保存来源文件/草稿、置信提示和生成版本；文档内容按不可信输入处理，不执行其中指令、不跟随 URL、不读取或输出密钥。
+3. 文件解析成功后，已激活的 `chat_main` profile 只读取解析草稿文本，生成企业名称、行业、简介、网站和产品/案例/FAQ 内容建议。每个建议保存来源文件/草稿、置信提示和生成版本；文档内容按不可信输入处理，不执行其中指令、不跟随 URL、不读取或输出密钥。
 4. LLM 不可用或生成失败时保留导入草稿并退化为人工填写。任何建议均不得创建账号、激活企业、自动发布知识或名片。
-5. 平台管理员逐字段审核并携带 `expected_version` 确认；同一事务幂等激活 tenant/company、管理员 membership/credential，并创建或更新一张不绑定员工的未发布企业官方名片。导入知识仍保持草稿，交由企业管理员按原权限审核发布。确认、取消或过期后，平台失去正文访问权；物理清理由独立保留策略处理。
+5. 平台管理员逐字段审核并携带 `expected_version` 确认；同一事务幂等激活 tenant/company、管理员 membership/credential 并生成一次性临时密码，不创建任何名片。导入知识仍保持草稿，交由企业管理员按原权限审核发布并自行创建名片。确认、取消或过期后，平台失去正文访问权；物理清理由独立保留策略处理。
 
 ### 7. 视觉只做功能级增量，修复参考界面的可用性缺陷
 
@@ -151,3 +151,27 @@
 ## Open Questions
 
 无阻塞性产品问题。资料辅助建企使用 `chat_main` 当前激活 profile 对已解析草稿生成建议，不新增独立文档抽取 profile；Embedding/Rerank、原始文档抽取 capability 和自动故障转移明确留到独立变更。
+
+## 11. P0/P1 platform and enterprise IA convergence
+
+Platform and enterprise navigation are separate products inside one admin shell. Platform uses multi-company operations domains; enterprise uses Workbench, Customer Growth, Content and Intelligence, Enterprise Governance and More Tools. Only the active enterprise work domain expands. Stable routes, permissions and commercial feature IDs remain authoritative.
+
+Platform enterprise detail uses `/platform/enterprises/:companyId/:section`; enterprise detail uses typed matchers for visits, visitor profiles, conversations, opportunities, contextual leads and products. Compatibility redirects preserve old aggregate URLs and base-path behavior. The full platform detail drawer is retired; no section may use mock data.
+
+## 12. Enterprise identity and provisioning
+
+Tenant/company UUIDs remain immutable primary and RLS identifiers. A unique `business_tenant_key` is the operator-visible tenant identity. Domestic companies derive it from normalized social-credit code; exempt subject types receive a stable server-generated key. Company legal name, outward short name and subject type are explicit.
+
+Enterprise administrators may update identity with optimistic version, uniqueness validation and audit. Changing a social-credit code updates the business key but never rewrites UUID foreign keys or historical ownership.
+
+Direct and document-assisted provisioning share one cardless result: tenant, company, administrator membership/credential, one-time temporary password, isolated imports/drafts and starter entitlements. Historical onboarding rows may retain an initial card; new rows do not create one. Enterprise users create and publish cards later.
+
+## 13. Operational metrics and tasks
+
+Overview, enterprise list and detail reuse one server-owned metric vocabulary. Enabled count and 30-day active count are separate. Operational tasks normalize onboarding, imports, content review, lifecycle risk and service-validity risk; successful outbox delivery is excluded. Timeline and company views share filters and never expose generic technical retry.
+
+## 14. Enterprise settings and notification noise
+
+Company profile stores identity and outward presentation only. Answer boundaries move to answer policy; notification delivery preferences move to notification settings; personalization consent/version/retention move to data and privacy. Enterprise model credentials remain P2.
+
+Consented leads and high-intent activity may notify in real time. Ordinary visits are summarized by an idempotent daily digest rather than per-visit pushes.

@@ -68,6 +68,10 @@ async def require_commercial_feature_for_admin_path(
     path_rules = (
         ("/admin/cards/", "/wecom-contact-way", "integration.wecom"),
         ("/admin/company/profile", None, "company.profile"),
+        ("/admin/company/identity", None, "company.profile"),
+        ("/admin/ai/answer-policy", None, "company.profile"),
+        ("/admin/notifications/settings", None, "company.profile"),
+        ("/admin/privacy/settings", None, "company.profile"),
         ("/admin/products", None, "catalog.manage"),
         ("/admin/case-studies", None, "catalog.manage"),
         ("/admin/cases", None, "catalog.manage"),

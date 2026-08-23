@@ -71,6 +71,143 @@ class CompanyProfileEnvelope(AdminStrictModel):
     data: CompanyProfile
 
 
+CompanySubjectType = Literal[
+    "domestic_enterprise",
+    "association",
+    "overseas",
+    "pending_registration",
+]
+
+
+class CompanyIdentityProfile(AdminStrictModel):
+    id: uuid.UUID
+    legal_name: str
+    short_name: str | None = None
+    subject_type: CompanySubjectType = "domestic_enterprise"
+    social_credit_code: str | None = None
+    industry: str | None = None
+    region: str | None = None
+    website: str | None = None
+    logo_url: str | None = None
+    summary: str = ""
+    positioning: str | None = None
+    profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
+    profile_tags: list[str] = Field(default_factory=list, max_length=3)
+    status: str
+    onboarding_status: str
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+
+class CompanyIdentityProfileEnvelope(AdminStrictModel):
+    data: CompanyIdentityProfile
+
+
+class UpdateCompanyIdentityProfileRequest(AdminStrictModel):
+    legal_name: str = Field(min_length=1, max_length=200)
+    short_name: str | None = Field(default=None, max_length=120)
+    subject_type: CompanySubjectType = "domestic_enterprise"
+    social_credit_code: str | None = Field(default=None, min_length=18, max_length=18)
+    industry: str | None = Field(default=None, max_length=120)
+    region: str | None = Field(default=None, max_length=100)
+    website: HttpUrl | None = None
+    logo_url: str | None = Field(default=None, max_length=2_048)
+    summary: str = Field(default="", max_length=5_000)
+    positioning: str | None = Field(default=None, max_length=240)
+    profile_facts: list[CompanyProfileFact] = Field(default_factory=list, max_length=4)
+    profile_tags: list[str] = Field(default_factory=list, max_length=3)
+
+    _validate_logo_url = field_validator("logo_url")(validate_safe_asset_url)
+
+    @field_validator("profile_tags")
+    @classmethod
+    def validate_identity_profile_tags(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            value = raw.strip()
+            key = value.casefold()
+            if not value or len(value) > 40:
+                raise ValueError("profile tags must contain 1-40 characters")
+            if key not in seen:
+                normalized.append(value)
+                seen.add(key)
+        return normalized
+
+    @field_validator("social_credit_code")
+    @classmethod
+    def normalize_social_credit_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized and len(normalized) != 18:
+            raise ValueError("social_credit_code must contain 18 characters")
+        return normalized or None
+
+
+class CompanyAnswerPolicy(AdminStrictModel):
+    ai_off_topic_answer_mode: OffTopicAnswerMode = OffTopicAnswerMode.LIMITED
+    ai_off_topic_question_limit: int = Field(
+        default=DEFAULT_OFF_TOPIC_QUESTION_LIMIT,
+        ge=MIN_OFF_TOPIC_QUESTION_LIMIT,
+        le=MAX_OFF_TOPIC_QUESTION_LIMIT,
+    )
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+
+class CompanyAnswerPolicyEnvelope(AdminStrictModel):
+    data: CompanyAnswerPolicy
+
+
+class UpdateCompanyAnswerPolicyRequest(AdminStrictModel):
+    ai_off_topic_answer_mode: OffTopicAnswerMode
+    ai_off_topic_question_limit: int = Field(
+        ge=MIN_OFF_TOPIC_QUESTION_LIMIT,
+        le=MAX_OFF_TOPIC_QUESTION_LIMIT,
+    )
+
+
+class CompanyNotificationSettings(AdminStrictModel):
+    visit_notifications_enabled: bool = True
+    visit_report_notifications_enabled: bool = True
+    visit_notification_in_app_enabled: bool = True
+    visit_notification_wecom_enabled: bool = True
+    visit_notification_recipient_scope: Literal["admins", "responsible", "both"] = "both"
+    ordinary_visit_digest_enabled: bool = True
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+
+class CompanyNotificationSettingsEnvelope(AdminStrictModel):
+    data: CompanyNotificationSettings
+
+
+class UpdateCompanyNotificationSettingsRequest(AdminStrictModel):
+    visit_notifications_enabled: bool
+    visit_report_notifications_enabled: bool
+    visit_notification_in_app_enabled: bool
+    visit_notification_wecom_enabled: bool
+    visit_notification_recipient_scope: Literal["admins", "responsible", "both"]
+    ordinary_visit_digest_enabled: bool = True
+
+
+class CompanyPrivacySettings(AdminStrictModel):
+    profile_personalization_policy_version: str
+    visitor_profile_retention_days: int = Field(ge=1, le=730)
+    version: int = Field(ge=1)
+    updated_at: datetime
+
+
+class CompanyPrivacySettingsEnvelope(AdminStrictModel):
+    data: CompanyPrivacySettings
+
+
+class UpdateCompanyPrivacySettingsRequest(AdminStrictModel):
+    profile_personalization_policy_version: str = Field(min_length=1, max_length=64)
+    visitor_profile_retention_days: int = Field(ge=1, le=730)
+
+
 class UpdateCompanyProfileRequest(AdminStrictModel):
     name: str = Field(min_length=1, max_length=200)
     summary: str = Field(max_length=5_000)

@@ -4,7 +4,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol
 
 
@@ -65,6 +65,21 @@ class VisitNotificationSnapshot:
     share_count: int
     cta_count: int
     engagement_level: str
+    has_consented_lead: bool
+
+
+@dataclass(frozen=True, slots=True)
+class VisitDailyDigestSnapshot:
+    digest_date: date
+    recipient_user_ids: tuple[uuid.UUID, ...]
+    in_app_enabled: bool
+    wecom_enabled: bool
+    visit_count: int
+    unique_visitor_count: int
+    card_count: int
+    question_count: int
+    share_count: int
+    top_card_display_name: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +224,22 @@ class OutboxRepository(Protocol):
         report_url: str,
     ) -> int: ...
 
+    async def visit_daily_digest_snapshot(
+        self,
+        event: OutboxRecord,
+        *,
+        digest_date: date,
+    ) -> VisitDailyDigestSnapshot | None: ...
+
+    async def send_wecom_visit_daily_digest(
+        self,
+        event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        card: WeComVisitCard,
+        report_url: str,
+    ) -> int: ...
+
     async def build_export(
         self,
         event: OutboxRecord,
@@ -234,5 +265,6 @@ __all__ = [
     "PermanentEventError",
     "ReportIntent",
     "VisitNotificationSnapshot",
+    "VisitDailyDigestSnapshot",
     "WeComVisitCard",
 ]

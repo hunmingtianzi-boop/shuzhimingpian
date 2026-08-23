@@ -38,10 +38,7 @@ from app.core.config import Settings
 from app.core.pii import PiiCipher
 from app.core.staff_auth import hash_staff_password, normalize_staff_account
 from app.db.models import (
-    Card,
-    CardKind,
     Company,
-    ContentStatus,
     LifecycleStatus,
     Membership,
     MembershipRole,
@@ -63,6 +60,12 @@ from app.services.audit import append_audit
 from app.services.catalog_store import CatalogScope, CatalogStore
 from app.services.content_import_review import ContentImportReviewService
 from app.services.knowledge_import_store import KnowledgeImportScope, KnowledgeImportStore
+from app.services.platform_identity import (
+    business_tenant_key as _business_tenant_key,
+)
+from app.services.platform_identity import (
+    tenant_slug_from_business_key as _tenant_slug_from_business_key,
+)
 from app.services.platform_llm_profiles import (
     LLMRuntimeUnavailable,
     resolve_effective_chat_config,
@@ -167,6 +170,11 @@ class PlatformOnboardingImportScope:
 class _OnboardingReviewProjection:
     admin_account: str
     admin_display_name: str | None
+    legal_name: str | None
+    short_name: str | None
+    subject_type: str | None
+    social_credit_code: str | None
+    industry: str | None
     initial_card_display_name: str | None
     initial_card_title: str | None
     temporary_credential_reset_available: bool
@@ -197,16 +205,25 @@ class PlatformOnboardingService:
         user_id = uuid.uuid4()
         membership_id = uuid.uuid4()
         credential_id = uuid.uuid4()
-        card_id = uuid.uuid4()
         onboarding_id = uuid.uuid4()
+        business_tenant_key = _business_tenant_key(
+            subject_type=body.subject_type,
+            social_credit_code=body.social_credit_code,
+            company_id=company_id,
+        )
+        generated_tenant_slug = _tenant_slug_from_business_key(business_tenant_key)
         tenant_name = body.tenant_name.strip() if body.tenant_name else None
-        provisional_name = tenant_name or body.tenant_slug
+        provisional_name = (
+            body.short_name.strip()
+            if body.short_name
+            else tenant_name or body.legal_name.strip()
+        )
 
         async with self._sessions() as session, session.begin():
             await self._set_platform_scope(session, actor)
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-                {"key": f"platform-onboarding:{body.tenant_slug}:{account}"},
+                {"key": f"platform-onboarding:{business_tenant_key}:{account}"},
             )
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
@@ -215,7 +232,7 @@ class PlatformOnboardingService:
             existing = await session.scalar(
                 select(PlatformOnboardingSession).where(
                     PlatformOnboardingSession.created_by == actor.user_id,
-                    PlatformOnboardingSession.tenant_slug == body.tenant_slug,
+                    PlatformOnboardingSession.tenant_slug == generated_tenant_slug,
                     PlatformOnboardingSession.admin_account == account,
                     PlatformOnboardingSession.status.in_(_OPEN_STATUSES),
                 )
@@ -225,8 +242,14 @@ class PlatformOnboardingService:
                 if existing.status in _OPEN_STATUSES:
                     await self._reconcile_import_state(session, existing)
                     return await self._record_with_review(session, existing)
-            if await session.scalar(select(Tenant.id).where(Tenant.slug == body.tenant_slug)):
+            if await session.scalar(
+                select(Tenant.id).where(Tenant.slug == generated_tenant_slug)
+            ):
                 raise ApiError(409, "TENANT_SLUG_CONFLICT", "企业租户标识已存在")
+            if await session.scalar(
+                select(Company.id).where(Company.business_tenant_key == business_tenant_key)
+            ):
+                raise ApiError(409, "BUSINESS_TENANT_KEY_CONFLICT", "企业业务标识已存在")
             if await session.scalar(
                 select(StaffCredential.id).where(StaffCredential.account_normalized == account)
             ):
@@ -254,18 +277,22 @@ class PlatformOnboardingService:
 
             tenant = Tenant(
                 id=tenant_id,
-                slug=body.tenant_slug,
+                slug=generated_tenant_slug,
                 name=provisional_name,
                 tenant_type=TenantType.ENTERPRISE,
                 status=LifecycleStatus.SUSPENDED,
-                settings={"slug": body.tenant_slug, "onboarding_status": "provisional"},
+                settings={"slug": generated_tenant_slug, "onboarding_status": "provisional"},
             )
             company = Company(
                 id=company_id,
                 tenant_id=tenant_id,
-                name=provisional_name,
-                normalized_name=" ".join(provisional_name.casefold().split()),
-                industry=None,
+                name=body.legal_name.strip(),
+                normalized_name=" ".join(body.legal_name.casefold().split()),
+                short_name=body.short_name.strip() if body.short_name else None,
+                subject_type=body.subject_type,
+                social_credit_code=body.social_credit_code,
+                business_tenant_key=business_tenant_key,
+                industry=body.industry,
                 status=LifecycleStatus.SUSPENDED,
                 settings={
                     "summary": "",
@@ -296,32 +323,6 @@ class PlatformOnboardingService:
                     status=LifecycleStatus.SUSPENDED,
                 )
             )
-            await session.execute(
-                insert(Card).values(
-                    id=card_id,
-                    tenant_id=tenant_id,
-                    company_id=company_id,
-                    card_kind=CardKind.ENTERPRISE,
-                    owner_user_id=None,
-                    responsible_user_id=user_id,
-                    slug=f"c-{secrets.token_hex(16)}",
-                    display_name=provisional_name,
-                    status=ContentStatus.DRAFT,
-                    settings={
-                        "title": provisional_name,
-                        "assistant_name": "企业 AI 接待",
-                        "welcome_message": "您好，我可以根据企业已审核资料为您介绍业务。",
-                        "suggested_questions": [],
-                        "onboarding_status": "provisional",
-                        "policy_versions": {
-                            "privacy": "privacy-v1",
-                            "chat_notice": "chat-notice-v1",
-                            "lead_consent": "lead-consent-v1",
-                            "profile_personalization": "profile-personalization-v1",
-                        },
-                    },
-                )
-            )
             credential = StaffCredential(
                 id=credential_id,
                 user_id=user_id,
@@ -340,10 +341,10 @@ class PlatformOnboardingService:
                 admin_user_id=user_id,
                 admin_membership_id=membership_id,
                 credential_id=credential_id,
-                initial_card_id=card_id,
+                initial_card_id=None,
                 created_by=actor.user_id,
                 display_name=display_name,
-                tenant_slug=body.tenant_slug,
+                tenant_slug=generated_tenant_slug,
                 tenant_name=tenant_name,
                 admin_account=account,
                 status="draft",
@@ -370,11 +371,11 @@ class PlatformOnboardingService:
                 resource_id=onboarding_id,
                 trace_id=trace_id,
                 event_data={
-                    "tenant_slug": body.tenant_slug,
+                    "tenant_slug": generated_tenant_slug,
+                    "business_tenant_key": business_tenant_key,
                     "display_name": display_name,
                     "provisional": True,
                     "credential_enabled": False,
-                    "card_status": "draft",
                 },
             )
             # Flush the audit row before returning, matching the other
@@ -1003,12 +1004,12 @@ class PlatformOnboardingService:
                 Membership, row.admin_membership_id, with_for_update=True
             )
             credential = await session.get(StaffCredential, row.credential_id, with_for_update=True)
-            card = await session.get(Card, row.initial_card_id, with_for_update=True)
-            if not all((tenant, company, user, membership, credential, card)):
+            if not all((tenant, company, user, membership, credential)):
                 raise ApiError(409, "ONBOARDING_RESOURCE_MISSING", "临时企业资源不完整")
 
-            assert tenant and company and user and membership and credential and card
-            normalized_company_name = " ".join(body.company_name.casefold().split())
+            assert tenant and company and user and membership and credential
+            legal_name = body.legal_name.strip()
+            normalized_company_name = " ".join(legal_name.casefold().split())
             duplicate_company_id = await session.scalar(
                 select(Company.id)
                 .where(
@@ -1025,11 +1026,21 @@ class PlatformOnboardingService:
                     "已存在同名企业，请先核对企业中心中的现有主体",
                     details={"company_id": str(duplicate_company_id)},
                 )
-            tenant.name = body.tenant_name
+            short_name = body.short_name.strip() if body.short_name else None
+            business_tenant_key = _business_tenant_key(
+                subject_type=body.subject_type,
+                social_credit_code=body.social_credit_code,
+                company_id=row.company_id,
+            )
+            tenant.name = body.tenant_name or short_name or legal_name
             tenant.status = LifecycleStatus.ACTIVE
             tenant.settings = {**tenant.settings, "onboarding_status": "confirmed"}
-            company.name = body.company_name
+            company.name = legal_name
             company.normalized_name = normalized_company_name
+            company.short_name = short_name
+            company.subject_type = body.subject_type
+            company.social_credit_code = body.social_credit_code
+            company.business_tenant_key = business_tenant_key
             company.industry = body.industry
             company.status = LifecycleStatus.ACTIVE
             company.settings = {
@@ -1043,26 +1054,13 @@ class PlatformOnboardingService:
             # silently turned into the enterprise-card identity.
             user.status = LifecycleStatus.ACTIVE
             membership.status = LifecycleStatus.ACTIVE
-            membership.permissions = ["auth.password.change"]
+            membership.permissions = list(_COMPANY_ADMIN_PERMISSIONS)
             now = datetime.now(UTC)
             temporary_password = _generate_temporary_password()
             credential.is_enabled = True
             credential.password_hash = hash_staff_password(temporary_password)
             credential.must_change_password = True
             credential.temporary_password_expires_at = now + timedelta(days=7)
-            card.display_name = body.initial_card_display_name
-            card.card_kind = CardKind.ENTERPRISE
-            card.owner_user_id = None
-            card.responsible_user_id = row.admin_user_id
-            card.status = ContentStatus.DRAFT
-            card.settings = {
-                **card.settings,
-                "title": body.initial_card_title or body.initial_card_display_name,
-                "assistant_name": body.assistant_name or "企业 AI 接待",
-                "welcome_message": body.welcome_message
-                or "您好，我可以根据企业已审核资料为您介绍业务。",
-                "onboarding_status": "confirmed",
-            }
             # The narrow resource UPDATE policies are valid only while this
             # onboarding session is still open. Flush those bound resource
             # changes before switching the session to `confirmed`; both phases
@@ -1100,11 +1098,14 @@ class PlatformOnboardingService:
                 "tenant_name": tenant.name,
                 "company_id": str(row.company_id),
                 "company_name": company.name,
+                "legal_name": company.name,
+                "short_name": company.short_name,
+                "subject_type": company.subject_type,
+                "social_credit_code": company.social_credit_code,
+                "business_tenant_key": company.business_tenant_key,
                 "company_status": company.status.value,
                 "admin_user_id": str(row.admin_user_id),
                 "admin_membership_id": str(row.admin_membership_id),
-                "initial_card_id": str(row.initial_card_id),
-                "initial_card_slug": card.slug,
                 "created_at": now.isoformat(),
             }
             row.status = "confirmed"
@@ -1148,9 +1149,8 @@ class PlatformOnboardingService:
                 event_data={
                     "company_id": str(row.company_id),
                     "credential_enabled": True,
-                    "card_kind": CardKind.ENTERPRISE.value,
-                    "card_status": "draft",
                     "knowledge_auto_published": False,
+                    "business_tenant_key": company.business_tenant_key,
                 },
             )
             await session.flush()
@@ -1363,16 +1363,16 @@ class PlatformOnboardingService:
             if open_rows
             else {}
         )
-        cards = (
+        companies = (
             {
-                card.id: card
-                for card in (
+                company.id: company
+                for company in (
                     await session.scalars(
-                        select(Card).where(Card.id.in_({row.initial_card_id for row in open_rows}))
+                        select(Company).where(Company.id.in_({row.company_id for row in rows}))
                     )
                 ).all()
             }
-            if open_rows
+            if rows
             else {}
         )
         credential_rows = [
@@ -1393,18 +1393,22 @@ class PlatformOnboardingService:
         projections: dict[uuid.UUID, _OnboardingReviewProjection] = {}
         for row in credential_rows:
             user = users.get(row.admin_user_id)
-            card = cards.get(row.initial_card_id)
+            company = companies.get(row.company_id)
             credential = credentials.get(row.credential_id)
             if credential is None:
                 continue
-            if row.status in _OPEN_STATUSES and (user is None or card is None):
+            if row.status in _OPEN_STATUSES and (user is None or company is None):
                 continue
-            raw_title = card.settings.get("title") if card else None
             projections[row.id] = _OnboardingReviewProjection(
                 admin_account=credential.account_normalized,
                 admin_display_name=user.display_name if user else None,
-                initial_card_display_name=card.display_name if card else None,
-                initial_card_title=str(raw_title) if raw_title is not None else None,
+                legal_name=company.name if company else None,
+                short_name=company.short_name if company else None,
+                subject_type=company.subject_type if company else None,
+                social_credit_code=company.social_credit_code if company else None,
+                industry=company.industry if company else None,
+                initial_card_display_name=None,
+                initial_card_title=None,
                 temporary_credential_reset_available=(
                     row.status == "confirmed"
                     and credential.is_enabled
@@ -1470,14 +1474,31 @@ class PlatformOnboardingService:
             confirmed = EnterpriseRecord(
                 tenant_id=uuid.UUID(str(payload["tenant_id"])),
                 tenant_slug=str(payload["tenant_slug"]),
-                tenant_name=str(payload["tenant_name"]),
+                tenant_name=str(payload["tenant_name"]) if payload.get("tenant_name") else None,
                 company_id=uuid.UUID(str(payload["company_id"])),
                 company_name=str(payload["company_name"]),
+                legal_name=str(payload.get("legal_name") or payload["company_name"]),
+                short_name=str(payload["short_name"]) if payload.get("short_name") else None,
+                subject_type=str(payload.get("subject_type") or "domestic_enterprise"),
+                social_credit_code=(
+                    str(payload["social_credit_code"])
+                    if payload.get("social_credit_code")
+                    else None
+                ),
+                business_tenant_key=str(payload.get("business_tenant_key") or row.tenant_slug),
                 company_status=str(payload["company_status"]),
                 admin_user_id=uuid.UUID(str(payload["admin_user_id"])),
                 admin_membership_id=uuid.UUID(str(payload["admin_membership_id"])),
-                initial_card_id=uuid.UUID(str(payload["initial_card_id"])),
-                initial_card_slug=str(payload["initial_card_slug"]),
+                initial_card_id=(
+                    uuid.UUID(str(payload["initial_card_id"]))
+                    if payload.get("initial_card_id")
+                    else None
+                ),
+                initial_card_slug=(
+                    str(payload["initial_card_slug"])
+                    if payload.get("initial_card_slug")
+                    else None
+                ),
                 created_at=datetime.fromisoformat(str(payload["created_at"])),
             )
         return PlatformOnboardingSessionRecord(
@@ -1486,6 +1507,11 @@ class PlatformOnboardingService:
             status=cast(OnboardingStatus, row.status),
             tenant_slug=row.tenant_slug,
             tenant_name=row.tenant_name,
+            legal_name=review.legal_name if review else None,
+            short_name=review.short_name if review else None,
+            subject_type=review.subject_type if review else None,
+            social_credit_code=review.social_credit_code if review else None,
+            industry=review.industry if review else None,
             admin_account=review.admin_account if review else None,
             admin_display_name=review.admin_display_name if review else None,
             initial_card_display_name=(review.initial_card_display_name if review else None),

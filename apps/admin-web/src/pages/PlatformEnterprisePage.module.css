@@ -1,0 +1,369 @@
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #c9d8d3;
+  border-radius: var(--radius);
+  background: #c9d8d3;
+}
+
+.heroPrimary,
+.heroSide {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  background: var(--surface);
+}
+
+.heroPrimary {
+  background: linear-gradient(180deg, #f8fbfa 0%, #fdfdfd 100%);
+}
+
+.heroPrimary h2,
+.heroPrimary p,
+.heroSide strong,
+.heroSide span,
+.metricCard dt,
+.metricCard dd,
+.metricCard span,
+.identityGrid strong,
+.identityGrid span,
+.identityGrid small,
+.note strong,
+.note p,
+.taskItem strong,
+.taskItem p,
+.taskItem span,
+.profileList p,
+.profileList small,
+.profileHeading strong,
+.profileHeading span,
+.sectionBlockHeader h2,
+.sectionBlockHeader p,
+.sectionBlockHeader h3,
+.sectionBlockHeader span,
+.groupCard strong,
+.groupCard span {
+  margin: 0;
+}
+
+.badgeRow,
+.metaRow,
+.profileHeading,
+.groupHeader,
+.taskHeader,
+.sectionBlockHeader,
+.sectionBlockHeader > div,
+.progressHeader {
+  display: flex;
+  gap: 10px;
+}
+
+.badgeRow,
+.metaRow {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.metaRow {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.heroPrimary h2 {
+  font-size: 30px;
+  letter-spacing: -0.03em;
+}
+
+.heroPrimary p {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.heroSide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: stretch;
+}
+
+.heroSide > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(18, 106, 88, 0.14);
+  border-radius: 12px;
+  background: #f8fbfa;
+}
+
+.heroSide span,
+.metricCard dt,
+.identityGrid span,
+.identityGrid small,
+.sectionNavButton:not(:global(.fui-Button--primary)),
+.placeholderText,
+.profileHeading span,
+.profileList small,
+.groupCard ul,
+.taskHeader p {
+  color: var(--muted);
+}
+
+.heroSide span,
+.metricCard dt,
+.identityGrid span,
+.identityGrid small,
+.profileHeading span,
+.profileList small,
+.groupCard ul,
+.taskHeader p {
+  font-size: 12px;
+}
+
+.heroSide strong {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.sectionNav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sectionNavButton {
+  justify-content: center;
+}
+
+.sectionBlockHeader,
+.groupHeader,
+.taskHeader,
+.profileHeading,
+.progressHeader {
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sectionBlockHeader {
+  margin-bottom: 16px;
+}
+
+.sectionBlockHeader > div {
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sectionBlockHeader h2,
+.sectionBlockHeader h3 {
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.sectionBlockHeader p,
+.note p,
+.taskItem p,
+.profileList p {
+  line-height: 1.6;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.metricCard {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafcfc;
+}
+
+.metricCard dd,
+.identityGrid strong {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.metricCard span {
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.progressBlock {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.progressHeader strong {
+  font-size: 14px;
+}
+
+.identityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.identityGrid > div {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafcfc;
+}
+
+.splitGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.noteStack,
+.taskList,
+.profileList,
+.groupList,
+.cardGroups,
+.cardList {
+  display: grid;
+  gap: 12px;
+}
+
+.note {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid rgba(18, 106, 88, 0.16);
+  border-radius: 12px;
+  background: #f8fbfa;
+}
+
+.noteWarning {
+  border-color: #e1c387;
+  background: #fff9ed;
+}
+
+.note strong,
+.taskItem strong,
+.profileHeading strong,
+.groupCard strong,
+.cardCopy strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.taskItem,
+.groupCard,
+.cardItem,
+.profileList article {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafcfc;
+}
+
+.taskHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.groupCard ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.groupCard li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardList,
+.cardGroups {
+  gap: 16px;
+}
+
+.cardItem {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.cardCopy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardCopy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.placeholderText {
+  margin: 0;
+  font-size: 13px;
+}
+
+.profileList article {
+  gap: 8px;
+}
+
+.sectionBlock {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 1040px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .heroSide,
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sectionNav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .splitGrid,
+  .identityGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .heroPrimary,
+  .heroSide {
+    padding: 18px;
+  }
+
+  .heroPrimary h2 {
+    font-size: 24px;
+  }
+
+  .heroSide,
+  .metricGrid,
+  .sectionNav {
+    grid-template-columns: 1fr;
+  }
+
+  .cardItem,
+  .groupCard li {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}

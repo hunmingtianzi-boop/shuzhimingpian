@@ -24,6 +24,10 @@ from app.ai.off_topic import OFF_TOPIC_POLICY_SETTINGS_KEY, OffTopicPolicy
 from app.ai.protocols import EmbeddingProvider
 from app.api.admin_schemas import (
     CardProfile,
+    CompanyAnswerPolicy,
+    CompanyIdentityProfile,
+    CompanyNotificationSettings,
+    CompanyPrivacySettings,
     CompanyProfile,
     CreateKnowledgeDocumentRequest,
     KnowledgeDocumentDetail,
@@ -34,6 +38,10 @@ from app.api.admin_schemas import (
     PutKnowledgeDocumentRequest,
     SelectableFaqRecord,
     UpdateCardRequest,
+    UpdateCompanyAnswerPolicyRequest,
+    UpdateCompanyIdentityProfileRequest,
+    UpdateCompanyNotificationSettingsRequest,
+    UpdateCompanyPrivacySettingsRequest,
     UpdateCompanyProfileRequest,
 )
 from app.api.errors import ApiError
@@ -56,6 +64,7 @@ from app.db.models import (
 )
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
+from app.services.platform_identity import business_tenant_key as _business_tenant_key
 
 logger = structlog.get_logger(__name__)
 _EMBEDDING_BATCH_SIZE = 64
@@ -255,6 +264,212 @@ class AdminStore:
             await session.flush()
             await session.refresh(company)
             return _company_profile(company)
+
+    async def get_company_identity_profile(self, *, scope: AdminScope) -> CompanyIdentityProfile:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope)
+            return _company_identity_profile(company)
+
+    async def update_company_identity_profile(
+        self,
+        *,
+        scope: AdminScope,
+        expected_version: int,
+        body: UpdateCompanyIdentityProfileRequest,
+        trace_id: str | None = None,
+    ) -> CompanyIdentityProfile:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope, for_update=True)
+            _require_version(company.version, expected_version)
+            settings = _dict_value(company.settings)
+            company.name = body.legal_name
+            company.normalized_name = body.legal_name.casefold()
+            company.short_name = body.short_name
+            company.subject_type = body.subject_type
+            company.social_credit_code = body.social_credit_code
+            company.business_tenant_key = _business_tenant_key(
+                subject_type=body.subject_type,
+                social_credit_code=body.social_credit_code,
+                company_id=company.id,
+            )
+            company.industry = body.industry
+            settings.update(
+                {
+                    "summary": body.summary,
+                    "region": body.region,
+                    "website": _url_value(body.website),
+                    "logo_url": _url_value(body.logo_url),
+                    "business_positioning": body.positioning or None,
+                    "profile_facts": [fact.model_dump(mode="json") for fact in body.profile_facts],
+                    "profile_tags": list(body.profile_tags),
+                }
+            )
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.identity.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "version": company.version,
+                    "subject_type": company.subject_type,
+                    "business_tenant_key": company.business_tenant_key,
+                    "profile_fact_count": len(body.profile_facts),
+                    "profile_tag_count": len(body.profile_tags),
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            return _company_identity_profile(company)
+
+    async def get_company_answer_policy(self, *, scope: AdminScope) -> CompanyAnswerPolicy:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope)
+            return _company_answer_policy(company)
+
+    async def update_company_answer_policy(
+        self,
+        *,
+        scope: AdminScope,
+        expected_version: int,
+        body: UpdateCompanyAnswerPolicyRequest,
+        trace_id: str | None = None,
+    ) -> CompanyAnswerPolicy:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope, for_update=True)
+            _require_version(company.version, expected_version)
+            settings = _dict_value(company.settings)
+            off_topic_policy = OffTopicPolicy(
+                answer_mode=body.ai_off_topic_answer_mode,
+                question_limit=body.ai_off_topic_question_limit,
+            )
+            settings[OFF_TOPIC_POLICY_SETTINGS_KEY] = off_topic_policy.as_company_setting()
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.answer_policy.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "version": company.version,
+                    "ai_off_topic_answer_mode": off_topic_policy.answer_mode.value,
+                    "ai_off_topic_question_limit": off_topic_policy.question_limit,
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            return _company_answer_policy(company)
+
+    async def get_company_notification_settings(
+        self,
+        *,
+        scope: AdminScope,
+    ) -> CompanyNotificationSettings:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope)
+            return _company_notification_settings(company)
+
+    async def update_company_notification_settings(
+        self,
+        *,
+        scope: AdminScope,
+        expected_version: int,
+        body: UpdateCompanyNotificationSettingsRequest,
+        trace_id: str | None = None,
+    ) -> CompanyNotificationSettings:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope, for_update=True)
+            _require_version(company.version, expected_version)
+            settings = _dict_value(company.settings)
+            settings["visit_notifications"] = {
+                "enabled": body.visit_notifications_enabled,
+                "report_enabled": body.visit_report_notifications_enabled,
+                "in_app_enabled": body.visit_notification_in_app_enabled,
+                "wecom_enabled": body.visit_notification_wecom_enabled,
+                "recipient_scope": body.visit_notification_recipient_scope,
+                "ordinary_visit_digest_enabled": body.ordinary_visit_digest_enabled,
+                "idle_minutes": 5,
+            }
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.notification_settings.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "version": company.version,
+                    "recipient_scope": body.visit_notification_recipient_scope,
+                    "ordinary_visit_digest_enabled": body.ordinary_visit_digest_enabled,
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            return _company_notification_settings(company)
+
+    async def get_company_privacy_settings(self, *, scope: AdminScope) -> CompanyPrivacySettings:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope)
+            return _company_privacy_settings(
+                company,
+                default_retention_days=self._settings.visitor_profile_retention_days,
+            )
+
+    async def update_company_privacy_settings(
+        self,
+        *,
+        scope: AdminScope,
+        expected_version: int,
+        body: UpdateCompanyPrivacySettingsRequest,
+        trace_id: str | None = None,
+    ) -> CompanyPrivacySettings:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            company = await self._company(session, scope, for_update=True)
+            _require_version(company.version, expected_version)
+            settings = _dict_value(company.settings)
+            policy_versions = _dict_value(settings.get("policy_versions"))
+            policy_versions["profile_personalization"] = body.profile_personalization_policy_version
+            settings["policy_versions"] = policy_versions
+            settings["visitor_profile_retention_days"] = body.visitor_profile_retention_days
+            company.settings = settings
+            company.version += 1
+            await self._audit(
+                session,
+                scope=scope,
+                action="company.privacy_settings.update",
+                resource_type="company",
+                resource_id=company.id,
+                trace_id=trace_id,
+                event_data={
+                    "version": company.version,
+                    "profile_personalization_policy_version": (
+                        body.profile_personalization_policy_version
+                    ),
+                    "visitor_profile_retention_days": body.visitor_profile_retention_days,
+                },
+            )
+            await session.flush()
+            await session.refresh(company)
+            return _company_privacy_settings(
+                company,
+                default_retention_days=self._settings.visitor_profile_retention_days,
+            )
 
     async def get_card(self, *, scope: AdminScope) -> CardProfile:
         async with self._sessions() as session, session.begin():
@@ -1377,6 +1592,80 @@ def _company_profile(company: Company) -> CompanyProfile:
         visit_notification_recipient_scope=recipient_scope,
         status=company.status.value,
         onboarding_status=(_string_value(settings.get("onboarding_status")) or "content_pending"),
+        version=company.version,
+        updated_at=company.updated_at,
+    )
+
+
+def _company_identity_profile(company: Company) -> CompanyIdentityProfile:
+    settings = _dict_value(company.settings)
+    return CompanyIdentityProfile(
+        id=company.id,
+        legal_name=company.name,
+        short_name=company.short_name,
+        subject_type=company.subject_type,
+        social_credit_code=company.social_credit_code,
+        industry=company.industry,
+        region=_string_value(settings.get("region")),
+        website=_string_value(settings.get("website")),
+        logo_url=_string_value(settings.get("logo_url")),
+        summary=_string_value(settings.get("summary")) or "",
+        positioning=_string_value(settings.get("business_positioning")),
+        profile_facts=_profile_facts(settings.get("profile_facts")),
+        profile_tags=_string_list(settings.get("profile_tags"), limit=3),
+        status=company.status.value,
+        onboarding_status=(_string_value(settings.get("onboarding_status")) or "content_pending"),
+        version=company.version,
+        updated_at=company.updated_at,
+    )
+
+
+def _company_answer_policy(company: Company) -> CompanyAnswerPolicy:
+    off_topic_policy = OffTopicPolicy.from_company_settings(_dict_value(company.settings))
+    return CompanyAnswerPolicy(
+        ai_off_topic_answer_mode=off_topic_policy.answer_mode,
+        ai_off_topic_question_limit=off_topic_policy.question_limit,
+        version=company.version,
+        updated_at=company.updated_at,
+    )
+
+
+def _company_notification_settings(company: Company) -> CompanyNotificationSettings:
+    settings = _dict_value(company.settings)
+    visit_notifications = _dict_value(settings.get("visit_notifications"))
+    recipient_scope = _string_value(visit_notifications.get("recipient_scope"))
+    if recipient_scope not in {"admins", "responsible", "both"}:
+        recipient_scope = "both"
+    return CompanyNotificationSettings(
+        visit_notifications_enabled=visit_notifications.get("enabled") is not False,
+        visit_report_notifications_enabled=visit_notifications.get("report_enabled") is not False,
+        visit_notification_in_app_enabled=visit_notifications.get("in_app_enabled") is not False,
+        visit_notification_wecom_enabled=visit_notifications.get("wecom_enabled") is not False,
+        visit_notification_recipient_scope=recipient_scope,
+        ordinary_visit_digest_enabled=(
+            visit_notifications.get("ordinary_visit_digest_enabled") is not False
+        ),
+        version=company.version,
+        updated_at=company.updated_at,
+    )
+
+
+def _company_privacy_settings(
+    company: Company,
+    *,
+    default_retention_days: int,
+) -> CompanyPrivacySettings:
+    settings = _dict_value(company.settings)
+    policy_versions = _dict_value(settings.get("policy_versions"))
+    retention_days = settings.get("visitor_profile_retention_days")
+    if not isinstance(retention_days, int):
+        retention_days = default_retention_days
+    return CompanyPrivacySettings(
+        profile_personalization_policy_version=(
+            _string_value(policy_versions.get("profile_personalization"))
+            or "profile-personalization-v1"
+        ),
+        visitor_profile_retention_days=retention_days,
         version=company.version,
         updated_at=company.updated_at,
     )

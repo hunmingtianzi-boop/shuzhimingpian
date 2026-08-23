@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from app.api.admin_schemas import (
     CardProfileEnvelope,
+    CompanyAnswerPolicyEnvelope,
+    CompanyIdentityProfileEnvelope,
+    CompanyNotificationSettingsEnvelope,
+    CompanyPrivacySettingsEnvelope,
     CompanyProfileEnvelope,
     CreateKnowledgeDocumentRequest,
     EnterpriseSetupEnvelope,
@@ -19,6 +23,10 @@ from app.api.admin_schemas import (
     PublishKnowledgeDocumentRequest,
     PutKnowledgeDocumentRequest,
     UpdateCardRequest,
+    UpdateCompanyAnswerPolicyRequest,
+    UpdateCompanyIdentityProfileRequest,
+    UpdateCompanyNotificationSettingsRequest,
+    UpdateCompanyPrivacySettingsRequest,
     UpdateCompanyProfileRequest,
 )
 from app.api.catalog_schemas import (
@@ -343,6 +351,164 @@ async def update_company_profile(
     )
     _set_etag(response, profile.version)
     return CompanyProfileEnvelope(data=profile)
+
+
+@router.get(
+    "/company/identity",
+    response_model=CompanyIdentityProfileEnvelope,
+    operation_id="getCompanyIdentityProfile",
+)
+async def get_company_identity_profile(
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+) -> CompanyIdentityProfileEnvelope:
+    _require_permission(principal, "company.read")
+    profile = await _store(request).get_company_identity_profile(scope=_scope(principal))
+    _set_etag(response, profile.version)
+    return CompanyIdentityProfileEnvelope(data=profile)
+
+
+@router.put(
+    "/company/identity",
+    response_model=CompanyIdentityProfileEnvelope,
+    operation_id="updateCompanyIdentityProfile",
+)
+async def update_company_identity_profile(
+    body: UpdateCompanyIdentityProfileRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CompanyIdentityProfileEnvelope:
+    _require_permission(principal, "company.write")
+    profile = await _store(request).update_company_identity_profile(
+        scope=_scope(principal),
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, profile.version)
+    return CompanyIdentityProfileEnvelope(data=profile)
+
+
+@router.get(
+    "/ai/answer-policy",
+    response_model=CompanyAnswerPolicyEnvelope,
+    operation_id="getCompanyAnswerPolicy",
+)
+async def get_company_answer_policy(
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+) -> CompanyAnswerPolicyEnvelope:
+    _require_permission(principal, "company.read")
+    policy = await _store(request).get_company_answer_policy(scope=_scope(principal))
+    _set_etag(response, policy.version)
+    return CompanyAnswerPolicyEnvelope(data=policy)
+
+
+@router.put(
+    "/ai/answer-policy",
+    response_model=CompanyAnswerPolicyEnvelope,
+    operation_id="updateCompanyAnswerPolicy",
+)
+async def update_company_answer_policy(
+    body: UpdateCompanyAnswerPolicyRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CompanyAnswerPolicyEnvelope:
+    _require_permission(principal, "company.write")
+    policy = await _store(request).update_company_answer_policy(
+        scope=_scope(principal),
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, policy.version)
+    return CompanyAnswerPolicyEnvelope(data=policy)
+
+
+@router.get(
+    "/notifications/settings",
+    response_model=CompanyNotificationSettingsEnvelope,
+    operation_id="getCompanyNotificationSettings",
+)
+async def get_company_notification_settings(
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+) -> CompanyNotificationSettingsEnvelope:
+    _require_permission(principal, "company.read")
+    settings_record = await _store(request).get_company_notification_settings(
+        scope=_scope(principal)
+    )
+    _set_etag(response, settings_record.version)
+    return CompanyNotificationSettingsEnvelope(data=settings_record)
+
+
+@router.put(
+    "/notifications/settings",
+    response_model=CompanyNotificationSettingsEnvelope,
+    operation_id="updateCompanyNotificationSettings",
+)
+async def update_company_notification_settings(
+    body: UpdateCompanyNotificationSettingsRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CompanyNotificationSettingsEnvelope:
+    _require_permission(principal, "company.write")
+    settings_record = await _store(request).update_company_notification_settings(
+        scope=_scope(principal),
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, settings_record.version)
+    return CompanyNotificationSettingsEnvelope(data=settings_record)
+
+
+@router.get(
+    "/privacy/settings",
+    response_model=CompanyPrivacySettingsEnvelope,
+    operation_id="getCompanyPrivacySettings",
+)
+async def get_company_privacy_settings(
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+) -> CompanyPrivacySettingsEnvelope:
+    _require_permission(principal, "privacy.manage")
+    settings_record = await _store(request).get_company_privacy_settings(scope=_scope(principal))
+    _set_etag(response, settings_record.version)
+    return CompanyPrivacySettingsEnvelope(data=settings_record)
+
+
+@router.put(
+    "/privacy/settings",
+    response_model=CompanyPrivacySettingsEnvelope,
+    operation_id="updateCompanyPrivacySettings",
+)
+async def update_company_privacy_settings(
+    body: UpdateCompanyPrivacySettingsRequest,
+    request: Request,
+    response: Response,
+    principal: StaffDependency,
+    if_match: IfMatchDependency,
+) -> CompanyPrivacySettingsEnvelope:
+    _require_permission(principal, "privacy.manage")
+    settings_record = await _store(request).update_company_privacy_settings(
+        scope=_scope(principal),
+        expected_version=parse_if_match(if_match),
+        body=body,
+        trace_id=request_id_ctx.get(),
+    )
+    _set_etag(response, settings_record.version)
+    return CompanyPrivacySettingsEnvelope(data=settings_record)
 
 
 @router.get(

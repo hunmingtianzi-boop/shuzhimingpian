@@ -43,18 +43,27 @@ class PlatformModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+PlatformSubjectType = Literal[
+    "domestic_enterprise",
+    "association",
+    "overseas",
+    "pending_registration",
+]
+
+
 class CreateEnterpriseRequest(PlatformModel):
-    tenant_slug: str = Field(
-        min_length=3,
-        max_length=64,
-        pattern=r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
-    )
-    tenant_name: str = Field(min_length=1, max_length=200)
-    company_name: str = Field(min_length=1, max_length=200)
+    legal_name: str = Field(min_length=1, max_length=200)
+    short_name: str | None = Field(default=None, max_length=120)
+    subject_type: PlatformSubjectType = "domestic_enterprise"
+    social_credit_code: str | None = Field(default=None, min_length=18, max_length=18)
     industry: str | None = Field(default=None, max_length=120)
     admin_account: str = Field(min_length=3, max_length=200)
     admin_display_name: str = Field(min_length=1, max_length=120)
-    admin_password: SecretStr
+    default_plan_code: str = Field(default="starter", min_length=1, max_length=80)
+    tenant_slug: str | None = Field(default=None, max_length=64)
+    tenant_name: str | None = Field(default=None, max_length=200)
+    company_name: str | None = Field(default=None, max_length=200)
+    admin_password: SecretStr | None = None
     initial_card_title: str | None = Field(default=None, max_length=200)
 
     @field_validator("admin_account")
@@ -64,25 +73,49 @@ class CreateEnterpriseRequest(PlatformModel):
             raise ValueError("admin_account must not contain whitespace")
         return value.casefold()
 
+    @field_validator("social_credit_code")
+    @classmethod
+    def normalize_social_credit_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized and len(normalized) != 18:
+            raise ValueError("social_credit_code must contain 18 characters")
+        return normalized or None
+
     @field_validator("admin_password")
     @classmethod
-    def validate_password(cls, value: SecretStr) -> SecretStr:
+    def validate_password(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
         if not 12 <= len(value.get_secret_value()) <= 200:
             raise ValueError("admin_password must contain 12-200 characters")
         return value
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        if self.subject_type == "domestic_enterprise" and not self.social_credit_code:
+            raise ValueError("social_credit_code is required for domestic_enterprise")
+        return self
 
 
 class EnterpriseRecord(PlatformModel):
     tenant_id: uuid.UUID
     tenant_slug: str
-    tenant_name: str
+    tenant_name: str | None = None
     company_id: uuid.UUID
     company_name: str
+    legal_name: str
+    short_name: str | None = None
+    subject_type: PlatformSubjectType
+    social_credit_code: str | None = None
+    business_tenant_key: str
     company_status: str
     admin_user_id: uuid.UUID
     admin_membership_id: uuid.UUID
-    initial_card_id: uuid.UUID
-    initial_card_slug: str
+    credential_delivery: TemporaryCredentialDelivery | None = None
+    initial_card_id: uuid.UUID | None = None
+    initial_card_slug: str | None = None
     created_at: datetime
 
 
@@ -93,11 +126,30 @@ class EnterpriseEnvelope(PlatformModel):
 class EnterpriseListItem(PlatformModel):
     tenant_id: uuid.UUID
     tenant_slug: str
-    tenant_name: str
+    tenant_name: str | None = None
     company_id: uuid.UUID
     company_name: str
+    legal_name: str
+    short_name: str | None = None
+    subject_type: PlatformSubjectType
+    social_credit_code: str | None = None
+    business_tenant_key: str
     status: str
+    employee_count: int = Field(ge=0)
+    card_count: int = Field(ge=0)
+    published_card_count: int = Field(ge=0)
+    visits_30d: int = Field(ge=0)
+    unique_visitors_30d: int = Field(ge=0)
+    conversations_30d: int = Field(ge=0)
+    consented_leads_30d: int = Field(ge=0)
+    actionable_task_count: int = Field(ge=0)
+    failed_task_count: int = Field(ge=0)
+    profile_completion: int = Field(ge=0, le=100)
+    service_valid_until: datetime | None = None
+    service_risk_level: Literal["healthy", "warning", "expired", "missing"] = "missing"
+    last_activity_at: datetime | None = None
     created_at: datetime
+    updated_at: datetime
 
 
 class EnterpriseListEnvelope(PlatformModel):
@@ -126,9 +178,14 @@ class PlatformCardProjection(PlatformModel):
 class PlatformEnterpriseDetail(PlatformModel):
     tenant_id: uuid.UUID
     tenant_slug: str
-    tenant_name: str
+    tenant_name: str | None = None
     company_id: uuid.UUID
     company_name: str
+    legal_name: str
+    short_name: str | None = None
+    subject_type: PlatformSubjectType
+    social_credit_code: str | None = None
+    business_tenant_key: str
     status: str
     version: int = Field(ge=1)
     onboarding_status: str
@@ -137,10 +194,17 @@ class PlatformEnterpriseDetail(PlatformModel):
     card_count: int = Field(ge=0)
     published_card_count: int = Field(ge=0)
     visits_30d: int = Field(ge=0)
+    unique_visitors_30d: int = Field(ge=0)
     conversations_30d: int = Field(ge=0)
-    leads_30d: int = Field(ge=0)
+    consented_leads_30d: int = Field(ge=0)
+    actionable_task_count: int = Field(ge=0)
+    failed_task_count: int = Field(ge=0)
+    service_valid_until: datetime | None = None
+    service_risk_level: Literal["healthy", "warning", "expired", "missing"] = "missing"
+    last_activity_at: datetime | None = None
     cards: list[PlatformCardProjection] = Field(default_factory=list)
     business_profile: list[dict[str, object]] = Field(default_factory=list)
+    recent_tasks: list[PlatformTaskRecord] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -177,14 +241,17 @@ class PlatformEnterpriseLifecycleEnvelope(PlatformModel):
 
 class PlatformOverviewRecord(PlatformModel):
     generated_at: datetime
-    enterprise_count: int = Field(ge=0)
-    active_enterprise_count: int = Field(ge=0)
-    onboarding_count: int = Field(ge=0)
+    enabled_enterprise_count: int = Field(ge=0)
+    active_enterprise_30d_count: int = Field(ge=0)
+    pending_activation_count: int = Field(ge=0)
     published_card_count: int = Field(ge=0)
     visits_30d: int = Field(ge=0)
+    unique_visitors_30d: int = Field(ge=0)
     conversations_30d: int = Field(ge=0)
-    leads_30d: int = Field(ge=0)
+    consented_leads_30d: int = Field(ge=0)
+    pending_task_count: int = Field(ge=0)
     failed_task_count: int = Field(ge=0)
+    service_risk_count: int = Field(ge=0)
     llm_ready: bool
     import_ready: bool
 
@@ -196,10 +263,22 @@ class PlatformOverviewEnvelope(PlatformModel):
 class PlatformCompanyAggregate(PlatformModel):
     company_id: uuid.UUID
     company_name: str
+    legal_name: str
+    short_name: str | None = None
+    business_tenant_key: str
+    status: str
     employee_count: int = Field(ge=0)
+    card_count: int = Field(ge=0)
+    published_card_count: int = Field(ge=0)
     visits_30d: int = Field(ge=0)
     unique_visitors_30d: int = Field(ge=0)
-    last_visit_at: datetime | None = None
+    conversations_30d: int = Field(ge=0)
+    consented_leads_30d: int = Field(ge=0)
+    actionable_task_count: int = Field(ge=0)
+    failed_task_count: int = Field(ge=0)
+    service_valid_until: datetime | None = None
+    service_risk_level: Literal["healthy", "warning", "expired", "missing"] = "missing"
+    last_activity_at: datetime | None = None
 
 
 class PlatformCompanyAggregateListEnvelope(PlatformModel):
@@ -211,18 +290,44 @@ class PlatformCompanyAggregateListEnvelope(PlatformModel):
 
 class PlatformTaskRecord(PlatformModel):
     id: uuid.UUID
-    task_type: str
+    task_type: Literal[
+        "onboarding",
+        "knowledge_import",
+        "content_review",
+        "enterprise_risk",
+        "service_validity",
+    ]
     business_label: str
-    status: str
+    status: Literal[
+        "pending",
+        "in_progress",
+        "blocked",
+        "failed",
+        "completed",
+        "cancelled",
+        "expired",
+    ]
     company_id: uuid.UUID
     company_name: str
+    tenant_slug: str | None = None
     error_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
 
+class PlatformTaskCompanyGroup(PlatformModel):
+    company_id: uuid.UUID
+    company_name: str
+    pending_count: int = Field(ge=0)
+    in_progress_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    recent_tasks: list[PlatformTaskRecord] = Field(default_factory=list)
+
+
 class PlatformTaskListEnvelope(PlatformModel):
+    view: Literal["timeline", "company"] = "timeline"
     data: list[PlatformTaskRecord]
+    groups: list[PlatformTaskCompanyGroup] = Field(default_factory=list)
     total: int = Field(ge=0)
     limit: int = Field(ge=1)
     offset: int = Field(ge=0)
@@ -390,14 +495,15 @@ class PlatformLlmConnectionTestEnvelope(PlatformModel):
 
 class StartPlatformOnboardingRequest(PlatformModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
-    tenant_slug: str = Field(
-        min_length=3,
-        max_length=64,
-        pattern=r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
-    )
-    tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
+    legal_name: str = Field(min_length=1, max_length=200)
+    short_name: str | None = Field(default=None, max_length=120)
+    subject_type: PlatformSubjectType = "domestic_enterprise"
+    social_credit_code: str | None = Field(default=None, min_length=18, max_length=18)
+    industry: str | None = Field(default=None, max_length=120)
     admin_account: str = Field(min_length=3, max_length=200)
     admin_display_name: str = Field(min_length=1, max_length=120)
+    tenant_slug: str | None = Field(default=None, max_length=64)
+    tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
 
     @field_validator("admin_account")
     @classmethod
@@ -405,6 +511,22 @@ class StartPlatformOnboardingRequest(PlatformModel):
         if any(character.isspace() for character in value):
             raise ValueError("admin_account must not contain whitespace")
         return value.casefold()
+
+    @field_validator("social_credit_code")
+    @classmethod
+    def normalize_onboarding_social_credit_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized and len(normalized) != 18:
+            raise ValueError("social_credit_code must contain 18 characters")
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_onboarding_identity(self) -> Self:
+        if self.subject_type == "domestic_enterprise" and not self.social_credit_code:
+            raise ValueError("social_credit_code is required for domestic_enterprise")
+        return self
 
 
 class PlatformOnboardingSuggestionSource(PlatformModel):
@@ -445,6 +567,11 @@ class PlatformOnboardingSessionRecord(PlatformModel):
     ]
     tenant_slug: str
     tenant_name: str | None = None
+    legal_name: str | None = None
+    short_name: str | None = None
+    subject_type: PlatformSubjectType | None = None
+    social_credit_code: str | None = None
+    industry: str | None = None
     admin_account: str | None = Field(default=None, max_length=200)
     admin_display_name: str | None = Field(default=None, max_length=120)
     initial_card_display_name: str | None = Field(default=None, max_length=160)
@@ -494,12 +621,16 @@ class PlatformOnboardingCandidateSelection(PlatformModel):
 
 class ConfirmPlatformOnboardingRequest(PlatformModel):
     expected_version: int = Field(ge=1)
-    tenant_name: str = Field(min_length=1, max_length=200)
-    company_name: str = Field(min_length=1, max_length=200)
+    legal_name: str = Field(min_length=1, max_length=200)
+    short_name: str | None = Field(default=None, max_length=120)
+    subject_type: PlatformSubjectType = "domestic_enterprise"
+    social_credit_code: str | None = Field(default=None, min_length=18, max_length=18)
     industry: str | None = Field(default=None, max_length=120)
     summary: str | None = Field(default=None, max_length=5000)
     website: AnyHttpUrl | None = None
-    initial_card_display_name: str = Field(min_length=1, max_length=120)
+    tenant_name: str | None = Field(default=None, min_length=1, max_length=200)
+    company_name: str | None = Field(default=None, min_length=1, max_length=200)
+    initial_card_display_name: str | None = Field(default=None, min_length=1, max_length=120)
     initial_card_title: str | None = Field(default=None, max_length=200)
     assistant_name: str | None = Field(default=None, max_length=120)
     welcome_message: str | None = Field(default=None, max_length=1000)
@@ -507,6 +638,22 @@ class ConfirmPlatformOnboardingRequest(PlatformModel):
         default_factory=list,
         max_length=100,
     )
+
+    @field_validator("social_credit_code")
+    @classmethod
+    def normalize_confirm_social_credit_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized and len(normalized) != 18:
+            raise ValueError("social_credit_code must contain 18 characters")
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_confirm_identity(self) -> Self:
+        if self.subject_type == "domestic_enterprise" and not self.social_credit_code:
+            raise ValueError("social_credit_code is required for domestic_enterprise")
+        return self
 
 
 class RenamePlatformOnboardingRequest(PlatformModel):
@@ -570,8 +717,10 @@ __all__ = [
     "PlatformServiceHealthRecord",
     "PlatformTaskListEnvelope",
     "PlatformTaskRecord",
+    "PlatformTaskCompanyGroup",
     "StartPlatformOnboardingRequest",
     "TestPlatformLlmProfileRequest",
     "TransitionPlatformEnterpriseRequest",
     "UpdatePlatformLlmProfileRequest",
+    "PlatformSubjectType",
 ]

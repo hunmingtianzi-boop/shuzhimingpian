@@ -117,14 +117,32 @@ function unwrapData(value: unknown, label: string): unknown {
 
 function enterprise(value: unknown): PlatformEnterprise {
   if (!isRecord(value)) invalid("企业");
+  const companyName = requiredString(
+    value.legal_name ?? value.company_name,
+    "company_name",
+  );
+  const tenantSlug = requiredString(value.tenant_slug, "tenant_slug");
   return {
     tenantId: requiredString(value.tenant_id, "tenant_id"),
-    tenantSlug: requiredString(value.tenant_slug, "tenant_slug"),
-    tenantName: requiredString(value.tenant_name, "tenant_name"),
+    tenantSlug,
+    tenantName: optionalString(value.tenant_name, "tenant_name"),
     companyId: requiredString(value.company_id, "company_id"),
-    companyName: requiredString(value.company_name, "company_name"),
+    companyName,
+    legalName: companyName,
+    shortName: optionalString(value.short_name, "short_name"),
+    subjectType: oneOf(
+      value.subject_type ?? "pending_registration",
+      ["domestic_enterprise", "association", "overseas", "pending_registration"] as const,
+      "subject_type",
+    ),
+    socialCreditCode: optionalString(value.social_credit_code, "social_credit_code"),
+    businessTenantKey: requiredString(
+      value.business_tenant_key ?? tenantSlug,
+      "business_tenant_key",
+    ),
     status: requiredString(value.status ?? value.company_status, "status"),
     createdAt: requiredString(value.created_at, "created_at"),
+    updatedAt: optionalString(value.updated_at, "updated_at"),
   };
 }
 
@@ -189,6 +207,7 @@ function commercialEntitlements(value: unknown): CommercialEntitlements {
       "商业授权 billing_cycle",
     ),
     ...(contractPriceCny !== undefined ? { contractPriceCny } : {}),
+    serviceValidUntil: optionalString(value.service_valid_until, "商业授权 service_valid_until"),
     featureOverrides: booleanRecord(value.feature_overrides),
     features: booleanRecord(value.features),
     limitOverrides: limitRecord(value.limit_overrides),
@@ -233,6 +252,17 @@ function commercialEntitlements(value: unknown): CommercialEntitlements {
 
 function createdEnterprise(value: unknown): CreatedPlatformEnterprise {
   if (!isRecord(value)) invalid("新建企业");
+  const delivery = isRecord(value.credential_delivery)
+    ? {
+        account: requiredString(value.credential_delivery.account, "credential_delivery.account"),
+        temporaryPassword: requiredString(
+          value.credential_delivery.temporary_password,
+          "credential_delivery.temporary_password",
+        ),
+        expiresAt: requiredString(value.credential_delivery.expires_at, "credential_delivery.expires_at"),
+        shownOnce: true as const,
+      }
+    : undefined;
   return {
     ...enterprise(value),
     adminUserId: requiredString(value.admin_user_id, "admin_user_id"),
@@ -240,8 +270,9 @@ function createdEnterprise(value: unknown): CreatedPlatformEnterprise {
       value.admin_membership_id,
       "admin_membership_id",
     ),
-    initialCardId: requiredString(value.initial_card_id, "initial_card_id"),
-    initialCardSlug: requiredString(value.initial_card_slug, "initial_card_slug"),
+    credentialDelivery: delivery,
+    initialCardId: optionalString(value.initial_card_id, "initial_card_id"),
+    initialCardSlug: optionalString(value.initial_card_slug, "initial_card_slug"),
   };
 }
 
@@ -355,6 +386,18 @@ function onboardingSession(value: unknown): PlatformOnboardingSession {
     status: oneOf(value.status, onboardingStatuses, "status"),
     tenantSlug: requiredString(value.tenant_slug, "tenant_slug"),
     tenantName: optionalString(value.tenant_name, "tenant_name"),
+    legalName: optionalString(value.legal_name, "legal_name"),
+    shortName: optionalString(value.short_name, "short_name"),
+    subjectType:
+      value.subject_type === undefined || value.subject_type === null
+        ? undefined
+        : oneOf(
+            value.subject_type,
+            ["domestic_enterprise", "association", "overseas", "pending_registration"] as const,
+            "subject_type",
+          ),
+    socialCreditCode: optionalString(value.social_credit_code, "social_credit_code"),
+    industry: optionalString(value.industry, "industry"),
     adminAccount: optionalString(value.admin_account, "admin_account"),
     adminDisplayName: optionalString(
       value.admin_display_name,
@@ -514,10 +557,24 @@ function enterpriseDetail(value: unknown): PlatformEnterpriseDetail {
       value.conversations_30d,
       "conversations_30d",
     ),
-      leads30d: nonNegativeInteger(value.leads_30d, "leads_30d"),
+      uniqueVisitors30d: nonNegativeInteger(value.unique_visitors_30d ?? 0, "unique_visitors_30d"),
+      consentedLeads30d: nonNegativeInteger(value.consented_leads_30d ?? value.leads_30d ?? 0, "consented_leads_30d"),
+      leads30d: nonNegativeInteger(value.consented_leads_30d ?? value.leads_30d ?? 0, "leads_30d"),
+      actionableTaskCount: nonNegativeInteger(value.actionable_task_count ?? 0, "actionable_task_count"),
+      failedTaskCount: nonNegativeInteger(value.failed_task_count ?? 0, "failed_task_count"),
+      serviceValidUntil: optionalString(value.service_valid_until, "service_valid_until"),
+      serviceRiskLevel: oneOf(
+        value.service_risk_level ?? "missing",
+        ["healthy", "warning", "expired", "missing"] as const,
+        "service_risk_level",
+      ),
+      lastActivityAt: optionalString(value.last_activity_at, "last_activity_at"),
       cards: cards.map(cardProjection),
       businessProfile: Array.isArray(businessProfile)
         ? businessProfile.map(onboardingSuggestion)
+        : [],
+      recentTasks: Array.isArray(value.recent_tasks)
+        ? value.recent_tasks.map(taskProjection)
         : [],
       updatedAt: requiredString(value.updated_at, "updated_at"),
   };
@@ -525,14 +582,30 @@ function enterpriseDetail(value: unknown): PlatformEnterpriseDetail {
 
 function platformOverview(value: unknown): PlatformOverview {
   if (!isRecord(value)) invalid("平台总览");
+  const enabled = nonNegativeInteger(
+    value.enabled_enterprise_count ?? value.active_enterprise_count ?? 0,
+    "enabled_enterprise_count",
+  );
+  const pendingActivation = nonNegativeInteger(
+    value.pending_activation_count ?? value.onboarding_count ?? 0,
+    "pending_activation_count",
+  );
+  const consentedLeads = nonNegativeInteger(
+    value.consented_leads_30d ?? value.leads_30d ?? 0,
+    "consented_leads_30d",
+  );
   return {
     generatedAt: requiredString(value.generated_at, "generated_at"),
-    enterpriseCount: nonNegativeInteger(value.enterprise_count, "enterprise_count"),
-    activeEnterpriseCount: nonNegativeInteger(
-      value.active_enterprise_count,
-      "active_enterprise_count",
-    ),
-    onboardingCount: nonNegativeInteger(value.onboarding_count, "onboarding_count"),
+    enabledEnterpriseCount: enabled,
+    activeEnterprise30dCount: nonNegativeInteger(value.active_enterprise_30d_count ?? 0, "active_enterprise_30d_count"),
+    pendingActivationCount: pendingActivation,
+    uniqueVisitors30d: nonNegativeInteger(value.unique_visitors_30d ?? 0, "unique_visitors_30d"),
+    consentedLeads30d: consentedLeads,
+    pendingTaskCount: nonNegativeInteger(value.pending_task_count ?? 0, "pending_task_count"),
+    serviceRiskCount: nonNegativeInteger(value.service_risk_count ?? 0, "service_risk_count"),
+    enterpriseCount: nonNegativeInteger(value.enterprise_count ?? enabled, "enterprise_count"),
+    activeEnterpriseCount: enabled,
+    onboardingCount: pendingActivation,
     publishedCardCount: nonNegativeInteger(
       value.published_card_count,
       "published_card_count",
@@ -542,7 +615,7 @@ function platformOverview(value: unknown): PlatformOverview {
       value.conversations_30d,
       "conversations_30d",
     ),
-    leads30d: nonNegativeInteger(value.leads_30d, "leads_30d"),
+    leads30d: consentedLeads,
     failedTaskCount: nonNegativeInteger(value.failed_task_count, "failed_task_count"),
     llmReady: requiredBoolean(value.llm_ready, "llm_ready"),
     importReady: requiredBoolean(value.import_ready, "import_ready"),
@@ -554,25 +627,59 @@ function companyAggregate(value: unknown): PlatformCompanyAggregate {
   return {
     companyId: requiredString(value.company_id, "company_id"),
     companyName: requiredString(value.company_name, "company_name"),
+    legalName: requiredString(value.legal_name ?? value.company_name, "legal_name"),
+    shortName: optionalString(value.short_name, "short_name"),
+    businessTenantKey: requiredString(value.business_tenant_key ?? value.company_id, "business_tenant_key"),
+    status: requiredString(value.status ?? "active", "status"),
     employeeCount: nonNegativeInteger(value.employee_count, "employee_count"),
+    cardCount: nonNegativeInteger(value.card_count ?? 0, "card_count"),
+    publishedCardCount: nonNegativeInteger(value.published_card_count ?? 0, "published_card_count"),
     visits30d: nonNegativeInteger(value.visits_30d, "visits_30d"),
     uniqueVisitors30d: nonNegativeInteger(
       value.unique_visitors_30d,
       "unique_visitors_30d",
     ),
-    lastVisitAt: optionalString(value.last_visit_at, "last_visit_at"),
+    conversations30d: nonNegativeInteger(value.conversations_30d ?? 0, "conversations_30d"),
+    consentedLeads30d: nonNegativeInteger(value.consented_leads_30d ?? 0, "consented_leads_30d"),
+    actionableTaskCount: nonNegativeInteger(value.actionable_task_count ?? 0, "actionable_task_count"),
+    failedTaskCount: nonNegativeInteger(value.failed_task_count ?? 0, "failed_task_count"),
+    serviceValidUntil: optionalString(value.service_valid_until, "service_valid_until"),
+    serviceRiskLevel: oneOf(
+      value.service_risk_level ?? "missing",
+      ["healthy", "warning", "expired", "missing"] as const,
+      "service_risk_level",
+    ),
+    lastActivityAt: optionalString(value.last_activity_at, "last_activity_at"),
+    lastVisitAt: optionalString(value.last_activity_at ?? value.last_visit_at, "last_visit_at"),
   };
 }
 
 function taskProjection(value: unknown): PlatformTaskProjection {
   if (!isRecord(value)) invalid("平台任务");
+  const rawType = requiredString(value.task_type, "task.task_type");
+  const taskType = (
+    ["onboarding", "knowledge_import", "content_review", "enterprise_risk", "service_validity"].includes(rawType)
+      ? rawType
+      : "enterprise_risk"
+  ) as PlatformTaskProjection["taskType"];
+  const rawStatus = requiredString(value.status, "task.status");
+  const status = (
+    ["pending", "in_progress", "blocked", "failed", "completed", "cancelled", "expired"].includes(rawStatus)
+      ? rawStatus
+      : ["queued", "processing", "running"].includes(rawStatus)
+        ? "in_progress"
+        : ["error", "dead_letter"].includes(rawStatus)
+          ? "failed"
+          : "completed"
+  ) as PlatformTaskProjection["status"];
   return {
     id: requiredString(value.id, "task.id"),
-    taskType: requiredString(value.task_type, "task.task_type"),
+    taskType,
     businessLabel: requiredString(value.business_label, "task.business_label"),
-    status: requiredString(value.status, "task.status"),
+    status,
     companyId: optionalString(value.company_id, "task.company_id"),
     companyName: optionalString(value.company_name, "task.company_name"),
+    tenantSlug: optionalString(value.tenant_slug, "task.tenant_slug"),
     errorCode: optionalString(value.error_code, "task.error_code"),
     createdAt: requiredString(value.created_at, "task.created_at"),
     updatedAt: requiredString(value.updated_at, "task.updated_at"),
@@ -756,6 +863,11 @@ export function createPlatformApi(client: ApiClient) {
       options: {
         search?: string;
         status?: "active" | "suspended" | "disabled";
+        activityLevel?: "active_30d" | "inactive_30d";
+        hasActionableTasks?: boolean;
+        serviceRisk?: "healthy" | "warning" | "expired" | "missing";
+        sortBy?: "created_at" | "last_activity_at" | "actionable_task_count" | "service_risk";
+        sortOrder?: "asc" | "desc";
         limit?: number;
         offset?: number;
       } = {},
@@ -766,6 +878,13 @@ export function createPlatformApi(client: ApiClient) {
       });
       if (options.search?.trim()) params.set("search", options.search.trim());
       if (options.status) params.set("status", options.status);
+      if (options.activityLevel) params.set("activity_level", options.activityLevel);
+      if (options.hasActionableTasks !== undefined) {
+        params.set("has_actionable_tasks", String(options.hasActionableTasks));
+      }
+      if (options.serviceRisk) params.set("service_risk", options.serviceRisk);
+      if (options.sortBy) params.set("sort_by", options.sortBy);
+      if (options.sortOrder) params.set("sort_order", options.sortOrder);
       const payload = await client.get(`/platform/enterprises?${params.toString()}`);
       const values = unwrapData(payload, "企业列表");
       if (!Array.isArray(values)) invalid("企业列表");
@@ -828,6 +947,7 @@ export function createPlatformApi(client: ApiClient) {
         planCode: CommercialPlanCode;
         billingCycle: CommercialBillingCycle;
         contractPriceCny?: number;
+        serviceValidUntil?: string;
         featureOverrides: Record<string, boolean>;
         limitOverrides: Record<string, number | null>;
       },
@@ -841,6 +961,7 @@ export function createPlatformApi(client: ApiClient) {
               plan_code: input.planCode,
               billing_cycle: input.billingCycle,
               contract_price_cny: input.contractPriceCny ?? null,
+              service_valid_until: input.serviceValidUntil ?? null,
               feature_overrides: input.featureOverrides,
               limit_overrides: input.limitOverrides,
             },
@@ -859,9 +980,28 @@ export function createPlatformApi(client: ApiClient) {
       return values.map(companyAggregate);
     },
 
-    async listTasks(): Promise<PlatformTaskProjection[]> {
+    async listTasks(options: {
+      view?: "timeline" | "company";
+      companyId?: string;
+      status?: string;
+      taskType?: string;
+      updatedFrom?: string;
+      updatedTo?: string;
+      limit?: number;
+      offset?: number;
+    } = {}): Promise<PlatformTaskProjection[]> {
+      const params = new URLSearchParams({
+        view: options.view ?? "timeline",
+        limit: String(options.limit ?? 100),
+        offset: String(options.offset ?? 0),
+      });
+      if (options.companyId) params.set("company_id", options.companyId);
+      if (options.status) params.set("status", options.status);
+      if (options.taskType) params.set("task_type", options.taskType);
+      if (options.updatedFrom) params.set("updated_from", options.updatedFrom);
+      if (options.updatedTo) params.set("updated_to", options.updatedTo);
       const values = unwrapData(
-        await client.get("/platform/tasks?limit=100&offset=0"),
+        await client.get(`/platform/tasks?${params.toString()}`),
         "平台任务",
       );
       if (!Array.isArray(values)) invalid("平台任务");
@@ -889,15 +1029,17 @@ export function createPlatformApi(client: ApiClient) {
     async createEnterprise(
       input: CreatePlatformEnterpriseInput,
     ): Promise<CreatedPlatformEnterprise> {
+      const legalName = input.legalName ?? input.companyName ?? input.tenantName ?? "";
+      const subjectType = input.subjectType ?? (input.socialCreditCode ? "domestic_enterprise" : "pending_registration");
       const payload = await client.post("/platform/enterprises", {
-        tenant_slug: input.tenantSlug.trim(),
-        tenant_name: input.tenantName.trim(),
-        company_name: input.companyName.trim(),
+        legal_name: legalName.trim(),
+        short_name: input.shortName?.trim() || null,
+        subject_type: subjectType,
+        social_credit_code: input.socialCreditCode?.trim() || null,
         industry: input.industry?.trim() || null,
         admin_account: input.adminAccount.trim(),
         admin_display_name: input.adminDisplayName.trim(),
-        admin_password: input.adminPassword,
-        initial_card_title: input.initialCardTitle?.trim() || null,
+        default_plan_code: input.defaultPlanCode ?? "starter",
       });
       return createdEnterprise(unwrapData(payload, "新建企业"));
     },
@@ -905,10 +1047,15 @@ export function createPlatformApi(client: ApiClient) {
     async startOnboarding(
       input: StartPlatformOnboardingInput,
     ): Promise<PlatformOnboardingSession> {
+      const legalName = input.legalName ?? input.tenantName ?? input.tenantSlug ?? "";
+      const subjectType = input.subjectType ?? (input.socialCreditCode ? "domestic_enterprise" : "pending_registration");
       const payload = await client.post("/platform/onboarding", {
         display_name: input.displayName?.trim() || null,
-        tenant_slug: input.tenantSlug.trim(),
-        tenant_name: input.tenantName?.trim() || null,
+        legal_name: legalName.trim(),
+        short_name: input.shortName?.trim() || null,
+        subject_type: subjectType,
+        social_credit_code: input.socialCreditCode?.trim() || null,
+        industry: input.industry?.trim() || null,
         admin_account: input.adminAccount.trim(),
         admin_display_name: input.adminDisplayName.trim(),
       });
@@ -1016,19 +1163,19 @@ export function createPlatformApi(client: ApiClient) {
       sessionId: string,
       input: ConfirmPlatformOnboardingInput,
     ): Promise<PlatformOnboardingSession> {
+      const legalName = input.legalName ?? input.companyName ?? input.tenantName ?? "";
+      const subjectType = input.subjectType ?? (input.socialCreditCode ? "domestic_enterprise" : "pending_registration");
       const payload = await client.post(
         `/platform/onboarding/${encodeURIComponent(sessionId)}/confirm`,
         {
           expected_version: input.expectedVersion,
-          tenant_name: input.tenantName.trim(),
-          company_name: input.companyName.trim(),
+          legal_name: legalName.trim(),
+          short_name: input.shortName?.trim() || null,
+          subject_type: subjectType,
+          social_credit_code: input.socialCreditCode?.trim() || null,
           industry: input.industry?.trim() || null,
           summary: input.summary?.trim() || null,
           website: input.website?.trim() || null,
-          initial_card_display_name: input.initialCardDisplayName.trim(),
-          initial_card_title: input.initialCardTitle?.trim() || null,
-          assistant_name: input.assistantName?.trim() || null,
-          welcome_message: input.welcomeMessage?.trim() || null,
           candidate_selections: input.candidateSelections.map((selection) => ({
             id: selection.id,
             expected_version: selection.expectedVersion,

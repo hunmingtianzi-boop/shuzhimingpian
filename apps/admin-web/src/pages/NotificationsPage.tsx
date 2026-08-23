@@ -10,6 +10,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowClockwise24Regular,
+  ArrowRight24Regular,
   MailRead24Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -20,7 +21,7 @@ import { OperationFeedback } from "../components/OperationFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceState } from "../components/ResourceState";
 import { useResource } from "../hooks/useResource";
-import { APP_PATHS, appHref } from "../routing";
+import { APP_PATHS, appHref, navigate, visitDetailPath } from "../routing";
 import { formatTimestamp } from "../utils/format";
 
 export function NotificationsPage() {
@@ -62,9 +63,18 @@ export function NotificationsPage() {
     <main className="page-stack">
       <PageHeader
         title="通知中心"
-        description="集中处理访问报告、线索、知识缺口和业务异常通知，已读状态由服务端保存。"
+        description="集中处理留资、高意向、访问日汇总和业务异常通知；通知设置已拆到独立页面。"
         actions={
-          <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
+          <>
+            <Button
+              appearance="secondary"
+              icon={<ArrowRight24Regular />}
+              onClick={() => navigate(APP_PATHS.notificationSettings)}
+            >
+              通知设置
+            </Button>
+            <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
+          </>
         }
       />
       <section className="content-panel filter-panel notification-filter" aria-label="通知筛选">
@@ -120,7 +130,7 @@ export function NotificationsPage() {
                       <TableCell className="actions-column">
                         {item.resourceType === "visit" && item.resourceId && (
                           <a
-                            href={appHref(`${APP_PATHS.visits}?visitId=${encodeURIComponent(item.resourceId)}`)}
+                            href={appHref(visitDetailPath(item.resourceId))}
                           >
                             查看报告
                           </a>

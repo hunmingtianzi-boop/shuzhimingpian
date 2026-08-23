@@ -60,12 +60,13 @@ describe("hasNavPermission", () => {
 
     expect(paths).toContain(APP_PATHS.platformLlmSettings);
     expect(paths).toContain(APP_PATHS.platformOverview);
-    expect(paths).toContain(APP_PATHS.platformEmployees);
-    expect(paths).toContain(APP_PATHS.platformVisitors);
     expect(paths).toContain(APP_PATHS.platformTasks);
-    expect(paths).toContain(APP_PATHS.platformAudit);
     expect(paths).toContain(APP_PATHS.platformHealth);
     expect(paths).toContain(APP_PATHS.platformOnboarding);
+    expect(paths).toContain(APP_PATHS.platformEnterprises);
+    expect(paths).not.toContain(APP_PATHS.platformEmployees);
+    expect(paths).not.toContain(APP_PATHS.platformVisitors);
+    expect(paths).not.toContain(APP_PATHS.platformAudit);
     expect(paths).not.toContain(APP_PATHS.overview);
     expect(paths).not.toContain(APP_PATHS.company);
   });

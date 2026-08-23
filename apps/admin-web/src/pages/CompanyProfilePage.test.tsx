@@ -1,35 +1,38 @@
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { adminApi } from "../api/adminApi";
-import type { CompanyProfile } from "../api/types";
+import type { CompanyIdentityProfile } from "../api/types";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 
 vi.mock("../api/adminApi", () => ({
   adminApi: {
-    getCompanyProfile: vi.fn(),
-    updateCompanyProfile: vi.fn(),
+    getCompanyIdentity: vi.fn(),
+    updateCompanyIdentity: vi.fn(),
   },
 }));
 
-const profile: CompanyProfile = {
+vi.mock("../components/FormFeedback", () => ({
+  FormFeedback: () => null,
+}));
+
+const profile: CompanyIdentityProfile = {
   id: "company-1",
-  name: "夜霜曦雪",
-  summary: "企业简介",
+  legalName: "夜霜曦雪（上海）科技有限公司",
+  shortName: "夜霜曦雪",
+  subjectType: "domestic_enterprise",
+  socialCreditCode: "91310000MA1K123456",
   industry: "企业服务",
   region: "上海",
   website: "https://yeshuangxixue.cn",
   logoUrl: "",
-  profilePersonalizationPolicyVersion: "profile-personalization-v1",
-  aiOffTopicAnswerMode: "limited",
-  aiOffTopicQuestionLimit: 3,
-  visitNotificationsEnabled: true,
-  visitReportNotificationsEnabled: true,
-  visitNotificationInAppEnabled: true,
-  visitNotificationWecomEnabled: true,
-  visitNotificationRecipientScope: "both",
+  positioning: "企业 AI 名片",
+  profileFacts: [{ id: "fact-1", label: "擅长", value: "企业知识助手" }],
+  profileTags: ["可追溯", "企业级"],
+  summary: "企业简介",
+  status: "active",
   onboardingStatus: "active",
   version: 7,
   updatedAt: "2026-08-15T10:00:00Z",
@@ -43,73 +46,46 @@ function renderPage() {
   );
 }
 
-describe("CompanyProfilePage AI assistant boundary", () => {
+describe("CompanyProfilePage", () => {
   beforeEach(() => {
-    vi.mocked(adminApi.getCompanyProfile).mockReset().mockResolvedValue(profile);
-    vi.mocked(adminApi.updateCompanyProfile).mockReset().mockResolvedValue();
+    vi.mocked(adminApi.getCompanyIdentity).mockReset().mockResolvedValue(profile);
+    vi.mocked(adminApi.updateCompanyIdentity).mockReset().mockResolvedValue(profile);
   });
 
-  it("saves the enterprise-owned off-topic answer limit", async () => {
-    const user = userEvent.setup();
+  it("keeps only identity and outward presentation while linking to split settings", async () => {
     renderPage();
 
-    const slider = await screen.findByRole("slider", { name: "无关问题回答上限" });
-    fireEvent.change(slider, { target: { value: "5" } });
-    expect(screen.getByText("每段对话最多回答 5 个无关问题")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "企业身份与对外展示" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "回答策略" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "通知设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "数据与隐私" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("夜霜曦雪（上海）科技有限公司")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("夜霜曦雪")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("91310000MA1K123456")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "AI 助手回答边界" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "企业微信应用消息" })).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole("button", { name: "保存企业资料" }));
+  it("saves through the company identity api", async () => {
+    renderPage();
+
+    const shortNameInput = (await screen.findByDisplayValue("夜霜曦雪")) as HTMLInputElement;
+    shortNameInput.focus();
+    shortNameInput.setSelectionRange(0, shortNameInput.value.length);
+    await userEvent.clear(shortNameInput);
+    await userEvent.type(shortNameInput, "夜霜");
+    await userEvent.click(screen.getByRole("button", { name: "保存企业资料" }));
 
     await waitFor(() => {
-      expect(adminApi.updateCompanyProfile).toHaveBeenCalledWith(
+      expect(adminApi.updateCompanyIdentity).toHaveBeenCalledWith(
         expect.objectContaining({
-          aiOffTopicAnswerMode: "limited",
-          aiOffTopicQuestionLimit: 5,
+          legalName: "夜霜曦雪（上海）科技有限公司",
+          shortName: "夜霜",
+          subjectType: "domestic_enterprise",
+          positioning: "企业 AI 名片",
+          profileFacts: [{ id: "fact-1", label: "擅长", value: "企业知识助手" }],
+          profileTags: ["可追溯", "企业级"],
           version: 7,
-        }),
-      );
-    });
-  });
-
-  it("offers both completely blocked and completely allowed endpoints", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    const blocked = await screen.findByRole("radio", {
-      name: "完全不回答——从第 1 个企业无关问题起拒答",
-    });
-    await user.click(blocked);
-    expect(blocked).toBeChecked();
-    expect(screen.queryByRole("slider", { name: "无关问题回答上限" })).not.toBeInTheDocument();
-
-    const unlimited = screen.getByRole("radio", {
-      name: "完全允许——不按次数限制普通无关问题",
-    });
-    await user.click(unlimited);
-    expect(unlimited).toBeChecked();
-
-    await user.click(screen.getByRole("button", { name: "保存企业资料" }));
-    await waitFor(() => {
-      expect(adminApi.updateCompanyProfile).toHaveBeenCalledWith(
-        expect.objectContaining({ aiOffTopicAnswerMode: "unlimited" }),
-      );
-    });
-  });
-
-  it("saves visit notification channels and recipient scope", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(
-      await screen.findByRole("switch", { name: "企业微信应用消息" }),
-    );
-    await user.click(screen.getByRole("radio", { name: "所有企业管理员" }));
-    await user.click(screen.getByRole("button", { name: "保存企业资料" }));
-
-    await waitFor(() => {
-      expect(adminApi.updateCompanyProfile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          visitNotificationWecomEnabled: false,
-          visitNotificationRecipientScope: "admins",
         }),
       );
     });

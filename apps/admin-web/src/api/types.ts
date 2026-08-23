@@ -144,6 +144,58 @@ export type CompanyProfileInput = Omit<
   profileTags: string[];
 };
 
+export type CompanySubjectType = PlatformSubjectType;
+
+export type CompanyIdentityProfile = {
+  id: string;
+  legalName: string;
+  shortName?: string;
+  subjectType: CompanySubjectType;
+  socialCreditCode?: string;
+  industry: string;
+  region: string;
+  website: string;
+  logoUrl: string;
+  positioning?: string;
+  profileFacts?: IdentityProfileFact[];
+  profileTags?: string[];
+  summary: string;
+  status: string;
+  onboardingStatus: string;
+  version: number;
+  updatedAt: string;
+};
+
+export type CompanyIdentityProfileInput = Omit<
+  CompanyIdentityProfile,
+  "id" | "status" | "onboardingStatus" | "version" | "updatedAt"
+>;
+
+export type CompanyAnswerPolicy = {
+  aiOffTopicAnswerMode: "blocked" | "limited" | "unlimited";
+  aiOffTopicQuestionLimit: number;
+  version: number;
+  updatedAt: string;
+};
+
+export type CompanyNotificationSettings = {
+  visitNotificationsEnabled: boolean;
+  visitReportNotificationsEnabled: boolean;
+  visitNotificationInAppEnabled: boolean;
+  visitNotificationWecomEnabled: boolean;
+  visitNotificationRecipientScope: "admins" | "responsible" | "both";
+  ordinaryVisitDigestEnabled: boolean;
+  version: number;
+  updatedAt: string;
+};
+
+export type CompanyPrivacySettings = {
+  profilePersonalizationPolicyVersion: string;
+  visitorProfileRetentionDays: number;
+  version: number;
+  updatedAt: string;
+};
+
 export type IdentityProfileFact = {
   id: string;
   label: string;
@@ -245,13 +297,25 @@ export type LoginInput = {
 export type PlatformEnterprise = {
   tenantId: string;
   tenantSlug: string;
-  tenantName: string;
+  tenantName?: string;
   companyId: string;
   companyName: string;
+  legalName?: string;
+  shortName?: string;
+  subjectType?: PlatformSubjectType;
+  socialCreditCode?: string;
+  businessTenantKey?: string;
   status: string;
   createdAt: string;
+  updatedAt?: string;
   version?: number;
 };
+
+export type PlatformSubjectType =
+  | "domestic_enterprise"
+  | "association"
+  | "overseas"
+  | "pending_registration";
 
 export type PlatformCardProjection = {
   id: string;
@@ -271,11 +335,19 @@ export type PlatformEnterpriseDetail = PlatformEnterprise & {
   cardCount: number;
   publishedCardCount: number;
   visits30d: number;
+  uniqueVisitors30d?: number;
   conversations30d: number;
-    leads30d: number;
-    cards: PlatformCardProjection[];
-    businessProfile: PlatformOnboardingSuggestion[];
-    updatedAt: string;
+  consentedLeads30d?: number;
+  leads30d: number;
+  actionableTaskCount?: number;
+  failedTaskCount?: number;
+  serviceValidUntil?: string;
+  serviceRiskLevel?: "healthy" | "warning" | "expired" | "missing";
+  lastActivityAt?: string;
+  cards: PlatformCardProjection[];
+  businessProfile: PlatformOnboardingSuggestion[];
+  recentTasks?: PlatformTaskProjection[];
+  updatedAt: string;
 };
 
 export type PlatformEnterpriseLifecycle = {
@@ -321,6 +393,7 @@ export type CommercialEntitlements = {
   planCode: CommercialPlanCode;
   billingCycle: CommercialBillingCycle;
   contractPriceCny?: number;
+  serviceValidUntil?: string;
   featureOverrides: Record<string, boolean>;
   features: Record<string, boolean>;
   limitOverrides: Record<string, number | null>;
@@ -332,6 +405,14 @@ export type CommercialEntitlements = {
 
 export type PlatformOverview = {
   generatedAt: string;
+  enabledEnterpriseCount?: number;
+  activeEnterprise30dCount?: number;
+  pendingActivationCount?: number;
+  uniqueVisitors30d?: number;
+  consentedLeads30d?: number;
+  pendingTaskCount?: number;
+  serviceRiskCount?: number;
+  // Compatibility aliases for existing view components during rollout.
   enterpriseCount: number;
   activeEnterpriseCount: number;
   onboardingCount: number;
@@ -433,10 +514,15 @@ export type PlatformOnboardingStatus =
 
 export type StartPlatformOnboardingInput = {
   displayName?: string;
-  tenantSlug: string;
-  tenantName?: string;
+  legalName?: string;
+  shortName?: string;
+  subjectType?: PlatformSubjectType;
+  socialCreditCode?: string;
+  industry?: string;
   adminAccount: string;
   adminDisplayName: string;
+  tenantSlug?: string;
+  tenantName?: string;
 };
 
 export type TemporaryCredentialDelivery = {
@@ -506,6 +592,11 @@ export type PlatformOnboardingSession = {
   status: PlatformOnboardingStatus;
   tenantSlug: string;
   tenantName?: string;
+  legalName?: string;
+  shortName?: string;
+  subjectType?: PlatformSubjectType;
+  socialCreditCode?: string;
+  industry?: string;
   adminAccount?: string;
   adminDisplayName?: string;
   initialCardDisplayName?: string;
@@ -549,12 +640,16 @@ export type PlatformOnboardingImportStatus = {
 export type ConfirmPlatformOnboardingInput = {
   expectedVersion: number;
   candidateSelections: PlatformOnboardingCandidateSelection[];
-  tenantName: string;
-  companyName: string;
+  legalName?: string;
+  shortName?: string;
+  subjectType?: PlatformSubjectType;
+  socialCreditCode?: string;
   industry?: string;
   summary?: string;
   website?: string;
-  initialCardDisplayName: string;
+  tenantName?: string;
+  companyName?: string;
+  initialCardDisplayName?: string;
   initialCardTitle?: string;
   assistantName?: string;
   welcomeMessage?: string;
@@ -574,22 +669,67 @@ export type RenamePlatformOnboardingInput = {
 export type PlatformCompanyAggregate = {
   companyId: string;
   companyName: string;
+  legalName?: string;
+  shortName?: string;
+  businessTenantKey?: string;
+  status?: string;
   employeeCount: number;
+  cardCount?: number;
+  publishedCardCount?: number;
   visits30d: number;
   uniqueVisitors30d: number;
+  conversations30d?: number;
+  consentedLeads30d?: number;
+  actionableTaskCount?: number;
+  failedTaskCount?: number;
+  serviceValidUntil?: string;
+  serviceRiskLevel?: "healthy" | "warning" | "expired" | "missing";
+  lastActivityAt?: string;
   lastVisitAt?: string;
 };
 
+export type PlatformOperationalTaskType =
+  | "onboarding"
+  | "knowledge_import"
+  | "content_review"
+  | "enterprise_risk"
+  | "service_validity";
+export type PlatformOperationalTaskStatus =
+  | "pending"
+  | "in_progress"
+  | "blocked"
+  | "failed"
+  | "completed"
+  | "cancelled"
+  | "expired";
+
 export type PlatformTaskProjection = {
   id: string;
-  taskType: string;
+  taskType: PlatformOperationalTaskType;
   businessLabel: string;
-  status: string;
+  status: PlatformOperationalTaskStatus;
   companyId?: string;
   companyName?: string;
+  tenantSlug?: string;
   errorCode?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PlatformTaskCompanyGroup = {
+  companyId: string;
+  companyName: string;
+  pendingCount: number;
+  inProgressCount: number;
+  failedCount: number;
+  recentTasks: PlatformTaskProjection[];
+};
+
+export type PlatformTaskResult = {
+  view: "timeline" | "company";
+  items: PlatformTaskProjection[];
+  groups: PlatformTaskCompanyGroup[];
+  total: number;
 };
 
 export type PlatformAuditProjection = {
@@ -612,21 +752,27 @@ export type PlatformServiceHealth = {
 };
 
 export type CreatePlatformEnterpriseInput = {
-  tenantSlug: string;
-  tenantName: string;
-  companyName: string;
-  industry: string;
+  legalName?: string;
+  shortName?: string;
+  subjectType?: PlatformSubjectType;
+  socialCreditCode?: string;
+  industry?: string;
   adminAccount: string;
   adminDisplayName: string;
-  adminPassword: string;
-  initialCardTitle: string;
+  defaultPlanCode?: CommercialPlanCode;
+  tenantSlug?: string;
+  tenantName?: string;
+  companyName?: string;
+  adminPassword?: string;
+  initialCardTitle?: string;
 };
 
 export type CreatedPlatformEnterprise = PlatformEnterprise & {
   adminUserId: string;
   adminMembershipId: string;
-  initialCardId: string;
-  initialCardSlug: string;
+  credentialDelivery?: TemporaryCredentialDelivery;
+  initialCardId?: string;
+  initialCardSlug?: string;
 };
 
 export type ContentStatus =

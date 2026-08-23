@@ -293,13 +293,37 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, OptimisticVe
             "normalized_name",
             name="uq_companies_tenant_id_normalized_name",
         ),
+        UniqueConstraint("business_tenant_key", name="uq_companies_business_tenant_key"),
         CheckConstraint("char_length(btrim(name)) > 0", name="name_not_blank"),
+        CheckConstraint(
+            "subject_type IN "
+            "('domestic_enterprise','association','overseas','pending_registration')",
+            name="companies_subject_type_allowed",
+        ),
         Index("ix_companies_tenant_status_updated", "tenant_id", "status", "updated_at"),
+        Index(
+            "uq_companies_social_credit_code",
+            "social_credit_code",
+            unique=True,
+            postgresql_where=sql_text("social_credit_code IS NOT NULL"),
+        ),
     )
 
     tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    short_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    subject_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="domestic_enterprise",
+        server_default=text("'domestic_enterprise'"),
+    )
+    social_credit_code: Mapped[str | None] = mapped_column(String(18), nullable=True)
+    business_tenant_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    service_valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     industry: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[LifecycleStatus] = mapped_column(
         db_enum(LifecycleStatus, "company_status"),
@@ -1844,7 +1868,7 @@ class PlatformOnboardingSession(
     admin_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     admin_membership_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     credential_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    initial_card_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    initial_card_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     tenant_slug: Mapped[str] = mapped_column(String(64), nullable=False)

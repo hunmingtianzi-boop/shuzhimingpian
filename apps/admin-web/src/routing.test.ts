@@ -75,4 +75,38 @@ describe("admin subpath routing", () => {
       "/c/admin/platform/settings/llm",
     );
   });
+
+  it("builds and parses refreshable platform enterprise section routes", async () => {
+    const routing = await loadRouting("/c/admin/");
+    const path = routing.platformEnterprisePath("company-one", "tasks");
+
+    expect(path).toBe("/platform/enterprises/company-one/tasks");
+    expect(routing.appHref(path)).toBe(
+      "/c/admin/platform/enterprises/company-one/tasks",
+    );
+    expect(routing.matchPlatformEnterprisePath(path)).toEqual({
+      companyId: "company-one",
+      section: "tasks",
+    });
+    expect(routing.adminWorkspaceForPath(path)).toBe("platform");
+    expect(
+      routing.matchPlatformEnterprisePath(
+        "/platform/enterprises/company-one/unknown",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("keeps enterprise object details typed and workspace-scoped", async () => {
+    const routing = await loadRouting("/");
+
+    expect(routing.visitDetailPath("visit-one")).toBe("/visits/visit-one");
+    expect(routing.productDetailPath("new")).toBe("/products/new");
+    expect(routing.matchEntityDetailPath("/visits/visit-one")).toEqual({
+      kind: "visit",
+      id: "visit-one",
+    });
+    expect(routing.adminWorkspaceForPath("/products/product-one")).toBe(
+      "enterprise",
+    );
+  });
 });

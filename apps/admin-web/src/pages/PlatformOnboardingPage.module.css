@@ -1074,19 +1074,49 @@
 }
 
 .credentialNotice,
-.credentialDelivery {
+.credentialDelivery,
+.compatibilityHint,
+.legacyReviewNotice {
   display: grid;
   gap: 8px;
   padding: 16px;
-  border: 1px solid #b8e1df;
   border-radius: 14px;
-  background: #f1fbfa;
   color: #173d47;
 }
 
 .credentialNotice span,
-.credentialDelivery span {
+.credentialDelivery span,
+.compatibilityHint span,
+.legacyReviewNotice span {
   color: #57727a;
+}
+
+.credentialNotice,
+.credentialDelivery {
+  border: 1px solid #b8e1df;
+  background: #f1fbfa;
+}
+
+.compatibilityHint,
+.legacyReviewNotice {
+  border: 1px solid #ecd39c;
+  background: #fff9ed;
+}
+
+.nativeSelect {
+  min-height: 36px;
+  width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--colorNeutralStroke1, #b3b3b3);
+  border-radius: 4px;
+  background: var(--colorNeutralBackground1, #fff);
+  color: var(--colorNeutralForeground1, #242424);
+  font: inherit;
+}
+
+.nativeSelect:focus-visible {
+  outline: 2px solid var(--colorBrandStroke1, #0f6cbd);
+  outline-offset: 2px;
 }
 
 .candidateWorkspace {

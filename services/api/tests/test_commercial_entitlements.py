@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -93,6 +94,18 @@ def test_card_plugin_installation_cannot_bypass_commercial_entitlement() -> None
     assert installations["cf.system.identity"]["enabled"] is True
     assert installations["cf.card.actions"]["enabled"] is True
     assert installations["cf.card.faq"]["enabled"] is False
+
+
+def test_commercial_request_accepts_service_valid_until() -> None:
+    request = UpdateCommercialEntitlementRequest.model_validate(
+        {
+            "expected_version": 1,
+            "plan_code": "professional",
+            "service_valid_until": datetime(2026, 12, 31, tzinfo=UTC).isoformat(),
+        }
+    )
+
+    assert request.service_valid_until == datetime(2026, 12, 31, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("invalid_value", [-1, 1.5, True, "10"])

@@ -73,7 +73,7 @@ function Harness() {
 }
 
 describe("PlatformEnterpriseDrawer", () => {
-  it("renders only aggregate fields and links only server-published cards", async () => {
+  it("renders lightweight preview fields only and hides sensitive payloads", async () => {
     vi.spyOn(platformApi, "getEnterpriseDetail").mockResolvedValue({
       ...detail,
       email: "private@example.com",
@@ -86,19 +86,10 @@ describe("PlatformEnterpriseDrawer", () => {
     expect(
       within(drawer).getByRole("heading", { name: "Acme 商务", level: 2 }),
     ).toBeInTheDocument();
-    expect(within(drawer).getByText("80%")) .toBeInTheDocument();
-    expect(within(drawer).getByText("120")).toBeInTheDocument();
-    expect(within(drawer).getByText("面向制造企业的智能化解决方案服务商")).toBeInTheDocument();
-    expect(within(drawer).getByText("来源：企业介绍.pdf")).toBeInTheDocument();
-    expect(within(drawer).getByText("企业官方名片")).toBeInTheDocument();
-    expect(within(drawer).getByText("员工名片")).toBeInTheDocument();
-    expect(
-      within(drawer).getByRole("link", { name: "打开Acme 商务企业名片" }),
-    ).toHaveAttribute(
-      "href",
-      "https://cards.example/c/card-1",
-    );
-    expect(within(drawer).queryByRole("link", { name: /李顾问/ })).not.toBeInTheDocument();
+    expect(within(drawer).getByText("80%")).toBeInTheDocument();
+    expect(within(drawer).getByText("已发布名片")).toBeInTheDocument();
+    expect(within(drawer).getByText("企业详情主流程已迁移到可刷新的独立页面；此处只保留快速跳转，不再承载完整八分区运营详情。")).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "打开完整详情" })).toBeInTheDocument();
     expect(drawer).not.toHaveTextContent("private@example.com");
     expect(drawer).not.toHaveTextContent("private conversation");
   });
@@ -109,39 +100,17 @@ describe("PlatformEnterpriseDrawer", () => {
     render(<Harness />);
 
     await screen.findByRole("heading", { name: "Acme 商务", level: 2 });
-    await user.click(screen.getByRole("button", { name: "关闭企业详情" }));
+    await user.click(screen.getByRole("button", { name: "关闭" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "查看 Acme 商务" })).toHaveFocus();
     });
   });
 
-  it("requires a reason and submits an optimistic lifecycle transition", async () => {
-    const user = userEvent.setup();
+  it("opens the new detail page from the preview shell", async () => {
     vi.spyOn(platformApi, "getEnterpriseDetail").mockResolvedValue(detail);
-    const transition = vi.spyOn(platformApi, "transitionEnterprise").mockResolvedValue({
-      tenantId: detail.tenantId,
-      companyId: detail.companyId,
-      previousStatus: "active",
-      status: "suspended",
-      version: 4,
-      changed: true,
-      updatedAt: "2026-07-15T13:00:00Z",
-    });
     render(<Harness />);
 
-    await user.click(await screen.findByRole("button", { name: "暂停企业" }));
-    const confirm = screen.getByRole("button", { name: "确认暂停企业" });
-    expect(confirm).toBeDisabled();
-    await user.type(screen.getByRole("textbox", { name: "操作原因" }), "合同到期");
-    await user.click(confirm);
-
-    await waitFor(() => {
-      expect(transition).toHaveBeenCalledWith("company-1", {
-        expectedVersion: 3,
-        targetStatus: "suspended",
-        reason: "合同到期",
-      });
-    });
+    expect(await screen.findByRole("button", { name: "进入详情页" })).toBeInTheDocument();
   });
 });

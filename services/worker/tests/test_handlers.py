@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -13,6 +13,7 @@ from cf_worker.domain import (
     HandlerResult,
     OutboxRecord,
     PermanentEventError,
+    VisitDailyDigestSnapshot,
     VisitNotificationSnapshot,
     WeComVisitCard,
 )
@@ -72,7 +73,8 @@ class StubRepository:
             question_count=2 if report else 0,
             share_count=1 if report else 0,
             cta_count=0,
-            engagement_level="medium",
+            engagement_level="high" if report else "low",
+            has_consented_lead=False,
         )
 
     async def send_wecom_visit_notification(
@@ -90,6 +92,37 @@ class StubRepository:
                 "report_url": report_url,
             }
         )
+        return 1
+
+    async def visit_daily_digest_snapshot(
+        self,
+        _event: OutboxRecord,
+        *,
+        digest_date: date,
+    ) -> VisitDailyDigestSnapshot:
+        return VisitDailyDigestSnapshot(
+            digest_date=digest_date,
+            recipient_user_ids=(self.summary_owner,),
+            in_app_enabled=True,
+            wecom_enabled=True,
+            visit_count=12,
+            unique_visitor_count=7,
+            card_count=3,
+            question_count=4,
+            share_count=2,
+            top_card_display_name="拓浙AI生态",
+        )
+
+    async def send_wecom_visit_daily_digest(
+        self,
+        _event: OutboxRecord,
+        *,
+        recipient_user_ids: tuple[uuid.UUID, ...],
+        card: WeComVisitCard,
+        report_url: str,
+    ) -> int:
+        assert recipient_user_ids == (self.summary_owner,)
+        self.wecom_messages.append({"card": card, "report_url": report_url})
         return 1
 
     async def build_export(
@@ -209,22 +242,11 @@ async def test_payload_with_pii_marker_or_extra_field_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("event_type", "expected_handler", "expected_copy"),
-    [
-        ("visit.started.v1", "visit-started-notification-v1", "刚刚打开"),
-        ("visit.report.ready.v1", "visit-report-notification-v1", "2 分 6 秒"),
-    ],
-)
-async def test_visit_notifications_are_non_pii_and_link_to_the_report(
-    event_type: str,
-    expected_handler: str,
-    expected_copy: str,
-) -> None:
+async def test_high_intent_visit_report_is_non_pii_and_links_to_the_report() -> None:
     visit_id = uuid.uuid4()
     card_id = uuid.uuid4()
     base = event(
-        event_type,
+        "visit.report.ready.v1",
         {"visit_id": str(visit_id), "card_id": str(card_id)},
     )
     record = OutboxRecord(
@@ -236,37 +258,84 @@ async def test_visit_notifications_are_non_pii_and_link_to_the_report(
     )
     repository = StubRepository()
     result = await EventHandlerRegistry(repository, StubEvaluator()).handle(record)
-    assert result.handler_name == expected_handler
+    assert result.handler_name == "visit-report-notification-v1"
     assert len(result.notifications) == 1
-    assert expected_copy in result.notifications[0].body
+    assert "2 分 6 秒" in result.notifications[0].body
     assert "微信号" not in result.notifications[0].body
     assert repository.wecom_messages
     message = repository.wecom_messages[0]
     card = message["card"]
-    assert card.title in {"有访客打开名片", "新访问报告已生成"}
+    assert card.title == "新访问报告已生成"
     assert card.subtitle == "拓浙AI生态"
     assert str(visit_id)[:8] in dict(card.details)["编号"]
-    assert card.action_text in {"查看访问动态", "查看完整访问报告"}
-    if event_type == "visit.report.ready.v1":
-        assert card.emphasis_title == "中等"
-        assert card.cover_url == (
-            "https://example.test/c/admin/assets/wecom/visitor-insight-cover.png"
-        )
-        assert dict(card.details) == {
-            "停留": "2 分 6 秒",
-            "页面": "4 个",
-            "AI提问": "2 次",
-            "分享": "1 次",
-            "来源": "微信",
-            "编号": str(visit_id)[:8],
-        }
-    else:
-        assert card.emphasis_title == "新访客"
-        assert card.cover_url is None
-        assert dict(card.details)["状态"] == "已记录访问"
+    assert card.action_text == "查看完整访问报告"
+    assert card.emphasis_title == "较高"
+    assert card.cover_url == (
+        "https://example.test/c/admin/assets/wecom/visitor-insight-cover.png"
+    )
+    assert dict(card.details) == {
+        "停留": "2 分 6 秒",
+        "页面": "4 个",
+        "AI提问": "2 次",
+        "分享": "1 次",
+        "来源": "微信",
+        "编号": str(visit_id)[:8],
+    }
     report_url = urlsplit(message["report_url"])
     assert report_url.path == "/c/admin/wecom/entry"
     assert parse_qs(report_url.query)["return_to"] == [f"/c/admin/visits?visitId={visit_id}"]
+
+
+@pytest.mark.asyncio
+async def test_ordinary_visit_events_are_deferred_to_daily_digest() -> None:
+    visit_id = uuid.uuid4()
+    card_id = uuid.uuid4()
+    base = event(
+        "visit.started.v1",
+        {"visit_id": str(visit_id), "card_id": str(card_id)},
+    )
+    record = OutboxRecord(
+        **{
+            **{field: getattr(base, field) for field in base.__dataclass_fields__},
+            "aggregate_type": "visit",
+            "aggregate_id": visit_id,
+        }
+    )
+
+    repository = StubRepository()
+    result = await EventHandlerRegistry(repository, StubEvaluator()).handle(record)
+    assert result.handler_name == "visit-ordinary-digest-deferred-v1"
+    assert result.notifications == ()
+    assert result.metadata["deferred_to_digest"] is True
+    assert repository.wecom_messages == []
+
+
+@pytest.mark.asyncio
+async def test_daily_digest_notification_is_non_pii_and_links_to_digest_view() -> None:
+    company_id = uuid.uuid4()
+    base = event(
+        "visit.daily_digest.ready.v1",
+        {"company_id": str(company_id), "digest_date": "2026-08-22"},
+    )
+    record = OutboxRecord(
+        **{
+            **{field: getattr(base, field) for field in base.__dataclass_fields__},
+            "aggregate_type": "company",
+            "aggregate_id": company_id,
+        }
+    )
+
+    repository = StubRepository()
+    result = await EventHandlerRegistry(repository, StubEvaluator()).handle(record)
+    assert result.handler_name == "visit-daily-digest-notification-v1"
+    assert len(result.notifications) == 1
+    assert "12 次普通访问" in result.notifications[0].body
+    assert repository.wecom_messages
+    report_url = urlsplit(repository.wecom_messages[0]["report_url"])
+    assert report_url.path == "/c/admin/wecom/entry"
+    assert parse_qs(report_url.query)["return_to"] == [
+        "/c/admin/visits?date=2026-08-22&view=digest"
+    ]
 
 
 @pytest.mark.asyncio

@@ -70,3 +70,14 @@ The repeated user correction has been applied as a run-local rule: current repos
 ## Verdict
 
 No unresolved BLOCK. The change is plan-ready after the document-assisted onboarding artifacts, `tasks.md`, `plan.md` and OpenSpec strict validation are complete.
+
+## 2026-08-23 P0/P1 review
+
+- Product / CEO: **PASS** — platform and enterprise IA are separated; cardless provisioning removes platform overreach; real customer/content objects remain linked without inventing billing.
+- Engineering: **NEEDS FIX until WP1 completes** — `initial_card_id`, duplicated provisioning and mixed company settings are hard coupling points; shared migration/schema must land first.
+- QA: **NEEDS FIX until runtime evidence exists** — desktop/390px, 403/409 and upgrade/rollback checks are hard gates.
+- Security / CSO: **PASS with hard gates** — UUID RLS stays authoritative; keys, PII and private bodies remain forbidden; business-key changes are audited.
+- Frontend: **PASS** — typed dynamic routes and progressive disclosure fit the current SPA/Fluent language.
+- Backend: **NEEDS FIX until metric/task source freezes** — list/detail/overview need one vocabulary and successful outbox must leave tasks.
+- Full-stack: **PASS** — no new ports, services or base paths.
+- Knowledge Steward: **PASS** — P2 BYOK, P3 associations and P4 billing remain explicit deferrals.

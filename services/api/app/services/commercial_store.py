@@ -132,6 +132,7 @@ class CommercialStore:
                 limit_overrides=body.limit_overrides,
             )
             company.settings = settings
+            company.service_valid_until = body.service_valid_until
             company.version += 1
             current = resolve_commercial_entitlements(settings)
             await append_audit(
@@ -149,6 +150,11 @@ class CommercialStore:
                     "billing_cycle": current.billing_cycle,
                     "feature_override_count": len(current.feature_overrides),
                     "limit_override_count": len(current.limit_overrides),
+                    "service_valid_until": (
+                        body.service_valid_until.isoformat()
+                        if body.service_valid_until is not None
+                        else None
+                    ),
                     "company_version": company.version,
                 },
             )
@@ -173,6 +179,7 @@ def _record(company: Company) -> CommercialEntitlementRecord:
         plan_code=state.plan_code,
         billing_cycle=state.billing_cycle,
         contract_price_cny=state.contract_price_cny,
+        service_valid_until=company.service_valid_until,
         feature_overrides=state.feature_overrides,
         features=state.features,
         limit_overrides=state.limit_overrides,

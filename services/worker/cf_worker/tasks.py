@@ -165,6 +165,26 @@ def enqueue_inactive_visit_reports() -> int:
 
 
 @shared_task(
+    name="cf_worker.enqueue_visit_daily_digests",
+    ignore_result=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def enqueue_visit_daily_digests() -> int:
+    async def run() -> int:
+        settings = get_worker_settings()
+        repository = PostgresOutboxRepository(settings)
+        try:
+            return await repository.enqueue_visit_daily_digests()
+        finally:
+            await repository.close()
+
+    inserted = _run_database_poll("enqueue_visit_daily_digests", run)
+    logger.info("visit daily digests enqueued", extra={"inserted": inserted})
+    return inserted
+
+
+@shared_task(
     name="cf_worker.purge_expired_platform_onboarding_sessions",
     ignore_result=True,
     acks_late=True,
@@ -293,6 +313,7 @@ def poll_content_imports() -> int:
 
 __all__ = [
     "enqueue_inactive_visit_reports",
+    "enqueue_visit_daily_digests",
     "poll_outbox",
     "process_outbox_event",
     "purge_expired_visitor_profiles",
