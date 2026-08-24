@@ -240,6 +240,30 @@ describe("EnterpriseTemplateEditor", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("marks a legacy schema draft for an explicit V2 upgrade save", async () => {
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template({
+      draft: {
+        schemaVersion: 1,
+        themeKey: "brand",
+        blocks: [identityBlock, {
+          id: "rich-legacy",
+          type: "rich_text",
+          visible: true,
+          sortOrder: 1,
+          title: "企业介绍",
+          body: "旧版结构中的真实企业内容。",
+        }],
+      },
+    }));
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor();
+
+    expect(await screen.findByText(/已升级为新版名片结构/)).toBeInTheDocument();
+    expect(screen.getByText("有未保存修改")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存草稿", hidden: true })).toBeEnabled();
+  });
+
   it("opens the current shared draft renderer and keeps the published page as an explicit comparison", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
@@ -291,6 +315,10 @@ describe("EnterpriseTemplateEditor", () => {
     expect(screen.getByText("解决方案完整内容")).toBeInTheDocument();
     expect(screen.getByText("项目成果完整内容")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /向 AI 继续提问/ })).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("重新载入预览"));
+    expect(await screen.findByRole("navigation", { name: "企业名片内容导航预览" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "案例详情预览" })).not.toBeInTheDocument();
   }, 15_000);
 
   it("keeps empty and in-progress input values when the parent recreates equivalent props", async () => {
@@ -859,7 +887,7 @@ describe("EnterpriseTemplateEditor", () => {
 
     await waitFor(() => expect(onDraftConfirm).toHaveBeenCalledTimes(1));
     expect(onDraftConfirm.mock.calls[0][0]).toEqual(expect.objectContaining({
-      schemaVersion: 1,
+      schemaVersion: 2,
       themeKey: "brand",
       blocks: expect.arrayContaining([expect.objectContaining({ type: "rich_text" })]),
     }));

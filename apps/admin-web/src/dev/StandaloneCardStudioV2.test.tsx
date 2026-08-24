@@ -7,6 +7,16 @@ import { describe, expect, it } from "vitest";
 import { StandaloneCardStudioV2 } from "./StandaloneCardStudioV2";
 
 describe("StandaloneCardStudioV2", () => {
+  it("clearly separates the local design preview from the formal editor", () => {
+    render(<StandaloneCardStudioV2/>);
+
+    expect(screen.getByText("基础名片设计预览")).toBeInTheDocument();
+    expect(screen.getByText("本地预览数据，不会写入企业资料")).toBeInTheDocument();
+    expect(screen.getByText("此页面只用于验证正式渲染组件与交互，不代表已保存的企业方案。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入正式编辑器" })).toHaveAttribute("href", "/cards");
+    expect(screen.queryByRole("button", { name: "标记方案" })).not.toBeInTheDocument();
+  });
+
   it("edits enterprise positioning and custom facts without duplicating the rendering tree", () => {
     render(<StandaloneCardStudioV2/>);
     fireEvent.click(screen.getByRole("button", { name: "企业" }));

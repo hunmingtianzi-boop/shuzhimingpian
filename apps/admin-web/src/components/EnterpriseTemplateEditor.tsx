@@ -10,11 +10,14 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular,
+  ArrowLeft24Regular,
   ArrowClockwise24Regular,
   ArrowRedo24Regular,
   ArrowUndo24Regular,
+  Desktop24Regular,
   Edit24Regular,
   Eye24Regular,
+  Phone24Regular,
   Save24Regular,
   Send24Regular,
 } from "@fluentui/react-icons";
@@ -53,6 +56,7 @@ import type {
   EnterpriseTemplateActionItem,
   EnterpriseTemplateBlock,
   EnterpriseTemplateBlockType,
+  EnterpriseTemplate,
   EnterpriseTemplateThemeKey,
   IdentityContactField,
   IdentityProfileFact,
@@ -398,11 +402,10 @@ type EnterpriseTemplateEditorProps = {
   onEditBasicSettings: (card: ManagedCard) => void;
   onRequestPublish: (card: ManagedCard) => void;
   onSaved: (card?: ManagedCard) => void;
-  onDraftConfirm?: (document: {
-    schemaVersion: 1;
-    themeKey: EnterpriseTemplateThemeKey;
-    blocks: EnterpriseTemplateBlock[];
-  }, identity: { identityTitles: string[]; contactFields: IdentityContactField[] }) => void | Promise<void>;
+  onDraftConfirm?: (
+    document: EnterpriseTemplate["draft"],
+    identity: { identityTitles: string[]; contactFields: IdentityContactField[] },
+  ) => void | Promise<void>;
   dataSource?: EnterpriseTemplateEditorDataSource;
 };
 
@@ -450,6 +453,7 @@ export function EnterpriseTemplateEditor({
   const [error, setError] = useState<ApiError>();
   const [previewMode, setPreviewMode] = useState<"draft" | "published">("draft");
   const [previewDevice, setPreviewDevice] = useState<"mobile" | "wide">("mobile");
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [structureTab, setStructureTab] = useState<"structure" | "library">("structure");
   const [mobilePane, setMobilePane] = useState<"structure" | "canvas" | "inspector">("canvas");
   const [tabletSidePane, setTabletSidePane] = useState<"structure" | "inspector">("structure");
@@ -510,6 +514,7 @@ export function EnterpriseTemplateEditor({
       .then(([template, productResult, caseResult, companyProfile, faqResult]) => {
         if (!active) return;
         const document = "draft" in template ? template.draft : template.document;
+        const upgradedLegacySchema = document.schemaVersion !== 2;
         const normalizedBlocks = normalizeEnterpriseTemplateBlockOrder(
           document.blocks.filter((block) => block.type !== "ai_assistant"),
         );
@@ -574,9 +579,10 @@ export function EnterpriseTemplateEditor({
             ? current
             : editableBlocks[0]?.id
         ));
-        if (removedLegacyAiBlock || upgradedLegacyOverview || upgradedLegacyActions || upgradedLegacyIdentityLayout) {
+        if (upgradedLegacySchema || removedLegacyAiBlock || upgradedLegacyOverview || upgradedLegacyActions || upgradedLegacyIdentityLayout) {
           setDirty(true);
           setSavedNotice([
+            upgradedLegacySchema ? "已升级为新版名片结构" : "",
             removedLegacyAiBlock ? "已移除旧版 AI 助手区块" : "",
             upgradedLegacyOverview ? "已将旧版预览文案转为可编辑的真实内容" : "",
             upgradedLegacyActions ? "已将旧版行动入口升级为快捷入口" : "",
@@ -1018,7 +1024,7 @@ export function EnterpriseTemplateEditor({
     setError(undefined);
     try {
       await onDraftConfirm({
-        schemaVersion: 1,
+        schemaVersion: 2,
         themeKey,
         blocks: normalizeEnterpriseTemplateBlockOrder(blocks),
       }, { identityTitles, contactFields: normalizeIdentityContactFields(identityContactFields) });
@@ -1177,10 +1183,10 @@ export function EnterpriseTemplateEditor({
             <DialogTitle className="template-studio-title-shell">
               <div className="studio-topbar template-studio-topbar">
                 <div className="studio-brand template-composer-title">
-                  <button type="button" className="back-button template-editor-back" onClick={onClose} disabled={busy}>← 返回</button>
+                  <button type="button" className="back-button template-editor-back" onClick={onClose} disabled={busy}><ArrowLeft24Regular />返回</button>
                   <span className="studio-divider" aria-hidden="true" />
-                  <strong className="document-title">{effectiveDisplayName}的数字名片 ✎</strong>
-                  <span className={`autosave ${dirty ? "is-dirty" : "is-saved"}`}>{dirty ? "有未保存修改" : "✓ 已自动保存"}</span>
+                  <strong className="document-title">{effectiveDisplayName}名片页面</strong>
+                  <span className={`autosave ${dirty ? "is-dirty" : "is-saved"}`}>{dirty ? "有未保存修改" : "草稿已保存"}</span>
                 </div>
                 <div className="studio-history" aria-label="编辑历史">
                   <button className="toolbar-button icon-only" type="button" title="撤销" disabled={busy || !undoStack.length} onClick={undoChange}><ArrowUndo24Regular /></button>
@@ -1328,8 +1334,8 @@ export function EnterpriseTemplateEditor({
                   >
                     <div className="canvas-toolbar template-canvas-toolbar">
                       <div className="segmented template-device-switch" role="group" aria-label="预览设备">
-                        <button type="button" className={previewDevice === "mobile" ? "active is-active" : undefined} aria-pressed={previewDevice === "mobile"} title="手机预览" onClick={() => setPreviewDevice("mobile")}>▯</button>
-                        <button type="button" className={previewDevice === "wide" ? "active is-active" : undefined} aria-pressed={previewDevice === "wide"} title="宽屏预览" onClick={() => setPreviewDevice("wide")}>▱</button>
+                        <button type="button" className={previewDevice === "mobile" ? "active is-active" : undefined} aria-pressed={previewDevice === "mobile"} title="手机预览" onClick={() => setPreviewDevice("mobile")}><Phone24Regular /></button>
+                        <button type="button" className={previewDevice === "wide" ? "active is-active" : undefined} aria-pressed={previewDevice === "wide"} title="宽屏预览" onClick={() => setPreviewDevice("wide")}><Desktop24Regular /></button>
                       </div>
                       <select className="canvas-select" aria-label="视觉模板" value={themeKey} onChange={(event) => changeTheme(event.target.value as EnterpriseTemplateThemeKey)}>
                         <option value="brand">清透商务模板</option>
@@ -1340,12 +1346,13 @@ export function EnterpriseTemplateEditor({
                         <button type="button" role="tab" aria-selected={previewMode === "draft"} className={previewMode === "draft" ? "active is-active" : undefined} onClick={() => setPreviewMode("draft")}>草稿</button>
                         {card?.shareUrl ? <button type="button" role="tab" aria-selected={previewMode === "published"} className={previewMode === "published" ? "active is-active" : undefined} onClick={() => setPreviewMode("published")}>线上</button> : null}
                       </div>
-                      <button className="toolbar-button icon-only" type="button" title="刷新画布" onClick={() => setPreviewMode((current) => current)}><ArrowClockwise24Regular /></button>
+                      <button className="toolbar-button icon-only" type="button" title="重新载入预览" onClick={() => setPreviewRevision((current) => current + 1)}><ArrowClockwise24Regular /></button>
                     </div>
                     <div className="canvas-stage" ref={canvasStageRef}>
                       <div className={`editor-preview ${previewDevice === "wide" ? "wide" : ""}`}>
                         {previewMode === "published" && card?.shareUrl ? (
                           <iframe
+                            key={`published-${previewRevision}`}
                             className="template-public-page-frame"
                             src={card.shareUrl}
                             title="实际公开名片页面"
@@ -1353,6 +1360,7 @@ export function EnterpriseTemplateEditor({
                           />
                         ) : (
                           <TemplateCanvas
+                            key={`draft-${previewRevision}`}
                             blocks={previewBlocks}
                             themeKey={themeKey}
                             products={publishedProducts}

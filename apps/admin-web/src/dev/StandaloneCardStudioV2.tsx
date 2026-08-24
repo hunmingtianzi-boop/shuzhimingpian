@@ -179,7 +179,7 @@ export function StandaloneCardStudioV2() {
   const [showEntryTitle, setShowEntryTitle] = useState(true);
   const [entryLayout, setEntryLayout] = useState<"auto" | "horizontal">("auto");
   const [quickEntries, setQuickEntries] = useState(initialQuickEntries);
-  const [notice, setNotice] = useState("真实生产组件 · 当前仅使用本地 fixture 数据");
+  const [notice, setNotice] = useState("本地预览数据，不会写入企业资料");
 
   const modules = useMemo<StudioModule[]>(() => [
     {
@@ -225,7 +225,7 @@ export function StandaloneCardStudioV2() {
   };
 
   const leftPanel = <>
-    <p className="panel-hint">此页面直接运行生产 renderer；切换的只有 fixture 数据和 opt-in V2 variant。</p>
+    <p className="panel-hint">此页面只用于验证正式渲染组件与交互，不代表已保存的企业方案。</p>
     <div className="module-list">{modules.map((module) => <StudioModuleRow
       key={module.id}
       title={module.title}
@@ -247,7 +247,7 @@ export function StandaloneCardStudioV2() {
       </div>
     </StudioInspectorSection>
     <StudioInspectorSection title="真实数据来源">
-      <div className="source-card"><strong>{kind === "employee" ? "企业员工" : "企业资料"}</strong><span>当前为类型一致的 fixture</span></div>
+      <div className="source-card"><strong>{kind === "employee" ? "企业员工" : "企业资料"}</strong><span>当前为同类型本地预览数据</span></div>
       <p className="v2-lab-note">{kind === "employee" ? "正式接入后，这里的修改写回企业员工，所有关联名片同步。" : "正式接入后，这里的修改写回企业资料，所有企业名片同步。"}</p>
     </StudioInspectorSection>
     {kind === "employee" ? <>
@@ -296,7 +296,7 @@ export function StandaloneCardStudioV2() {
   return <CardStudioEditorSurface>
     <StudioEditorShell
       className="v2-lab-shell"
-      topbar={<><div className="studio-brand"><span className="document-title">基础名片 V2 · 生产组件预览</span><span className="autosave"><StudioIcon name="check"/>{notice}</span></div><div className="studio-history"><span className="v2-lab-contract">React / TypeScript / 共享 Renderer</span></div><div className="studio-actions"><button className="toolbar-button" type="button" onClick={() => setNotice("fixture 恢复请刷新页面；正式数据未被修改。")}>恢复说明</button><button className="toolbar-button primary" type="button" onClick={() => setNotice("当前前端方案已标记；尚未写入正式 API。")}>标记方案</button></div></>}
+      topbar={<><div className="studio-brand"><span className="document-title">基础名片设计预览</span><span className="autosave"><StudioIcon name="check"/>{notice}</span></div><div className="studio-history"><span className="v2-lab-contract">React / TypeScript / 共享 Renderer</span></div><div className="studio-actions"><button className="toolbar-button" type="button" onClick={() => setNotice("刷新页面即可恢复本地预览；正式企业资料未被修改。")}>重置说明</button><a className="toolbar-button primary" href="/cards">进入正式编辑器</a></div></>}
       leftTabs={<><button className="panel-tab active" type="button">页面结构</button><button className="panel-tab" type="button">假数据说明</button></>}
       leftPanel={leftPanel}
       canvasToolbar={<><div className="segmented"><button className={!wide ? "active" : ""} type="button" aria-label="手机预览" onClick={() => setWide(false)}><StudioIcon name="user"/></button><button className={wide ? "active" : ""} type="button" aria-label="宽屏预览" onClick={() => setWide(true)}><StudioIcon name="grid"/></button></div><div className="v2-lab-kind-switch"><button className={kind === "employee" ? "active" : ""} type="button" onClick={() => { setKind("employee"); setSelectedModuleId("identity"); }}>员工</button><button className={kind === "enterprise" ? "active" : ""} type="button" onClick={() => { setKind("enterprise"); setSelectedModuleId("identity"); }}>企业</button></div></>}
