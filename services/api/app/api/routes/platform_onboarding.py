@@ -146,6 +146,32 @@ async def ignore_onboarding_candidate(
     )
 
 
+@router.post(
+    "/{onboarding_id}/candidates/{candidate_id}/accept",
+    response_model=ContentImportCandidateEnvelope,
+    operation_id="acceptPlatformOnboardingCandidate",
+)
+async def accept_onboarding_candidate(
+    onboarding_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    body: ReviewContentCandidateRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> ContentImportCandidateEnvelope:
+    return ContentImportCandidateEnvelope(
+        data=await _service(request).accept_content_candidate(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            candidate_id=candidate_id,
+            expected_version=body.expected_version,
+            apply_fields=body.apply_fields,
+            admin=_admin_store(request),
+            catalog=_catalog_store(request),
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
 @router.get(
     "",
     response_model=PlatformOnboardingSessionListEnvelope,

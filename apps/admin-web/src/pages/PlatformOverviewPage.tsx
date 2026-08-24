@@ -242,7 +242,7 @@ export function PlatformOverviewPage() {
           </Button>
         </div>
         {importantTasks.length > 0 ? (
-          <div className="dashboard-metrics">
+          <div className="dashboard-metrics platform-compact-metrics">
             {importantTasks.map((task: PlatformTaskProjection) => (
               <article className="dashboard-metric" key={task.id}>
                 <div style={{ display: "grid", gap: 6 }}>
@@ -275,7 +275,7 @@ export function PlatformOverviewPage() {
           </Button>
         </div>
         {healthResource.status === "ready" && healthResource.data ? (
-          <div className="dashboard-metrics" aria-label="平台健康探针">
+          <div className="dashboard-metrics platform-compact-metrics" aria-label="平台健康探针">
             {healthResource.data.map((item) => (
               <article className="dashboard-metric" key={item.service}>
                 <strong>{item.service}</strong>

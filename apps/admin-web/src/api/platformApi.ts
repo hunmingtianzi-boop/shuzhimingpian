@@ -398,6 +398,16 @@ function onboardingContentReview(value: JsonRecord) {
         typeof count === "number" ? count : 0,
       ]),
     ),
+    stage: oneOf(
+      value.stage ?? "completed",
+      ["queued", "discovering", "enriching", "validating", "finalizing", "completed", "failed"] as const,
+      "review.stage",
+    ),
+    stageMessage: optionalString(value.stage_message, "review.stage_message"),
+    progressCurrent: nonNegativeInteger(value.progress_current ?? 0, "review.progress_current"),
+    progressTotal: nonNegativeInteger(value.progress_total ?? 1, "review.progress_total"),
+    startedAt: optionalString(value.started_at, "review.started_at"),
+    completedAt: optionalString(value.completed_at, "review.completed_at"),
     candidates: value.candidates.map(onboardingCandidate),
   };
 }
@@ -1227,6 +1237,26 @@ export function createPlatformApi(client: ApiClient) {
       const payload = await client.post(
         `/platform/onboarding/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidate.id)}/ignore`,
         { expected_version: candidate.version, apply_fields: [] },
+      );
+      return onboardingCandidate(unwrapData(payload, "资料辅助建企候选"));
+    },
+
+    async acceptOnboardingCandidate(
+      sessionId: string,
+      candidate: PlatformOnboardingCandidate,
+    ): Promise<PlatformOnboardingCandidate> {
+      const applyFields = candidate.category === "enterprise_profile"
+        ? Object.entries(candidate.payload)
+            .filter(([, value]) => value.trim().length > 0)
+            .map(([field]) => field)
+        : [];
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidate.id)}/accept`,
+        {
+          expected_version: candidate.version,
+          apply_fields: applyFields,
+          confirm_sensitive_fields: true,
+        },
       );
       return onboardingCandidate(unwrapData(payload, "资料辅助建企候选"));
     },

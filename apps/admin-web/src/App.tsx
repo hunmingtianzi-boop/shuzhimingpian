@@ -50,6 +50,7 @@ import {
   WECOM_ENTRY_PATH,
 } from "./routing";
 import { confirmOnboardingWithRecovery } from "./utils/platformOnboarding";
+import { rememberPlatformOnboardingTask } from "./utils/platformOnboardingTask";
 
 const OverviewPage = lazy(() =>
   import("./pages/OverviewPage").then((module) => ({
@@ -707,6 +708,37 @@ export function PlatformOnboardingRoute() {
   }, [activeSession?.id, activeSession?.status, actorId, importBatchKey, replaceSession]);
 
   useEffect(() => {
+    if (!actorId || !activeSession || activeSession.contentReview?.status !== "processing") {
+      return;
+    }
+    const expectedActorId = actorId;
+    const expectedSessionId = activeSession.id;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const updated = await platformApi.getOnboarding(expectedSessionId);
+        if (
+          cancelled
+          || ownerIdRef.current !== expectedActorId
+          || activeSessionIdRef.current !== expectedSessionId
+        ) return;
+        replaceSession(updated, expectedSessionId);
+        if (updated.contentReview?.status === "processing") {
+          timer = window.setTimeout(poll, 2_000);
+        }
+      } catch {
+        if (!cancelled) timer = window.setTimeout(poll, 3_000);
+      }
+    };
+    timer = window.setTimeout(poll, 1_000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeSession?.contentReview?.status, activeSession?.id, actorId, replaceSession]);
+
+  useEffect(() => {
     if (!actorId) {
       setLlmAvailability("unavailable");
       return;
@@ -790,6 +822,7 @@ export function PlatformOnboardingRoute() {
         setImportError(undefined);
       }}
       onGenerate={async (sessionId: string, expectedVersion: number) => {
+        rememberPlatformOnboardingTask(sessionId, activeSession?.displayName ?? "资料辅助建企");
         const updated = await platformApi.generateOnboardingSuggestions(
           sessionId,
           expectedVersion,
@@ -798,6 +831,12 @@ export function PlatformOnboardingRoute() {
       }}
       onUpdateCandidate={async (sessionId, candidate) => {
         await platformApi.updateOnboardingCandidate(sessionId, candidate);
+        const updated = await platformApi.getOnboarding(sessionId);
+        replaceSession(updated, sessionId);
+      }}
+      onAcceptCandidate={async (sessionId, candidate) => {
+        const saved = await platformApi.updateOnboardingCandidate(sessionId, candidate);
+        await platformApi.acceptOnboardingCandidate(sessionId, saved);
         const updated = await platformApi.getOnboarding(sessionId);
         replaceSession(updated, sessionId);
       }}

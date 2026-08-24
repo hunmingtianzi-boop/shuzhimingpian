@@ -651,6 +651,12 @@ export type PlatformOnboardingContentReview = {
   attempts: number;
   failureCode?: string;
   counts: Record<string, number>;
+  stage: "queued" | "discovering" | "enriching" | "validating" | "finalizing" | "completed" | "failed";
+  stageMessage?: string;
+  progressCurrent: number;
+  progressTotal: number;
+  startedAt?: string;
+  completedAt?: string;
   candidates: PlatformOnboardingCandidate[];
 };
 

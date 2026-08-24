@@ -115,6 +115,10 @@ export type PlatformOnboardingPageProps = {
     onboardingSessionId: string,
     candidate: PlatformOnboardingCandidate,
   ) => Promise<void>;
+  onAcceptCandidate?: (
+    onboardingSessionId: string,
+    candidate: PlatformOnboardingCandidate,
+  ) => Promise<void>;
   onIgnoreCandidate?: (
     onboardingSessionId: string,
     candidate: PlatformOnboardingCandidate,
@@ -142,6 +146,7 @@ type BusyOperation =
   | "rename"
   | "upload"
   | "generate"
+  | "candidate"
   | "confirm"
   | "cancel"
   | "regenerate";
@@ -279,12 +284,6 @@ function candidateComplete(candidate: PlatformOnboardingCandidate): boolean {
   return (candidateRequiredFields[candidate.category] ?? []).every((field) =>
     Boolean(candidate.payload[field]?.trim()),
   );
-}
-
-function candidateSelectedByDefault(candidate: PlatformOnboardingCandidate): boolean {
-  return candidate.status === "pending_review"
-    && candidate.category !== "unclassified"
-    && candidateComplete(candidate);
 }
 
 function candidateApplyFields(candidate: PlatformOnboardingCandidate): string[] {
@@ -746,6 +745,7 @@ export function PlatformOnboardingPage({
   onUpload,
   onGenerate,
   onUpdateCandidate,
+  onAcceptCandidate,
   onIgnoreCandidate,
   onConfirm,
   onCancel,
@@ -768,6 +768,7 @@ export function PlatformOnboardingPage({
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>();
   const [candidateDrafts, setCandidateDrafts] = useState<Record<string, PlatformOnboardingCandidate>>({});
   const [candidateSelections, setCandidateSelections] = useState<Record<string, boolean>>({});
+  const [candidateNotice, setCandidateNotice] = useState<string>();
   const [renameValue, setRenameValue] = useState("");
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [confirmedDraftCount, setConfirmedDraftCount] = useState(0);
@@ -822,7 +823,7 @@ export function PlatformOnboardingPage({
           candidate.id,
           sameSession && current[candidate.id] !== undefined
             ? current[candidate.id]
-            : candidateSelectedByDefault(candidate),
+            : false,
         ]),
       );
     });
@@ -879,28 +880,25 @@ export function PlatformOnboardingPage({
     !importsProcessing;
   const insightCount = (session?.businessProfile?.length ?? 0) + (session?.suggestions.length ?? 0);
   const hasInsights = insightCount > 0;
+  const analysisProcessing = busy === "generate" || session?.contentReview?.status === "processing";
   // Review is a separate, user-controlled step. Parsed files do not require
   // AI output: the operator can always continue with manual fields once no
   // upload or analysis request is actively running.
-  const canEnterReview = !importsProcessing && busy !== "generate";
+  const canEnterReview = !importsProcessing && !analysisProcessing;
   const confirmationNeedsRecovery =
     operationError?.code === ONBOARDING_CONFIRM_UNCERTAIN_CODE;
   const candidates = session?.contentReview?.candidates.map(
     (candidate) => candidateDrafts[candidate.id] ?? candidate,
   ) ?? [];
-  const selectedCandidates = candidates.filter(
-    (candidate) =>
-      candidateSelections[candidate.id] === true
-      && candidate.status === "pending_review"
-      && candidate.category !== "unclassified"
-      && candidateComplete(candidate),
-  );
+  const acceptedCandidateCount = candidates.filter(
+    (candidate) => candidate.status === "accepted",
+  ).length;
+  const pendingCandidateCount = candidates.filter(
+    (candidate) => candidate.status === "pending_review",
+  ).length;
   const ignoredCandidateCount = candidates.filter(
     (candidate) => candidate.status === "ignored",
   ).length;
-  const unselectedCandidateCount = candidates.length
-    - selectedCandidates.length
-    - ignoredCandidateCount;
 
   const run = async (operation: BusyOperation, action: () => Promise<void>) => {
     if (busy) return;
@@ -1379,15 +1377,30 @@ export function PlatformOnboardingPage({
                     (completedItems === 0 && session.importBatchIds.length === 0) ||
                     importsProcessing ||
                     llmAvailability !== "ready" ||
-                    busy === "generate"
+                    analysisProcessing
                   }
                   onClick={() =>
                     void run("generate", () => onGenerate(session.id, session.version))
                   }
                 >
-                  {busy === "generate" ? "正在分析企业资料" : "开始智能分析"}
+                  {analysisProcessing ? "智能分析中" : "开始智能分析"}
                 </Button>
               </div>
+
+              {analysisProcessing && (
+                <div className={styles.analysisProgress} role="status" aria-live="polite">
+                  <div className={styles.progressCopy}>
+                    <strong>{session.contentReview?.stageMessage ?? "任务已提交，正在等待后台处理"}</strong>
+                    <span>可以切换到其他页面，右下角任务浮窗会持续显示真实进度。</span>
+                  </div>
+                  <ProgressBar
+                    value={session.contentReview && session.contentReview.progressTotal > 0
+                      ? session.contentReview.progressCurrent / session.contentReview.progressTotal
+                      : undefined}
+                    aria-label="企业资料智能分析进度"
+                  />
+                </div>
+              )}
 
               <details className={styles.technicalDetails}>
                 <summary>查看处理编号</summary>
@@ -1404,7 +1417,7 @@ export function PlatformOnboardingPage({
                       <div>
                         <span>智能候选</span>
                         <h3 id="onboarding-candidate-title">逐条确认资料归类</h3>
-                        <p>左侧选择候选，右侧编辑；保存只更新草稿，不会发布内容。</p>
+                        <p>左侧选择候选，右侧编辑；确认后写入企业后台草稿，不会自动发布。</p>
                       </div>
                       <strong>{session.contentReview?.candidates.length} 条</strong>
                     </div>
@@ -1422,6 +1435,7 @@ export function PlatformOnboardingPage({
                               <span>{candidateCategoryLabels[candidate.category]}</span>
                               <strong>{candidateTitle(candidate)}</strong>
                               <small>置信度 {Math.round(candidate.confidence * 100)}%</small>
+                              <em>{candidate.status === "accepted" ? "已确认" : candidate.status === "ignored" ? "已忽略" : "待确认"}</em>
                             </button>
                           );
                         })}
@@ -1446,10 +1460,7 @@ export function PlatformOnboardingPage({
                                       payload: { ...candidatePayloadDefaults[category] },
                                     };
                                     updateCandidate(nextCandidate);
-                                    setCandidateSelections((current) => ({
-                                      ...current,
-                                      [candidate.id]: candidateSelectedByDefault(nextCandidate),
-                                    }));
+                                    setCandidateSelections((current) => ({ ...current, [candidate.id]: false }));
                                   }}
                                 >
                                   {Object.entries(candidateCategoryLabels).map(([value, label]) => (
@@ -1457,21 +1468,6 @@ export function PlatformOnboardingPage({
                                   ))}
                                 </select>
                               </label>
-                              <Checkbox
-                                checked={candidateSelections[candidate.id] === true}
-                                disabled={
-                                  candidate.status !== "pending_review"
-                                  || candidate.category === "unclassified"
-                                  || !candidateComplete(candidate)
-                                }
-                                label="创建为草稿"
-                                onChange={(_, data) =>
-                                  setCandidateSelections((current) => ({
-                                    ...current,
-                                    [candidate.id]: data.checked === true,
-                                  }))
-                                }
-                              />
                               <span>
                                 {candidate.status === "pending_review"
                                   ? "待确认"
@@ -1502,7 +1498,7 @@ export function PlatformOnboardingPage({
                             </div>
                             {!candidateComplete(candidate) && candidate.category !== "unclassified" && (
                               <p className={styles.candidateSelectionHint}>
-                                补齐必填字段后才能选择“创建为草稿”。
+                                补齐必填字段后才能确认并写入草稿。
                               </p>
                             )}
                             {candidate.status === "ignored" && (
@@ -1526,14 +1522,27 @@ export function PlatformOnboardingPage({
                               </Button>
                               <Button
                                 appearance="primary"
-                                disabled={!onUpdateCandidate || Boolean(busy)}
-                                onClick={() => onUpdateCandidate
-                                  ? void run("generate", () => onUpdateCandidate(session.id, candidate))
+                                disabled={
+                                  !onAcceptCandidate
+                                  || Boolean(busy)
+                                  || candidate.status !== "pending_review"
+                                  || candidate.category === "unclassified"
+                                  || !candidateComplete(candidate)
+                                }
+                                onClick={() => onAcceptCandidate
+                                  ? void run("candidate", async () => {
+                                      const nextCandidate = candidates.find((item) =>
+                                        item.id !== candidate.id && item.status === "pending_review");
+                                      await onAcceptCandidate(session.id, candidate);
+                                      setCandidateNotice("已确认并写入企业工作台草稿，可继续编辑下一条候选。");
+                                      setSelectedCandidateId(nextCandidate?.id ?? candidate.id);
+                                    })
                                   : undefined}
                               >
-                                保存候选修改
+                                {busy === "candidate" ? "正在确认" : candidate.status === "accepted" ? "已确认" : "确认并写入草稿"}
                               </Button>
                             </div>
+                            {candidateNotice && <p className={styles.candidateSelectionHint} role="status">{candidateNotice}</p>}
                           </article>
                         );
                       })()}
@@ -1613,11 +1622,7 @@ export function PlatformOnboardingPage({
                       confirmationPayload(
                         review,
                         session.version,
-                        selectedCandidates.map((candidate) => ({
-                          id: candidate.id,
-                          expectedVersion: candidate.version,
-                          applyFields: candidateApplyFields(candidate),
-                        })),
+                        [],
                       ),
                     );
                     if (
@@ -1625,7 +1630,7 @@ export function PlatformOnboardingPage({
                       confirmed.confirmedEnterprise
                     ) {
                       setConfirmedSession(confirmed);
-                      setConfirmedDraftCount(selectedCandidates.length);
+                      setConfirmedDraftCount(acceptedCandidateCount);
                     }
                   });
                 }}
@@ -1728,11 +1733,11 @@ export function PlatformOnboardingPage({
                   <section className={styles.candidateConfirmationSummary} aria-label="候选导入确认摘要">
                     <strong>候选导入确认</strong>
                     <div>
-                      <span>创建为草稿 {selectedCandidates.length} 条</span>
-                      <span>本次不创建 {unselectedCandidateCount} 条</span>
+                      <span>已写入草稿 {acceptedCandidateCount} 条</span>
+                      <span>待逐条确认 {pendingCandidateCount} 条</span>
                       <span>已忽略 {ignoredCandidateCount} 条</span>
                     </div>
-                    <p>选中内容只会进入企业后台草稿；未选、未分类和已忽略候选继续保留在导入历史，不会自动发布。</p>
+                    <p>只有逐条点击“确认并写入草稿”的内容会进入企业后台；待确认和已忽略候选继续保留在导入历史，系统不会自动发布。</p>
                   </section>
                 )}
 

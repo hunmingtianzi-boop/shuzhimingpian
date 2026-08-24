@@ -45,6 +45,7 @@ import {
   usePathname,
 } from "../routing";
 import { ContentImportTaskDock } from "./ContentImportTaskDock";
+import { PlatformOnboardingTaskDock } from "./PlatformOnboardingTaskDock";
 
 type NavItem = {
   path: AppPath;
@@ -171,7 +172,10 @@ export function hasCommercialFeature(
   return !feature || entitlements === undefined || entitlements.features[feature] === true;
 }
 
-function navPathMatches(itemPath: string, pathname: string): boolean {
+export function navPathMatches(itemPath: string, pathname: string): boolean {
+  if (itemPath === APP_PATHS.platformOverview) {
+    return pathname === itemPath;
+  }
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
@@ -392,6 +396,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         hasCommercialFeature(auth.entitlements, "knowledge.import") && (
         <ContentImportTaskDock />
       )}
+      {isPlatform && <PlatformOnboardingTaskDock />}
     </div>
   );
 }

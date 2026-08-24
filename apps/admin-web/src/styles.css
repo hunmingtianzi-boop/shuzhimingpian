@@ -2483,6 +2483,23 @@ a:hover {
   line-height: 1.1;
 }
 
+.platform-compact-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.platform-compact-metrics .dashboard-metric {
+  padding: 1rem;
+}
+
+.platform-compact-metrics .dashboard-metric strong {
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
 .dashboard-metric span,
 .dashboard-generated,
 .detail-meta,

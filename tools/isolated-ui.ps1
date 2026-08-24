@@ -3,10 +3,10 @@ param(
     [string]$Action = "status",
     [int]$CardPort = 4318,
     [int]$AdminPort = 4319,
-    [int]$ApiPort = 8030,
-    [int]$DatabasePort = 0,
-    [int]$RedisPort = 0,
-    [int]$ObjectStoragePort = 0,
+    [int]$ApiPort = 38101,
+    [int]$DatabasePort = 15432,
+    [int]$RedisPort = 16379,
+    [int]$ObjectStoragePort = 19000,
     [string]$DatabaseContainer = "",
     [string]$ObjectStorageContainer = "",
     [string]$BackendEnvironmentFile = ""
@@ -95,13 +95,32 @@ function Start-Api([string]$EnvironmentFile) {
     }
     $saved = Import-EnvironmentFile $EnvironmentFile
     $extraNames = @(
+        "APP_BASE_URL",
+        "API_BASE_URL",
         "CORS_ALLOWED_ORIGINS",
         "PUBLIC_CARD_BASE_URL",
+        "CARD_WEB_BASE_URL",
+        "ADMIN_BASE_URL",
         "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "WORKER_DATABASE_URL",
         "REDIS_URL",
+        "CELERY_BROKER_URL",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "APP_DB_USER",
+        "APP_DB_PASSWORD",
+        "WORKER_DB_USER",
+        "WORKER_DB_PASSWORD",
         "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_REGION",
+        "OBJECT_STORAGE_BUCKET",
         "OBJECT_STORAGE_ACCESS_KEY",
-        "OBJECT_STORAGE_SECRET_KEY"
+        "OBJECT_STORAGE_SECRET_KEY",
+        "OBJECT_STORAGE_SECURE",
+        "ALLOW_INSECURE_PUBLIC_CARD_HTTP",
+        "APP_NAME"
     )
     foreach ($name in $extraNames) {
         if (-not $saved.ContainsKey($name)) {
@@ -163,7 +182,12 @@ function Start-Api([string]$EnvironmentFile) {
             $env:OBJECT_STORAGE_ACCESS_KEY = $objectStorageAccessKey
             $env:OBJECT_STORAGE_SECRET_KEY = $objectStorageSecretKey
         }
+        $env:APP_NAME = "cf-ai-card"
+        $env:APP_BASE_URL = "http://127.0.0.1:$CardPort"
+        $env:API_BASE_URL = "http://127.0.0.1:$ApiPort/api/v1"
         $env:CORS_ALLOWED_ORIGINS = "[`"http://127.0.0.1:$CardPort`",`"http://127.0.0.1:$AdminPort`",`"http://localhost:$CardPort`",`"http://localhost:$AdminPort`"]"
+        $env:CARD_WEB_BASE_URL = "http://127.0.0.1:$CardPort"
+        $env:ADMIN_BASE_URL = "http://127.0.0.1:$AdminPort/"
         $env:PUBLIC_CARD_BASE_URL = "http://127.0.0.1:$CardPort"
         Start-Process -FilePath $ApiPython `
             -ArgumentList @(

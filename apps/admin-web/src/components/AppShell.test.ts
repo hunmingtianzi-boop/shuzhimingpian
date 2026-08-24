@@ -6,6 +6,7 @@ import {
   getPlatformNavigationPaths,
   hasCommercialFeature,
   hasNavPermission,
+  navPathMatches,
 } from "./AppShell";
 
 function user(role: string, permissions: string[] = []): AdminUser {
@@ -79,5 +80,17 @@ describe("hasNavPermission", () => {
     expect(hasCommercialFeature({
       features: { "data.exports": false, "customer.visits": true },
     } as unknown as CommercialEntitlements, "customer.visits")).toBe(true);
+  });
+});
+
+describe("navPathMatches", () => {
+  it("keeps the platform overview active only on its exact route", () => {
+    expect(navPathMatches(APP_PATHS.platformOverview, APP_PATHS.platformOverview)).toBe(true);
+    expect(navPathMatches(APP_PATHS.platformOverview, APP_PATHS.platformEnterprises)).toBe(false);
+    expect(navPathMatches(APP_PATHS.platformOverview, APP_PATHS.platformTasks)).toBe(false);
+  });
+
+  it("keeps section navigation active on nested detail routes", () => {
+    expect(navPathMatches(APP_PATHS.platformEnterprises, `${APP_PATHS.platformEnterprises}/company-1`)).toBe(true);
   });
 });

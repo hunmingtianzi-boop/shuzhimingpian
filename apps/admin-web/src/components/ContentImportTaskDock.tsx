@@ -1,10 +1,3 @@
-import { Button, ProgressBar } from "@fluentui/react-components";
-import {
-  CheckmarkCircle24Regular,
-  Dismiss20Regular,
-  DocumentArrowUp24Regular,
-  Open20Regular,
-} from "@fluentui/react-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -18,6 +11,7 @@ import {
   readRememberedContentImportTask,
   rememberContentImportTask,
 } from "../utils/contentImportTask";
+import { BackgroundTaskDock } from "./BackgroundTaskDock";
 
 const stageLabels: Record<ContentImportRun["stage"], string> = {
   queued: "等待后台处理",
@@ -40,7 +34,6 @@ function elapsedLabel(run: ContentImportRun, now: number): string {
 
 export function ContentImportTaskDock() {
   const [run, setRun] = useState<ContentImportRun>();
-  const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async () => {
@@ -96,65 +89,21 @@ export function ContentImportTaskDock() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
-  return (
-    <aside
-      className={`content-import-task-dock ${expanded ? "is-expanded" : ""}`}
-      data-state={finished ? "finished" : "running"}
-      aria-label="资料智能整理任务"
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
-      onFocus={() => setExpanded(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false);
-      }}
-    >
-      <button
-        type="button"
-        className="content-import-task-dock-trigger"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span className="content-import-task-dock-icon" aria-hidden="true">
-          {finished ? <CheckmarkCircle24Regular /> : <DocumentArrowUp24Regular />}
-        </span>
-        <span className="content-import-task-dock-trigger-copy">
-          <strong>{finished ? "整理完成" : stageLabels[run.stage]}</strong>
-          <small>{candidateCount > 0 ? `${candidateCount} 条候选` : "资料智能整理"}</small>
-        </span>
-      </button>
-      <div className="content-import-task-dock-detail" aria-live="polite">
-        <div className="content-import-task-dock-heading">
-          <div>
-            <span>{finished ? "任务结果" : "正在后台处理"}</span>
-            <strong>{run.stageMessage ?? stageLabels[run.stage]}</strong>
-          </div>
-          {finished && (
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<Dismiss20Regular />}
-              aria-label="关闭任务浮窗"
-              onClick={() => {
-                clearRememberedContentImportTask();
-                setRun(undefined);
-              }}
-            />
-          )}
-        </div>
-        <ProgressBar value={progress} max={1} thickness="medium" />
-        <dl className="content-import-task-dock-facts">
-          <div><dt>阶段</dt><dd>{stageLabels[run.stage]}</dd></div>
-          <div><dt>耗时</dt><dd>{elapsedLabel(run, now)}</dd></div>
-          <div><dt>候选</dt><dd>{candidateCount} 条</dd></div>
-        </dl>
-        <Button
-          appearance={finished ? "primary" : "secondary"}
-          icon={<Open20Regular />}
-          onClick={openResult}
-        >
-          {finished ? "查看整理结果" : "返回任务页面"}
-        </Button>
-      </div>
-    </aside>
-  );
+  return <BackgroundTaskDock
+    ariaLabel="资料智能整理任务"
+    finished={finished}
+    title={finished ? "整理完成" : stageLabels[run.stage]}
+    subtitle={candidateCount > 0 ? `${candidateCount} 条候选` : "资料智能整理"}
+    stageLabel={stageLabels[run.stage]}
+    stageMessage={run.stageMessage ?? stageLabels[run.stage]}
+    elapsedLabel={elapsedLabel(run, now)}
+    candidateLabel={`${candidateCount} 条`}
+    progress={progress}
+    actionLabel={finished ? "查看整理结果" : "返回任务页面"}
+    onOpen={openResult}
+    onClose={() => {
+      clearRememberedContentImportTask();
+      setRun(undefined);
+    }}
+  />;
 }

@@ -776,6 +776,41 @@ class PlatformOnboardingService:
             expected_version=expected_version,
         )
 
+    async def accept_content_candidate(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        candidate_id: uuid.UUID,
+        expected_version: int,
+        apply_fields: list[str],
+        admin: AdminStore,
+        catalog: CatalogStore,
+        trace_id: str | None,
+    ) -> ContentImportCandidateRecord:
+        """Confirm one reviewed candidate and materialize its enterprise draft."""
+
+        scope = await self._content_review_scope(
+            actor=actor,
+            onboarding_id=onboarding_id,
+        )
+        return await ContentImportReviewService(self._sessions, self._settings).accept_candidate(
+            scope=scope,
+            catalog_scope=CatalogScope(
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+                actor_user_id=scope.actor_user_id,
+                role=MembershipRole.COMPANY_ADMIN.value,
+            ),
+            candidate_id=candidate_id,
+            expected_version=expected_version,
+            apply_fields=apply_fields,
+            confirm_sensitive_fields=True,
+            admin=admin,
+            catalog=catalog,
+            trace_id=trace_id,
+        )
+
     async def _content_review_scope(
         self,
         *,
