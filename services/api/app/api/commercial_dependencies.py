@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Request
 
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
@@ -59,17 +59,9 @@ def require_commercial_feature(
 
 async def require_commercial_feature_for_admin_path(
     request: Request,
-    authorization: Annotated[str | None, Header()] = None,
+    principal: StaffDependency,
 ) -> None:
     path = request.url.path
-    # This dependency is mounted on a mixed router that also contains the
-    # visitor-authenticated public visit-event endpoint. Do not resolve staff
-    # authentication for public paths: doing so rejects valid visitor session
-    # tokens before the endpoint's own VisitorDependency can validate them.
-    if "/admin/" not in path:
-        return
-
-    principal = await get_staff_principal(request, authorization)
     feature_id: str | None = None
     if ":schedule-publish" in path or "/admin/scheduled-publishes" in path:
         await require_commercial_feature("catalog.scheduled_publish")(request, principal)

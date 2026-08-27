@@ -40,6 +40,7 @@ router = APIRouter(
     tags=["Business Workflow"],
     dependencies=[Depends(require_commercial_feature_for_admin_path)],
 )
+public_router = APIRouter(tags=["Business Workflow"])
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
 VisitorDependency = Annotated[VisitorPrincipal, Depends(get_visitor_principal)]
 
@@ -199,9 +200,7 @@ async def list_employee_analytics(
     sort_order: Literal["asc", "desc"] = "desc",
 ) -> EmployeeAnalyticsListEnvelope:
     _require_access(principal, "analytics.read", allow_card_owner=True)
-    records, reconciliation, total, generated_at = await _store(
-        request
-    ).list_employee_analytics(
+    records, reconciliation, total, generated_at = await _store(request).list_employee_analytics(
         scope=_scope(principal),
         period_days=period_days,
         limit=limit,
@@ -304,9 +303,7 @@ async def list_opportunities(
     records, total = await _store(request).list_opportunities(
         scope=_scope(principal), limit=limit, offset=offset
     )
-    return OpportunityCandidateListEnvelope(
-        data=records, total=total, limit=limit, offset=offset
-    )
+    return OpportunityCandidateListEnvelope(data=records, total=total, limit=limit, offset=offset)
 
 
 @router.get(
@@ -386,9 +383,7 @@ async def approve_summary(
     request: Request,
     principal: StaffDependency,
 ) -> SummaryEnvelope:
-    _require_access(
-        principal, "summaries.write", "conversations.write", allow_card_owner=True
-    )
+    _require_access(principal, "summaries.write", "conversations.write", allow_card_owner=True)
     return SummaryEnvelope(
         data=await _store(request).approve_summary(
             scope=_scope(principal),
@@ -606,7 +601,7 @@ async def mark_notification_read(
     return NotificationEnvelope(data=notification)
 
 
-@router.post(
+@public_router.post(
     "/public/cards/{slug}/visits/{visit_id}/events",
     response_model=VisitEventEnvelope,
     status_code=status.HTTP_201_CREATED,
