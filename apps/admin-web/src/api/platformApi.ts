@@ -460,6 +460,15 @@ function onboardingSession(value: unknown): PlatformOnboardingSession {
     businessProfile: Array.isArray(value.business_profile)
       ? value.business_profile.map(onboardingSuggestion)
       : [],
+    synthesisStatus: oneOf(
+      value.synthesis_status ?? "pending",
+      ["pending", "processing", "ready", "failed"] as const,
+      "synthesis_status",
+    ),
+    synthesisFailureCode: optionalString(value.synthesis_failure_code, "synthesis_failure_code"),
+    synthesisStartedAt: optionalString(value.synthesis_started_at, "synthesis_started_at"),
+    synthesisCompletedAt: optionalString(value.synthesis_completed_at, "synthesis_completed_at"),
+    synthesisVersion: nonNegativeInteger(value.synthesis_version ?? 0, "synthesis_version"),
     contentReview,
     expiresAt: optionalString(value.expires_at, "expires_at"),
     confirmedEnterprise:
@@ -1213,6 +1222,17 @@ export function createPlatformApi(client: ApiClient) {
         { expected_version: expectedVersion },
       );
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
+    },
+
+    async synthesizeOnboardingSources(
+      sessionId: string,
+      expectedVersion: number,
+    ): Promise<PlatformOnboardingSession> {
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/synthesis`,
+        { expected_version: expectedVersion },
+      );
+      return onboardingSession(unwrapData(payload, "资料综合归纳"));
     },
 
     async updateOnboardingCandidate(

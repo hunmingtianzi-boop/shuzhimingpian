@@ -25,13 +25,320 @@ from app.api.routes import platform_onboarding as routes
 from app.core.tokens import StaffPrincipal
 from app.services.knowledge_import_store import KnowledgeImportScope
 from app.services.platform_onboarding import (
+    _TERMINAL_IMPORT_REVIEW_SKIP_CODES,
     _BUSINESS_PROFILE_FIELDS,
-    _SUGGESTION_SYSTEM_PROMPT,
+    _MERGED_CANDIDATE_SYSTEM_PROMPT,
     PlatformOnboardingImportScope,
     PlatformOnboardingService,
+    _decode_synthesis_payload,
     _default_onboarding_display_name,
+    _fallback_merged_candidates,
+    _fallback_synthesis_from_content_review,
+    _merge_candidates_from_groups,
+    _merge_content_reviews,
+    _parse_merged_candidates,
     _parse_suggestions,
 )
+
+
+def test_only_terminal_unusable_import_errors_are_skippable() -> None:
+    assert _TERMINAL_IMPORT_REVIEW_SKIP_CODES == {
+        "IMPORT_BATCH_NOT_READY",
+        "PARSED_DRAFT_MISSING",
+    }
+    assert "IMPORT_BATCH_NOT_FOUND" not in _TERMINAL_IMPORT_REVIEW_SKIP_CODES
+    assert "LLM_RUNTIME_UNAVAILABLE" not in _TERMINAL_IMPORT_REVIEW_SKIP_CODES
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        '{"suggestions": [], "business_profile": []}',
+        '```json\n{"suggestions": [], "business_profile": []}\n```',
+        '分析结果如下：\n```JSON\n{"suggestions": [], "business_profile": []}\n```',
+    ],
+)
+def test_decode_synthesis_payload_accepts_bare_or_fenced_json(answer: str) -> None:
+    assert _decode_synthesis_payload(answer) == {
+        "suggestions": [],
+        "business_profile": [],
+    }
+
+
+def test_decode_synthesis_payload_rejects_non_json_answer() -> None:
+    with pytest.raises(ValueError, match="synthesis_answer_not_json_object"):
+        _decode_synthesis_payload("无法形成结构化结果")
+
+
+def test_merge_content_reviews_keeps_candidates_from_every_source_batch() -> None:
+    now = datetime.now(UTC)
+    first_run_id = uuid.uuid4()
+    second_run_id = uuid.uuid4()
+
+    def review(run_id: uuid.UUID, batch_id: uuid.UUID, source_id: str) -> ContentImportRunRecord:
+        return ContentImportRunRecord(
+            id=run_id,
+            batch_id=batch_id,
+            status="review",
+            provider="deepseek",
+            model="flash",
+            attempts=1,
+            counts={"pending_review": 1},
+            stage="completed",
+            stage_message="候选等待确认",
+            progress_current=1,
+            progress_total=1,
+            job_attempts=1,
+            candidates=[
+                ContentImportCandidateRecord(
+                    id=uuid.uuid4(),
+                    run_id=run_id,
+                    category="products",
+                    payload={"name": source_id},
+                    source_id=source_id,
+                    source_text=f"{source_id} evidence",
+                    confidence=0.9,
+                    status="pending_review",
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            ],
+            started_at=now,
+            completed_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+
+    merged = _merge_content_reviews(
+        [
+            review(first_run_id, uuid.uuid4(), "file-one"),
+            review(second_run_id, uuid.uuid4(), "file-two"),
+        ]
+    )
+
+    assert merged is not None
+    assert merged.status == "review"
+    assert merged.counts == {"pending_review": 2}
+    assert {candidate.source_id for candidate in merged.candidates} == {"file-one", "file-two"}
+    assert merged.stage_message == "已完成 2 份资料分析，共生成 2 条候选"
+
+
+def test_synthesis_fallback_groups_candidates_and_keeps_real_sources() -> None:
+    now = datetime.now(UTC)
+    run_id = uuid.uuid4()
+    batch_id = uuid.uuid4()
+    source_id = uuid.uuid4()
+    categories = (
+        ("products", {"name": "机器人蛋糕", "summary": "按需制作"}),
+        ("case_studies", {"title": "甜品节", "result": "完成联合展示"}),
+        ("faqs", {"question": "如何制作？", "answer": "由机器人协作完成"}),
+    )
+    review = ContentImportRunRecord(
+        id=run_id,
+        batch_id=batch_id,
+        status="review",
+        provider="deepseek",
+        model="flash",
+        attempts=1,
+        counts={"pending_review": len(categories)},
+        stage="completed",
+        stage_message="候选等待确认",
+        progress_current=1,
+        progress_total=1,
+        job_attempts=1,
+        candidates=[
+            ContentImportCandidateRecord(
+                id=uuid.uuid4(),
+                run_id=run_id,
+                category=category,
+                payload=payload,
+                source_id=str(source_id),
+                source_text="来自机器人蛋糕资料的原文证据",
+                confidence=0.9,
+                status="pending_review",
+                version=1,
+                created_at=now,
+                updated_at=now,
+            )
+            for category, payload in categories
+        ],
+        started_at=now,
+        completed_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+    suggestions, profile = _fallback_synthesis_from_content_review(
+        review,
+        draft_rows=[
+            {
+                "import_item_id": source_id,
+                "file_name": "机器人蛋糕资料.pdf",
+                "document_id": uuid.uuid4(),
+            }
+        ],
+        generation_version=3,
+    )
+
+    assert suggestions == []
+    assert {item.field for item in profile} == {
+        "products_services",
+        "case_studies",
+        "frequently_asked_questions",
+    }
+    assert all(item.sources[0].file_name == "机器人蛋糕资料.pdf" for item in profile)
+    assert all(item.generation_version == 3 for item in profile)
+
+
+def test_parse_merged_candidates_keeps_cross_source_contributions_and_warnings() -> None:
+    first_source = uuid.uuid4()
+    second_source = uuid.uuid4()
+    parsed = _parse_merged_candidates(
+        {
+            "merged_candidates": [
+                {
+                    "category": "products",
+                    "payload": {
+                        "name": "机器人蛋糕协作系统",
+                        "category": "智能制造",
+                        "summary": "机器人制作蛋糕并协同工作",
+                        "detail": "资料一提供材料能力，资料二补充协作机制",
+                        "audience": "食品工厂",
+                        "price_boundary": "",
+                    },
+                    "confidence": 0.86,
+                    "source_ids": [str(first_source), str(second_source)],
+                    "source_contributions": [
+                        {"source_id": str(first_source), "contribution": "提供机器人躯体材料"},
+                        {"source_id": str(second_source), "contribution": "补充共同协作机制"},
+                    ],
+                    "conflicts": ["材料名称存在不同表述"],
+                    "missing_fields": ["价格边界"],
+                }
+            ]
+        },
+        source_rows={
+            first_source: {"file_name": "材料说明.pdf"},
+            second_source: {"file_name": "协作机制.pdf"},
+        },
+    )
+
+    assert len(parsed) == 1
+    assert parsed[0]["category"] == "products"
+    assert parsed[0]["source_ids"] == [first_source, second_source]
+    assert "材料说明.pdf：提供机器人躯体材料" in parsed[0]["source_text"]
+    assert "协作机制.pdf：补充共同协作机制" in parsed[0]["source_text"]
+    assert parsed[0]["field_warnings"] == [
+        "存在跨资料冲突，请人工裁决",
+        "待补字段：价格边界",
+    ]
+
+
+def test_fallback_merged_candidates_combines_same_enterprise_profile_sources() -> None:
+    now = datetime.now(UTC)
+    run_id = uuid.uuid4()
+    source_ids = [uuid.uuid4(), uuid.uuid4()]
+    review = ContentImportRunRecord(
+        id=run_id,
+        batch_id=uuid.uuid4(),
+        status="review",
+        provider="deepseek",
+        model="flash",
+        attempts=1,
+        counts={"pending_review": 2},
+        stage="completed",
+        progress_current=2,
+        progress_total=2,
+        candidates=[
+            ContentImportCandidateRecord(
+                id=uuid.uuid4(),
+                run_id=run_id,
+                category="enterprise_profile",
+                payload={
+                    "company_name": "双维机器人蛋糕",
+                    "summary": "机器人制作蛋糕",
+                    "industry": "食品智能制造",
+                    "region": "杭州",
+                    "website": "",
+                },
+                source_id=str(source_id),
+                source_text="原文",
+                confidence=confidence,
+                status="pending_review",
+                version=1,
+                created_at=now,
+                updated_at=now,
+            )
+            for source_id, confidence in zip(source_ids, (0.9, 0.8), strict=True)
+        ],
+        created_at=now,
+        updated_at=now,
+    )
+
+    merged = _fallback_merged_candidates(
+        review,
+        draft_rows=[
+            {"import_item_id": source_ids[0], "file_name": "公司资料一.pdf"},
+            {"import_item_id": source_ids[1], "file_name": "公司资料二.pdf"},
+        ],
+    )
+
+    assert len(merged) == 1
+    assert merged[0]["source_ids"] == source_ids
+    assert "公司资料一.pdf" in merged[0]["source_text"]
+    assert "公司资料二.pdf" in merged[0]["source_text"]
+
+
+def test_merge_candidate_groups_combines_complementary_fields_and_sources() -> None:
+    now = datetime.now(UTC)
+    run_id = uuid.uuid4()
+    first_source = uuid.uuid4()
+    second_source = uuid.uuid4()
+    candidates = {
+        "c1": ContentImportCandidateRecord(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            category="products",
+            payload={"name": "机器人蛋糕系统", "summary": "机器人制作蛋糕"},
+            source_id=str(first_source),
+            source_text="原文一",
+            confidence=0.9,
+            status="pending_review",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        ),
+        "c2": ContentImportCandidateRecord(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            category="products",
+            payload={"name": "机器人蛋糕系统", "detail": "多机器人共同协作"},
+            source_id=str(second_source),
+            source_text="原文二",
+            confidence=0.8,
+            status="pending_review",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        ),
+    }
+
+    merged = _merge_candidates_from_groups(
+        {"groups": [{"category": "products", "candidate_ids": ["c1", "c2"]}]},
+        candidate_lookup=candidates,
+        source_rows={
+            first_source: {"file_name": "产品资料.pdf"},
+            second_source: {"file_name": "协作机制.pdf"},
+        },
+    )
+
+    assert len(merged) == 1
+    assert merged[0]["source_ids"] == [first_source, second_source]
+    assert merged[0]["payload"]["summary"] == "机器人制作蛋糕"
+    assert merged[0]["payload"]["detail"] == "多机器人共同协作"
+    assert "产品资料.pdf" in merged[0]["source_text"]
+    assert "协作机制.pdf" in merged[0]["source_text"]
 
 
 def _principal(role: str = "platform_admin") -> StaffPrincipal:
@@ -165,6 +472,17 @@ class RouteService:
         self.calls.append(("suggestions", kwargs))
         return self.record.model_copy(update={"status": "manual_required", "version": 2})
 
+    async def synthesize_sources(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
+        self.calls.append(("synthesis", kwargs))
+        return self.record.model_copy(
+            update={
+                "status": "review",
+                "version": kwargs["expected_version"] + 2,
+                "synthesis_status": "ready",
+                "synthesis_version": 1,
+            }
+        )
+
     async def confirm(self, **kwargs: Any) -> PlatformOnboardingSessionRecord:
         self.calls.append(("confirm", kwargs))
         return self.record.model_copy(update={"status": "confirmed", "version": 2})
@@ -223,6 +541,22 @@ class RouteService:
             "updated_at": datetime.now(UTC),
         }
 
+    async def accept_content_candidate(self, **kwargs: Any) -> Any:
+        self.calls.append(("candidate.accept", kwargs))
+        return {
+            "id": kwargs["candidate_id"],
+            "run_id": uuid.uuid4(),
+            "category": "products",
+            "payload": {"name": "Accepted product"},
+            "source_id": str(uuid.uuid4()),
+            "source_text": "企业原文证据",
+            "confidence": 0.9,
+            "status": "accepted",
+            "version": kwargs["expected_version"] + 1,
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+
 
 class ImportStore:
     def __init__(self) -> None:
@@ -269,16 +603,52 @@ def test_route_surface_is_session_bound(
     root = "/api/v1/platform/onboarding"
     assert set(paths[root]) == {"get", "post"}
     assert set(paths[f"{root}/{{onboarding_id}}"]) == {"get", "patch"}
-    for suffix in ("suggestions", "confirm", "cancel"):
+    for suffix in ("suggestions", "synthesis", "confirm", "cancel"):
         assert set(paths[f"{root}/{{onboarding_id}}/{suffix}"]) == {"post"}
     assert set(paths[f"{root}/{{onboarding_id}}/imports"]) == {"get", "post"}
     assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}"]) == {"put"}
+    assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}/accept"]) == {"post"}
     assert set(paths[f"{root}/{{onboarding_id}}/candidates/{{candidate_id}}/ignore"]) == {"post"}
     assert set(paths[f"{root}/{{onboarding_id}}/temporary-credential:regenerate"]) == {"post"}
     upload = paths[f"{root}/{{onboarding_id}}/imports"]["post"]
     serialized = str(upload)
     assert "tenant_id" not in serialized
     assert "company_id" not in serialized
+
+
+def test_cross_source_synthesis_route_is_session_bound(
+    route_client: tuple[TestClient, RouteService, ImportStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, service, _, _ = route_client
+    response = client.post(
+        f"/api/v1/platform/onboarding/{service.record.id}/synthesis",
+        json={"expected_version": service.record.version},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["synthesis_status"] == "ready"
+    assert service.calls[-1][0] == "synthesis"
+    assert service.calls[-1][1]["onboarding_id"] == service.record.id
+
+
+def test_accept_candidate_is_session_bound_and_forwards_review_fields(
+    route_client: tuple[TestClient, RouteService, ImportStore, dict[str, StaffPrincipal]],
+) -> None:
+    client, service, _, _ = route_client
+    candidate_id = uuid.uuid4()
+
+    response = client.post(
+        f"/api/v1/platform/onboarding/{service.record.id}/candidates/{candidate_id}/accept",
+        json={"expected_version": 4, "apply_fields": ["name"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "accepted"
+    call = next(payload for name, payload in service.calls if name == "candidate.accept")
+    assert call["onboarding_id"] == service.record.id
+    assert call["candidate_id"] == candidate_id
+    assert call["expected_version"] == 4
+    assert call["apply_fields"] == ["name"]
 
 
 def test_import_progress_resolves_scope_from_session_only(
@@ -537,7 +907,7 @@ def test_business_profile_parser_keeps_only_sourced_allowed_insights() -> None:
     assert "annual_revenue" not in str(profile)
 
 
-def test_business_analysis_contract_covers_directions_conflicts_and_evidence_gaps() -> None:
+def test_business_analysis_contract_covers_directions_and_cross_source_evidence() -> None:
     assert {
         "core_capabilities",
         "business_model",
@@ -545,10 +915,10 @@ def test_business_analysis_contract_covers_directions_conflicts_and_evidence_gap
         "evidence_conflicts",
         "missing_information",
     }.issubset(_BUSINESS_PROFILE_FIELDS)
-    assert "当前已有业务" in _SUGGESTION_SYSTEM_PROMPT
-    assert "规划方向" in _SUGGESTION_SYSTEM_PROMPT
-    assert "多份资料相互冲突" in _SUGGESTION_SYSTEM_PROMPT
-    assert "禁止输出空话" in _SUGGESTION_SYSTEM_PROMPT
+    assert "同一企业资料" in _MERGED_CANDIDATE_SYSTEM_PROMPT
+    assert "互相补充也应归为一组" in _MERGED_CANDIDATE_SYSTEM_PROMPT
+    assert "每个输入 candidate_id 必须且只能出现一次" in _MERGED_CANDIDATE_SYSTEM_PROMPT
+    assert "answer 字符串内禁止输出" in _MERGED_CANDIDATE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

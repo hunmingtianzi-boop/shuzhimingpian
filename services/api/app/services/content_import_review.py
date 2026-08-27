@@ -135,6 +135,7 @@ class ContentImportReviewService:
                 documents=documents,
                 max_tokens=min(config.max_output_tokens, 4_096),
                 trace_id=trace_id,
+                max_concurrency=min(config.max_concurrency, 3),
             )
             await self._persist_candidate_directory(
                 scope=scope,

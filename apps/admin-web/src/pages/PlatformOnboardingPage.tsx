@@ -29,7 +29,6 @@ import type {
   PlatformOnboardingSession,
   PlatformOnboardingCandidate,
   PlatformOnboardingCandidateCategory,
-  PlatformOnboardingSuggestion,
   StartPlatformOnboardingInput,
 } from "../api/types";
 import { validateKnowledgeImportFiles } from "../components/KnowledgeImportPanel";
@@ -111,6 +110,7 @@ export type PlatformOnboardingPageProps = {
   ) => Promise<void>;
   onUpload: (onboardingSessionId: string, files: File[]) => Promise<void>;
   onGenerate: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
+  onSynthesize?: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
   onUpdateCandidate?: (
     onboardingSessionId: string,
     candidate: PlatformOnboardingCandidate,
@@ -146,6 +146,7 @@ type BusyOperation =
   | "rename"
   | "upload"
   | "generate"
+  | "synthesize"
   | "candidate"
   | "confirm"
   | "cancel"
@@ -189,38 +190,6 @@ const reviewFieldMeta: Array<{
   { key: "website", label: "企业网站", group: "presentation" },
   { key: "summary", label: "企业简介", area: true, group: "presentation" },
 ];
-
-const suggestionFieldMap: Record<string, keyof ReviewValues> = {
-  legal_name: "legalName",
-  legalName: "legalName",
-  company_name: "legalName",
-  companyName: "legalName",
-  short_name: "shortName",
-  shortName: "shortName",
-  tenant_name: "shortName",
-  tenantName: "shortName",
-  subject_type: "subjectType",
-  subjectType: "subjectType",
-  social_credit_code: "socialCreditCode",
-  socialCreditCode: "socialCreditCode",
-  industry: "industry",
-  website: "website",
-  summary: "summary",
-};
-
-const businessProfileLabels: Record<string, string> = {
-  business_positioning: "业务定位",
-  products_services: "产品与服务",
-  target_customers: "目标客户与场景",
-  customer_pain_points: "客户痛点",
-  core_capabilities: "核心能力",
-  business_model: "业务与交付模式",
-  differentiators: "可验证差异点",
-  business_directions: "明确业务方向",
-  sales_opening: "建议业务开场",
-  evidence_conflicts: "资料冲突与待确认项",
-  missing_information: "待补资料",
-};
 
 const candidateCategoryLabels: Record<PlatformOnboardingCandidateCategory, string> = {
   enterprise_profile: "企业资料",
@@ -269,6 +238,57 @@ function candidateTitle(candidate: PlatformOnboardingCandidate): string {
     || candidate.payload.question
     || candidate.payload.company_name
     || "未命名候选";
+}
+
+type SynthesisEvidence = {
+  contributions: string[];
+  conflicts: string[];
+  missing: string[];
+};
+
+function parseSynthesisEvidence(sourceText: string): SynthesisEvidence {
+  const evidence: SynthesisEvidence = { contributions: [], conflicts: [], missing: [] };
+  let section: keyof SynthesisEvidence = "contributions";
+  sourceText.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || line === "跨资料综合证据：") return;
+    if (line === "未裁决冲突：") {
+      section = "conflicts";
+      return;
+    }
+    if (line.startsWith("仍需补充：")) {
+      section = "missing";
+      evidence.missing.push(
+        ...line.slice("仍需补充：".length).split("、").map((value) => value.trim()).filter(Boolean),
+      );
+      return;
+    }
+    const value = line.replace(/^[-•]\s*/, "");
+    if (value) evidence[section].push(value);
+  });
+  return evidence;
+}
+
+const analysisStageProgress = {
+  queued: 0.08,
+  discovering: 0.24,
+  enriching: 0.52,
+  validating: 0.76,
+  finalizing: 0.92,
+  completed: 1,
+  failed: 1,
+} as const;
+
+function analysisStageCopy(stage?: keyof typeof analysisStageProgress, sourceCount = 0): string {
+  switch (stage) {
+    case "discovering": return `正在读取 ${sourceCount} 份资料`;
+    case "enriching": return "正在识别各份资料中的业务、案例和问答";
+    case "validating": return "正在核对资料来源与内容冲突";
+    case "finalizing": return "正在生成逐份候选";
+    case "completed": return `已完成 ${sourceCount} 份资料分析`;
+    case "failed": return "智能分析未完成，可以安全重试";
+    default: return `准备分析 ${sourceCount} 份资料`;
+  }
 }
 
 const candidateRequiredFields: Partial<
@@ -628,12 +648,14 @@ function AnalysisProgress({
   generating,
   hasInsights,
   insightCount,
+  failureMessage,
 }: {
   hasImports: boolean;
   importsProcessing: boolean;
   generating: boolean;
   hasInsights: boolean;
   insightCount: number;
+  failureMessage?: string;
 }) {
   const phases: Array<{ label: string; detail: string; state: AnalysisPhaseState }> = [
     {
@@ -667,8 +689,8 @@ function AnalysisProgress({
     <section className={styles.analysisProgress} aria-label="资料分析进度" aria-live="polite">
       <div className={styles.analysisLead}>
         <div>
-          <span>{generating || importsProcessing ? "正在处理" : hasInsights ? "分析完成，等待复核" : "分析准备"}</span>
-          <strong>{active?.detail ?? (hasImports ? "资料已准备，可以开始业务归纳" : "上传后会在这里显示真实处理进度")}</strong>
+          <span>{failureMessage ? "智能分析未完成" : generating || importsProcessing ? "正在处理" : hasInsights ? "分析完成，等待复核" : "分析准备"}</span>
+          <strong>{failureMessage ?? active?.detail ?? (hasImports ? "资料已准备，可以开始业务归纳" : "上传后会在这里显示真实处理进度")}</strong>
         </div>
         {(generating || importsProcessing) && <i aria-hidden />}
       </div>
@@ -681,52 +703,6 @@ function AnalysisProgress({
         ))}
       </ol>
     </section>
-  );
-}
-
-function confidenceText(value?: number): string {
-  if (value === undefined) return "未提供置信提示";
-  if (value >= 0.8) return "高置信";
-  if (value >= 0.55) return "中等置信";
-  return "低置信，建议重点核对";
-}
-
-function SuggestionCard({
-  suggestion,
-  onApply,
-  label: explicitLabel,
-  readOnly = false,
-}: {
-  suggestion: PlatformOnboardingSuggestion;
-  onApply: () => void;
-  label?: string;
-  readOnly?: boolean;
-}) {
-  const field = suggestionFieldMap[suggestion.field];
-  const label = explicitLabel ?? reviewFieldMeta.find((item) => item.key === field)?.label ?? suggestion.field;
-  return (
-    <article className={styles.suggestionCard} aria-label={`${label}建议`}>
-      <header>
-        <div>
-          <strong>{label}</strong>
-          <span>{confidenceText(suggestion.confidence)} · 生成版本 {suggestion.generationVersion}</span>
-        </div>
-        {!readOnly && <Button appearance="subtle" size="small" onClick={onApply} disabled={!field}>采用建议</Button>}
-      </header>
-      <p className={styles.suggestionValue}>{suggestion.value}</p>
-      <details>
-        <summary>查看来源（{suggestion.sources.length}）</summary>
-        <ul className={styles.sourceList}>
-          {suggestion.sources.map((source) => (
-            <li key={`${source.importItemId}-${source.documentId ?? source.fileName}`}>
-              <strong>{source.fileName}</strong>
-              {source.excerpt && <blockquote>{source.excerpt}</blockquote>}
-              <span>导入项：{source.importItemId}</span>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </article>
   );
 }
 
@@ -744,6 +720,7 @@ export function PlatformOnboardingPage({
   onRename,
   onUpload,
   onGenerate,
+  onSynthesize,
   onUpdateCandidate,
   onAcceptCandidate,
   onIgnoreCandidate,
@@ -766,17 +743,21 @@ export function PlatformOnboardingPage({
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copyError, setCopyError] = useState<string>();
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>();
+  const [selectedSynthesisCandidateId, setSelectedSynthesisCandidateId] = useState<string>();
   const [candidateDrafts, setCandidateDrafts] = useState<Record<string, PlatformOnboardingCandidate>>({});
   const [candidateSelections, setCandidateSelections] = useState<Record<string, boolean>>({});
   const [candidateNotice, setCandidateNotice] = useState<string>();
+  const [selectedCandidateSourceId, setSelectedCandidateSourceId] = useState("all");
   const [renameValue, setRenameValue] = useState("");
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [confirmedDraftCount, setConfirmedDraftCount] = useState(0);
   const [activeWorkspaceStep, setActiveWorkspaceStep] = useState<"analysis" | "review">("analysis");
+  const [analysisView, setAnalysisView] = useState<"synthesis" | "sources">("synthesis");
   const [localIdentitySeed, setLocalIdentitySeed] = useState<ReviewSeed>();
   const cancelOpenerRef = useRef<HTMLButtonElement>(null);
   const previousSessionId = useRef<string | undefined>(undefined);
   const candidateSelectionSessionId = useRef<string | undefined>(undefined);
+  const automaticSynthesisAttempt = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!session || previousSessionId.current === session.id) return;
@@ -828,11 +809,45 @@ export function PlatformOnboardingPage({
       );
     });
     setSelectedCandidateId((current) =>
-      current && candidates.some((candidate) => candidate.id === current)
+      current && candidates.some(
+        (candidate) => candidate.id === current && !candidate.sourceId.startsWith("synthesis:"),
+      )
         ? current
-        : candidates[0]?.id,
+        : candidates.find((candidate) => !candidate.sourceId.startsWith("synthesis:"))?.id,
     );
-  }, [session?.contentReview]);
+    const currentSynthesisSourceId = session
+      ? `synthesis:${session.id}:${session.synthesisVersion ?? 0}`
+      : undefined;
+    setSelectedSynthesisCandidateId((current) =>
+      current && candidates.some(
+        (candidate) => candidate.id === current && candidate.sourceId === currentSynthesisSourceId,
+      )
+        ? current
+        : candidates.find((candidate) => candidate.sourceId === currentSynthesisSourceId)?.id,
+    );
+    setSelectedCandidateSourceId((current) =>
+      current === "all" || importItems.some((item) => item.id === current)
+        ? current
+        : "all",
+    );
+  }, [importItems, session?.contentReview, session?.id, session?.synthesisVersion]);
+
+  useEffect(() => {
+    if (
+      !session
+      || session.status !== "review"
+      || session.contentReview?.stage !== "completed"
+      || session.contentReview.status === "processing"
+      || session.synthesisStatus !== "pending"
+      || !onSynthesize
+      || busy
+    ) return;
+    const attemptKey = `${session.id}:${session.version}`;
+    if (automaticSynthesisAttempt.current === attemptKey) return;
+    automaticSynthesisAttempt.current = attemptKey;
+    setAnalysisView("synthesis");
+    void run("synthesize", () => onSynthesize(session.id, session.version));
+  }, [busy, onSynthesize, session]);
 
   const activeError = operationError ?? resourceError;
   const completedSession =
@@ -878,9 +893,23 @@ export function PlatformOnboardingPage({
     reviewed.identity &&
     reviewed.admin &&
     !importsProcessing;
-  const insightCount = (session?.businessProfile?.length ?? 0) + (session?.suggestions.length ?? 0);
+  const contentCandidateCount = session?.contentReview?.candidates.length ?? 0;
+  const insightCount =
+    (session?.businessProfile?.length ?? 0)
+    + (session?.suggestions.length ?? 0)
+    + contentCandidateCount;
   const hasInsights = insightCount > 0;
   const analysisProcessing = busy === "generate" || session?.contentReview?.status === "processing";
+  const synthesisProcessing = busy === "synthesize" || session?.synthesisStatus === "processing";
+  const synthesisStalled = session?.synthesisStatus === "processing"
+    && Boolean(session.synthesisStartedAt)
+    && Date.now() - Date.parse(session.synthesisStartedAt ?? "") > 120_000;
+  const analysisFailed = session?.contentReview?.stage === "failed";
+  const analysisFailureMessage = session?.contentReview?.stage === "failed"
+    ? session.contentReview.stageMessage ?? "智能整理未完成，可以安全重试"
+    : session?.contentReview?.status === "manual_required"
+      ? "未形成可自动确认的候选，请人工补充或重新分析"
+      : undefined;
   // Review is a separate, user-controlled step. Parsed files do not require
   // AI output: the operator can always continue with manual fields once no
   // upload or analysis request is actively running.
@@ -890,6 +919,88 @@ export function PlatformOnboardingPage({
   const candidates = session?.contentReview?.candidates.map(
     (candidate) => candidateDrafts[candidate.id] ?? candidate,
   ) ?? [];
+  const synthesisSourceId = session
+    ? `synthesis:${session.id}:${session.synthesisVersion ?? 0}`
+    : undefined;
+  const synthesisCandidates = candidates.filter(
+    (candidate) => candidate.sourceId === synthesisSourceId,
+  );
+  const synthesisEvidenceById = useMemo(
+    () => new Map(
+      synthesisCandidates.map((candidate) => [candidate.id, parseSynthesisEvidence(candidate.sourceText)]),
+    ),
+    [synthesisCandidates],
+  );
+  const multiSourceCandidateCount = synthesisCandidates.filter(
+    (candidate) => (synthesisEvidenceById.get(candidate.id)?.contributions.length ?? 0) > 1,
+  ).length;
+  const conflictCandidateCount = synthesisCandidates.filter(
+    (candidate) => (synthesisEvidenceById.get(candidate.id)?.conflicts.length ?? 0) > 0,
+  ).length;
+  const synthesisSourceNames = useMemo(() => {
+    const names = new Set<string>();
+    synthesisEvidenceById.forEach((evidence) => {
+      evidence.contributions.forEach((contribution) => {
+        const separator = contribution.indexOf("：");
+        if (separator > 0) names.add(contribution.slice(0, separator).trim());
+      });
+    });
+    return names;
+  }, [synthesisEvidenceById]);
+  const unusedSynthesisSources = importItems.filter(
+    (item) => item.status !== "completed" || !synthesisSourceNames.has(item.fileName),
+  );
+  const sourceCandidates = candidates.filter(
+    (candidate) => !candidate.sourceId.startsWith("synthesis:"),
+  );
+  const candidateSourceOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    const structuredCounts = new Map<string, number>();
+    const unclassifiedCounts = new Map<string, number>();
+    sourceCandidates.forEach((candidate) => {
+      counts.set(candidate.sourceId, (counts.get(candidate.sourceId) ?? 0) + 1);
+      if (candidate.category === "unclassified") {
+        unclassifiedCounts.set(
+          candidate.sourceId,
+          (unclassifiedCounts.get(candidate.sourceId) ?? 0) + 1,
+        );
+      } else {
+        structuredCounts.set(
+          candidate.sourceId,
+          (structuredCounts.get(candidate.sourceId) ?? 0) + 1,
+        );
+      }
+    });
+    const knownSources = importItems.map((item) => ({
+      sourceId: item.id,
+      count: counts.get(item.id) ?? 0,
+      structuredCount: structuredCounts.get(item.id) ?? 0,
+      unclassifiedCount: unclassifiedCounts.get(item.id) ?? 0,
+      fileName: item.fileName,
+      status: item.status,
+      errorCode: item.errorCode,
+    }));
+    const knownIds = new Set(knownSources.map((source) => source.sourceId));
+    const projectedOnly = Array.from(counts.entries())
+      .filter(([sourceId]) => !knownIds.has(sourceId))
+      .map(([sourceId, count]) => ({
+        sourceId,
+        count,
+        structuredCount: structuredCounts.get(sourceId) ?? 0,
+        unclassifiedCount: unclassifiedCounts.get(sourceId) ?? 0,
+        fileName: "来源资料",
+        status: "completed" as const,
+        errorCode: undefined,
+      }));
+    return [...knownSources, ...projectedOnly];
+  }, [sourceCandidates, importItems]);
+  const candidateSourceNames = useMemo(
+    () => new Map(candidateSourceOptions.map((source) => [source.sourceId, source.fileName])),
+    [candidateSourceOptions],
+  );
+  const visibleCandidates = selectedCandidateSourceId === "all"
+    ? sourceCandidates
+    : sourceCandidates.filter((candidate) => candidate.sourceId === selectedCandidateSourceId);
   const acceptedCandidateCount = candidates.filter(
     (candidate) => candidate.status === "accepted",
   ).length;
@@ -1312,6 +1423,7 @@ export function PlatformOnboardingPage({
                 generating={busy === "generate"}
                 hasInsights={hasInsights}
                 insightCount={insightCount}
+                failureMessage={analysisFailureMessage}
               />
 
               <form className={styles.uploadBox} onSubmit={submitUpload}>
@@ -1383,20 +1495,18 @@ export function PlatformOnboardingPage({
                     void run("generate", () => onGenerate(session.id, session.version))
                   }
                 >
-                  {analysisProcessing ? "智能分析中" : "开始智能分析"}
+                  {analysisProcessing ? "智能分析中" : analysisFailed ? "重新智能分析" : "开始智能分析"}
                 </Button>
               </div>
 
               {analysisProcessing && (
                 <div className={styles.analysisProgress} role="status" aria-live="polite">
                   <div className={styles.progressCopy}>
-                    <strong>{session.contentReview?.stageMessage ?? "任务已提交，正在等待后台处理"}</strong>
+                    <strong>{analysisStageCopy(session.contentReview?.stage, importItems.length)}</strong>
                     <span>可以切换到其他页面，右下角任务浮窗会持续显示真实进度。</span>
                   </div>
                   <ProgressBar
-                    value={session.contentReview && session.contentReview.progressTotal > 0
-                      ? session.contentReview.progressCurrent / session.contentReview.progressTotal
-                      : undefined}
+                    value={analysisStageProgress[session.contentReview?.stage ?? "queued"]}
                     aria-label="企业资料智能分析进度"
                   />
                 </div>
@@ -1411,7 +1521,27 @@ export function PlatformOnboardingPage({
               </details>
 
               <div className={styles.suggestions} aria-live="polite">
-                {(session.contentReview?.candidates.length ?? 0) > 0 && (
+                {(importItems.length > 0 || (session.contentReview?.candidates.length ?? 0) > 0) && (
+                  <div className={styles.analysisViewTabs} role="tablist" aria-label="资料分析查看方式">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={analysisView === "synthesis"}
+                      onClick={() => setAnalysisView("synthesis")}
+                    >
+                      综合归纳（推荐）
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={analysisView === "sources"}
+                      onClick={() => setAnalysisView("sources")}
+                    >
+                      按资料查看
+                    </button>
+                  </div>
+                )}
+                {analysisView === "sources" && (importItems.length > 0 || sourceCandidates.length > 0) && (
                   <section className={styles.candidateWorkspace} aria-labelledby="onboarding-candidate-title">
                     <div className={styles.candidateSummary}>
                       <div>
@@ -1419,12 +1549,53 @@ export function PlatformOnboardingPage({
                         <h3 id="onboarding-candidate-title">逐条确认资料归类</h3>
                         <p>左侧选择候选，右侧编辑；确认后写入企业后台草稿，不会自动发布。</p>
                       </div>
-                      <strong>{session.contentReview?.candidates.length} 条</strong>
+                      <strong>{sourceCandidates.length} 条</strong>
+                    </div>
+                    <div className={styles.candidateSourceFilters} aria-label="按资料筛选候选">
+                      <button
+                        type="button"
+                        aria-pressed={selectedCandidateSourceId === "all"}
+                        onClick={() => {
+                          setSelectedCandidateSourceId("all");
+                          setSelectedCandidateId(sourceCandidates[0]?.id);
+                        }}
+                      >
+                        <span>全部资料</span>
+                        <strong>{sourceCandidates.length}</strong>
+                      </button>
+                      {candidateSourceOptions.map((source) => (
+                        <button
+                          type="button"
+                          key={source.sourceId}
+                          aria-pressed={selectedCandidateSourceId === source.sourceId}
+                          onClick={() => {
+                            setSelectedCandidateSourceId(source.sourceId);
+                            setSelectedCandidateId(
+                              candidates.find((candidate) => candidate.sourceId === source.sourceId)?.id,
+                            );
+                          }}
+                        >
+                          <span title={source.fileName}>{source.fileName}</span>
+                          <strong>{source.count}</strong>
+                          <small>
+                            {source.status === "completed"
+                              ? source.structuredCount > 0
+                                ? source.unclassifiedCount > 0
+                                  ? `${source.structuredCount} 条有效 · ${source.unclassifiedCount} 条待分类`
+                                  : `${source.structuredCount} 条有效候选`
+                                : source.unclassifiedCount > 0
+                                  ? `${source.unclassifiedCount} 条待分类 · 识别不足`
+                                  : "未形成候选"
+                              : source.status === "failed" || source.status === "dead_letter"
+                                ? `分析失败${source.errorCode ? ` · ${source.errorCode}` : ""}`
+                                : "处理中"}
+                          </small>
+                        </button>
+                      ))}
                     </div>
                     <div className={styles.candidateColumns}>
                       <nav className={styles.candidateList} aria-label="资料候选列表">
-                        {session.contentReview?.candidates.map((original) => {
-                          const candidate = candidateDrafts[original.id] ?? original;
+                        {visibleCandidates.map((candidate) => {
                           return (
                             <button
                               type="button"
@@ -1434,11 +1605,18 @@ export function PlatformOnboardingPage({
                             >
                               <span>{candidateCategoryLabels[candidate.category]}</span>
                               <strong>{candidateTitle(candidate)}</strong>
+                              <small>{candidateSourceNames.get(candidate.sourceId) ?? "来源资料"}</small>
                               <small>置信度 {Math.round(candidate.confidence * 100)}%</small>
                               <em>{candidate.status === "accepted" ? "已确认" : candidate.status === "ignored" ? "已忽略" : "待确认"}</em>
                             </button>
                           );
                         })}
+                        {visibleCandidates.length === 0 && (
+                          <div className={styles.emptyCandidateSource} role="status">
+                            <strong>这份资料暂未形成候选</strong>
+                            <span>资料仍保留在本次任务中。可重新智能分析，或查看其他资料的候选。</span>
+                          </div>
+                        )}
                       </nav>
                       {selectedCandidateId && candidateDrafts[selectedCandidateId] && (() => {
                         const candidate = candidateDrafts[selectedCandidateId];
@@ -1549,41 +1727,235 @@ export function PlatformOnboardingPage({
                     </div>
                   </section>
                 )}
-                {(session.businessProfile?.length ?? 0) > 0 && (
-                  <section className={styles.businessProfile} aria-labelledby="business-profile-title">
+                {analysisView === "synthesis" && synthesisProcessing && (
+                  <section className={styles.synthesisState} role="status">
+                    <Sparkle24Regular />
                     <div>
-                      <span>资料归纳</span>
-                      <h3 id="business-profile-title">企业业务画像（待审核）</h3>
-                      <p>只整理有资料依据的业务线索；不会自动写入企业公开页、AI 知识库或名片。</p>
+                      <strong>{synthesisStalled ? "本次综合耗时异常" : "正在综合多份资料"}</strong>
+                      <p>{synthesisStalled
+                        ? "逐份候选和原文证据均已保留，可以重新综合，不需要重新上传资料。"
+                        : "正在去重、互补归并并核对冲突，逐份候选和原文证据都会保留。"}</p>
                     </div>
-                    {session.businessProfile?.map((insight, index) => (
-                      <SuggestionCard
-                        key={`business-${insight.field}-${insight.generationVersion}-${index}`}
-                        suggestion={insight}
-                        label={businessProfileLabels[insight.field] ?? insight.field}
-                        onApply={() => undefined}
-                        readOnly
-                      />
-                    ))}
+                    {synthesisStalled && (
+                      <Button
+                        appearance="secondary"
+                        disabled={Boolean(busy) || !onSynthesize}
+                        onClick={() => onSynthesize
+                          ? void run("synthesize", () => onSynthesize(session.id, session.version))
+                          : undefined}
+                      >
+                        重新综合
+                      </Button>
+                    )}
                   </section>
                 )}
-                {session.suggestions.length === 0 ? (
-                  <div className={styles.emptySuggestions}>
-                    <strong>{llmAvailability === "ready" ? "暂无建议" : "当前使用人工填写"}</strong>
-                    <p>任何字段都不会因为上传或生成而自动写入右侧确认表单。</p>
-                  </div>
-                ) : (
-                  session.suggestions.map((suggestion, index) => (
-                    <SuggestionCard
-                      key={`${suggestion.field}-${suggestion.generationVersion}-${index}`}
-                      suggestion={suggestion}
-                      onApply={() => {
-                        const field = suggestionFieldMap[suggestion.field];
-                        if (field) updateReview(field, suggestion.value);
-                      }}
-                    />
-                  ))
+                {analysisView === "synthesis" && session.synthesisStatus === "failed" && !synthesisProcessing && (
+                  <section className={styles.synthesisState} role="alert">
+                    <div>
+                      <strong>综合归纳未完成</strong>
+                      <p>逐份候选仍可正常复核。可以重新综合，不会重复解析文件。</p>
+                    </div>
+                    <Button
+                      appearance="secondary"
+                      disabled={Boolean(busy) || !onSynthesize}
+                      onClick={() => onSynthesize
+                        ? void run("synthesize", () => onSynthesize(session.id, session.version))
+                        : undefined}
+                    >
+                      重新综合
+                    </Button>
+                  </section>
                 )}
+                {analysisView === "synthesis" && session.synthesisStatus === "ready" && (
+                  <div className={styles.synthesisToolbar}>
+                    <div>
+                      <strong>综合归纳已生成</strong>
+                      <span>
+                        已联合分析 {completedItems}/{importItems.length} 份资料
+                        {` · 第 ${session.synthesisVersion ?? 1} 版`}
+                      </span>
+                    </div>
+                    <Button
+                      appearance="subtle"
+                      icon={<ArrowClockwise24Regular />}
+                      disabled={Boolean(busy) || !onSynthesize}
+                      onClick={() => onSynthesize
+                        ? void run("synthesize", () => onSynthesize(session.id, session.version))
+                        : undefined}
+                    >
+                      重新综合
+                    </Button>
+                  </div>
+                )}
+                {analysisView === "synthesis"
+                  && session.synthesisStatus === "ready"
+                  && synthesisCandidates.length > 0 && (
+                  <div className={styles.synthesisMetrics} aria-label="综合归纳摘要">
+                    <div><strong>{synthesisCandidates.length}</strong><span>条综合候选</span></div>
+                    <div><strong>{multiSourceCandidateCount}</strong><span>条由多份资料共同补充</span></div>
+                    <div><strong>{conflictCandidateCount}</strong><span>条需要核对冲突</span></div>
+                    <div><strong>{unusedSynthesisSources.length}</strong><span>份资料未形成综合候选</span></div>
+                  </div>
+                )}
+                {analysisView === "synthesis"
+                  && session.synthesisStatus === "ready"
+                  && unusedSynthesisSources.length > 0 && (
+                  <div className={styles.synthesisCoverageWarning} role="status">
+                    <strong>以下资料本轮未形成可安全合并的候选</strong>
+                    <span>{unusedSynthesisSources.map((item) => item.fileName).join("、")}</span>
+                    <small>资料没有丢失，可切换到“按资料查看”逐份复核或重新综合。</small>
+                  </div>
+                )}
+                {analysisView === "synthesis"
+                  && session.synthesisStatus === "ready"
+                  && synthesisCandidates.length > 0 && (
+                  <section className={styles.candidateWorkspace} aria-labelledby="synthesis-candidate-title">
+                    <div className={styles.candidateSummary}>
+                      <div>
+                        <span>跨资料候选</span>
+                        <h3 id="synthesis-candidate-title">共同补充后的知识候选</h3>
+                        <p>同一事项已合并互补；每条仍可编辑、查看来源并确认写入企业工作台草稿。</p>
+                      </div>
+                      <strong>{synthesisCandidates.length} 条</strong>
+                    </div>
+                    <div className={styles.candidateColumns}>
+                      <nav className={styles.candidateList} aria-label="综合候选列表">
+                        {synthesisCandidates.map((candidate) => (
+                          <button
+                            type="button"
+                            key={candidate.id}
+                            className={candidate.id === selectedSynthesisCandidateId ? styles.candidateActive : undefined}
+                            onClick={() => setSelectedSynthesisCandidateId(candidate.id)}
+                          >
+                            <span>{candidateCategoryLabels[candidate.category]}</span>
+                            <strong>{candidateTitle(candidate)}</strong>
+                            <small>
+                              引用 {synthesisEvidenceById.get(candidate.id)?.contributions.length ?? 0} 份资料
+                            </small>
+                            <small>置信度 {Math.round(candidate.confidence * 100)}%</small>
+                            <em>{candidate.status === "accepted" ? "已确认" : candidate.status === "ignored" ? "已忽略" : "待确认"}</em>
+                          </button>
+                        ))}
+                      </nav>
+                      {selectedSynthesisCandidateId && candidateDrafts[selectedSynthesisCandidateId] && (() => {
+                        const candidate = candidateDrafts[selectedSynthesisCandidateId];
+                        const updateCandidate = (next: PlatformOnboardingCandidate) =>
+                          setCandidateDrafts((current) => ({ ...current, [next.id]: next }));
+                        return (
+                          <article className={styles.candidateEditor}>
+                            <div className={styles.candidateEditorHeading}>
+                              <label>
+                                <span>候选分类</span>
+                                <select
+                                  aria-label="综合候选分类"
+                                  value={candidate.category}
+                                  onChange={(event) => {
+                                    const category = event.target.value as PlatformOnboardingCandidateCategory;
+                                    updateCandidate({
+                                      ...candidate,
+                                      category,
+                                      payload: { ...candidatePayloadDefaults[category] },
+                                    });
+                                  }}
+                                >
+                                  {Object.entries(candidateCategoryLabels).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <span>{candidate.status === "accepted" ? "已确认" : candidate.status === "ignored" ? "已忽略" : "待确认"}</span>
+                            </div>
+                            <div className={styles.candidateFields}>
+                              {Object.entries(candidate.payload).map(([field, value]) => {
+                                const multiline = ["summary", "detail", "background", "solution", "result", "answer", "text", "reason"].includes(field);
+                                const update = (nextValue: string) => updateCandidate({
+                                  ...candidate,
+                                  payload: { ...candidate.payload, [field]: nextValue },
+                                });
+                                return (
+                                  <Field key={field} label={candidateFieldLabels[field] ?? field}>
+                                    {multiline ? (
+                                      <Textarea value={value} resize="vertical" onChange={(_, data) => update(data.value)} />
+                                    ) : (
+                                      <Input value={value} onChange={(_, data) => update(data.value)} />
+                                    )}
+                                  </Field>
+                                );
+                              })}
+                            </div>
+                            {!candidateComplete(candidate) && candidate.category !== "unclassified" && (
+                              <p className={styles.candidateSelectionHint}>补齐必填字段后才能确认并写入草稿。</p>
+                            )}
+                            {(() => {
+                              const evidence = synthesisEvidenceById.get(candidate.id)
+                                ?? { contributions: [], conflicts: [], missing: [] };
+                              return (
+                                <section className={styles.synthesisEvidence} aria-label="资料来源与核对信息">
+                                  <div>
+                                    <h4>资料贡献</h4>
+                                    {evidence.contributions.length > 0 ? (
+                                      <ul>{evidence.contributions.map((value) => <li key={value}>{value}</li>)}</ul>
+                                    ) : <p>当前候选没有可展示的资料贡献，请重新综合。</p>}
+                                  </div>
+                                  {evidence.conflicts.length > 0 && (
+                                    <div className={styles.synthesisConflict}>
+                                      <h4>需要人工核对</h4>
+                                      <ul>{evidence.conflicts.map((value) => <li key={value}>{value}</li>)}</ul>
+                                    </div>
+                                  )}
+                                  {evidence.missing.length > 0 && (
+                                    <div>
+                                      <h4>仍需补充</h4>
+                                      <ul>{evidence.missing.map((value) => <li key={value}>{value}</li>)}</ul>
+                                    </div>
+                                  )}
+                                </section>
+                              );
+                            })()}
+                            <div className={styles.candidateActions}>
+                              <Button
+                                appearance="subtle"
+                                disabled={!onIgnoreCandidate || Boolean(busy) || candidate.status !== "pending_review"}
+                                onClick={() => onIgnoreCandidate
+                                  ? void run("generate", () => onIgnoreCandidate(session.id, candidate))
+                                  : undefined}
+                              >
+                                忽略此候选
+                              </Button>
+                              <Button
+                                appearance="primary"
+                                disabled={
+                                  !onAcceptCandidate
+                                  || Boolean(busy)
+                                  || candidate.status !== "pending_review"
+                                  || candidate.category === "unclassified"
+                                  || !candidateComplete(candidate)
+                                }
+                                onClick={() => onAcceptCandidate
+                                  ? void run("candidate", async () => {
+                                      await onAcceptCandidate(session.id, candidate);
+                                      setCandidateNotice("综合候选已确认并写入企业工作台草稿。");
+                                    })
+                                  : undefined}
+                              >
+                                {busy === "candidate" ? "正在确认" : candidate.status === "accepted" ? "已确认" : "确认并写入草稿"}
+                              </Button>
+                            </div>
+                            {candidateNotice && <p className={styles.candidateSelectionHint} role="status">{candidateNotice}</p>}
+                          </article>
+                        );
+                      })()}
+                    </div>
+                  </section>
+                )}
+                {analysisView === "synthesis"
+                  && session.synthesisStatus === "ready"
+                  && synthesisCandidates.length === 0 ? (
+                  <div className={styles.emptySuggestions}>
+                    <strong>未形成跨资料知识候选</strong>
+                    <p>逐份资料及企业字段建议仍然保留。请重新综合；系统不会用企业字段卡片冒充综合知识结果。</p>
+                  </div>
+                ) : null}
               </div>
               <div className={styles.stepAdvance}>
                 <div>

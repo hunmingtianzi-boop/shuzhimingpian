@@ -17,6 +17,11 @@ export function rememberPlatformOnboardingTask(sessionId: string, displayName: s
   window.dispatchEvent(new Event(PLATFORM_ONBOARDING_TASK_EVENT));
 }
 
+export function notifyPlatformOnboardingTaskChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(PLATFORM_ONBOARDING_TASK_EVENT));
+}
+
 export function readRememberedPlatformOnboardingTask(): RememberedPlatformOnboardingTask | undefined {
   if (typeof window === "undefined") return undefined;
   try {

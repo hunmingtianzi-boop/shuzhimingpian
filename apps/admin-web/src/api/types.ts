@@ -679,6 +679,11 @@ export type PlatformOnboardingSession = {
   importBatchIds: string[];
   suggestions: PlatformOnboardingSuggestion[];
   businessProfile?: PlatformOnboardingSuggestion[];
+  synthesisStatus?: "pending" | "processing" | "ready" | "failed";
+  synthesisFailureCode?: string;
+  synthesisStartedAt?: string;
+  synthesisCompletedAt?: string;
+  synthesisVersion?: number;
   contentReview?: PlatformOnboardingContentReview;
   expiresAt?: string;
   confirmedEnterprise?: CreatedPlatformEnterprise;

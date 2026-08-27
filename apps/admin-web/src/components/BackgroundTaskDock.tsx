@@ -3,13 +3,14 @@ import {
   CheckmarkCircle24Regular,
   Dismiss20Regular,
   DocumentArrowUp24Regular,
+  ErrorCircle24Regular,
   Open20Regular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 
 export type BackgroundTaskDockProps = {
   ariaLabel: string;
-  finished: boolean;
+  state: "running" | "success" | "failure";
   title: string;
   subtitle: string;
   stageLabel: string;
@@ -24,7 +25,7 @@ export type BackgroundTaskDockProps = {
 
 export function BackgroundTaskDock({
   ariaLabel,
-  finished,
+  state,
   title,
   subtitle,
   stageLabel,
@@ -37,11 +38,12 @@ export function BackgroundTaskDock({
   onClose,
 }: BackgroundTaskDockProps) {
   const [expanded, setExpanded] = useState(false);
+  const finished = state !== "running";
 
   return (
     <aside
       className={`content-import-task-dock ${expanded ? "is-expanded" : ""}`}
-      data-state={finished ? "finished" : "running"}
+      data-state={state}
       aria-label={ariaLabel}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
@@ -57,7 +59,11 @@ export function BackgroundTaskDock({
         onClick={() => setExpanded((value) => !value)}
       >
         <span className="content-import-task-dock-icon" aria-hidden="true">
-          {finished ? <CheckmarkCircle24Regular /> : <DocumentArrowUp24Regular />}
+          {state === "failure"
+            ? <ErrorCircle24Regular />
+            : state === "success"
+              ? <CheckmarkCircle24Regular />
+              : <DocumentArrowUp24Regular />}
         </span>
         <span className="content-import-task-dock-trigger-copy">
           <strong>{title}</strong>
@@ -67,7 +73,7 @@ export function BackgroundTaskDock({
       <div className="content-import-task-dock-detail" aria-live="polite">
         <div className="content-import-task-dock-heading">
           <div>
-            <span>{finished ? "任务结果" : "正在后台处理"}</span>
+            <span>{state === "failure" ? "任务需要处理" : finished ? "任务结果" : "正在后台处理"}</span>
             <strong>{stageMessage}</strong>
           </div>
           {finished && onClose && (

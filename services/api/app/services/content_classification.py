@@ -282,14 +282,52 @@ async def discover_content_candidates(
     documents: Sequence[ClassificationDocument],
     max_tokens: int,
     trace_id: str | None = None,
+    max_concurrency: int = 3,
 ) -> tuple[DiscoveredCandidate, ...]:
-    """Discover a compact, source-backed directory in one whole-document pass."""
+    """Discover a source-backed directory without letting files compete for output.
+
+    Each document gets its own model call and completion budget.  This is
+    important for mixed batches: a dense company dossier must not consume the
+    directory output that belongs to shorter reference or feasibility reports.
+    Cross-document consolidation happens later in onboarding synthesis, where
+    provenance can be retained explicitly.
+    """
 
     if not documents:
         return ()
+
+    semaphore = asyncio.Semaphore(max(1, min(len(documents), max_concurrency, 3)))
+
+    async def discover_document(
+        document: ClassificationDocument,
+    ) -> tuple[DiscoveredCandidate, ...]:
+        async with semaphore:
+            return await _discover_document_candidates(
+                provider=provider,
+                credentials=credentials,
+                document=document,
+                max_tokens=max_tokens,
+                trace_id=trace_id,
+            )
+
+    groups = await asyncio.gather(*(discover_document(document) for document in documents))
+    return tuple(candidate for group in groups for candidate in group)
+
+
+async def _discover_document_candidates(
+    *,
+    provider: ClassificationProvider,
+    credentials: ProviderCredentials,
+    document: ClassificationDocument,
+    max_tokens: int,
+    trace_id: str | None,
+) -> tuple[DiscoveredCandidate, ...]:
     wire_documents = [
-        {"source_id": item.source_id, "file_name": item.file_name, "content": item.content}
-        for item in documents
+        {
+            "source_id": document.source_id,
+            "file_name": document.file_name,
+            "content": document.content,
+        }
     ]
     completion = await provider.complete(
         [
@@ -309,7 +347,7 @@ async def discover_content_candidates(
     except (json.JSONDecodeError, TypeError, ValueError):
         decoded = {}
     raw_items = _directory_items(decoded)
-    source_map = {item.source_id: item.content for item in documents}
+    source_map = {document.source_id: document.content}
     discovered: list[DiscoveredCandidate] = []
     identities: set[tuple[str, str]] = set()
     if isinstance(raw_items, list):
@@ -356,7 +394,9 @@ async def discover_content_candidates(
             )
     if discovered:
         return tuple(discovered)
-    return tuple(
+    if not document.content.strip():
+        return ()
+    return (
         DiscoveredCandidate(
             id=uuid.uuid4(),
             category="unclassified",
@@ -364,9 +404,7 @@ async def discover_content_candidates(
             source_id=document.source_id,
             source_text=document.content.strip()[:4_000],
             confidence=0,
-        )
-        for document in documents
-        if document.content.strip()
+        ),
     )
 
 

@@ -91,7 +91,7 @@ export function ContentImportTaskDock() {
 
   return <BackgroundTaskDock
     ariaLabel="资料智能整理任务"
-    finished={finished}
+    state={finished ? "success" : "running"}
     title={finished ? "整理完成" : stageLabels[run.stage]}
     subtitle={candidateCount > 0 ? `${candidateCount} 条候选` : "资料智能整理"}
     stageLabel={stageLabels[run.stage]}

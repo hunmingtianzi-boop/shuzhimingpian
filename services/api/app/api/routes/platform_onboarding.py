@@ -326,6 +326,27 @@ async def generate_onboarding_suggestions(
 
 
 @router.post(
+    "/{onboarding_id}/synthesis",
+    response_model=PlatformOnboardingSessionEnvelope,
+    operation_id="synthesizePlatformOnboardingSources",
+)
+async def synthesize_onboarding_sources(
+    onboarding_id: uuid.UUID,
+    body: GeneratePlatformOnboardingSuggestionsRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> PlatformOnboardingSessionEnvelope:
+    return PlatformOnboardingSessionEnvelope(
+        data=await _service(request).synthesize_sources(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            expected_version=body.expected_version,
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
+@router.post(
     "/{onboarding_id}/confirm",
     response_model=PlatformOnboardingSessionEnvelope,
     operation_id="confirmPlatformOnboarding",

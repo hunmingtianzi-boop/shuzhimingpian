@@ -5,7 +5,10 @@ from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
+from starlette.requests import Request
 
+from app.api import commercial_dependencies
+from app.api.commercial_dependencies import require_commercial_feature_for_admin_path
 from app.api.commercial_schemas import UpdateCommercialEntitlementRequest
 from app.api.routes import workflow
 from app.commercial.entitlements import (
@@ -20,6 +23,58 @@ def test_public_visit_event_is_not_mounted_on_staff_protected_router() -> None:
     event_path = "/public/cards/{slug}/visits/{visit_id}/events"
     assert event_path in {route.path for route in workflow.public_router.routes}
     assert event_path not in {route.path for route in workflow.router.routes}
+
+
+@pytest.mark.asyncio
+async def test_public_visit_event_path_does_not_require_staff_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staff_auth_called = False
+
+    async def reject_staff_auth(*_args: object, **_kwargs: object) -> None:
+        nonlocal staff_auth_called
+        staff_auth_called = True
+        raise AssertionError("public visit events must not resolve staff authentication")
+
+    monkeypatch.setattr(commercial_dependencies, "get_staff_principal", reject_staff_auth)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/public/cards/demo/visits/visit-id/events",
+            "headers": [],
+        }
+    )
+
+    await require_commercial_feature_for_admin_path(request)
+
+    assert staff_auth_called is False
+
+
+@pytest.mark.asyncio
+async def test_admin_path_still_resolves_staff_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staff_auth_called = False
+
+    async def accept_staff_auth(*_args: object, **_kwargs: object) -> object:
+        nonlocal staff_auth_called
+        staff_auth_called = True
+        return object()
+
+    monkeypatch.setattr(commercial_dependencies, "get_staff_principal", accept_staff_auth)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/admin/dashboard",
+            "headers": [],
+        }
+    )
+
+    await require_commercial_feature_for_admin_path(request)
+
+    assert staff_auth_called is True
 
 
 def test_legacy_company_defaults_to_enterprise_without_disabling_existing_features() -> None:

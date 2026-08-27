@@ -50,7 +50,10 @@ import {
   WECOM_ENTRY_PATH,
 } from "./routing";
 import { confirmOnboardingWithRecovery } from "./utils/platformOnboarding";
-import { rememberPlatformOnboardingTask } from "./utils/platformOnboardingTask";
+import {
+  notifyPlatformOnboardingTaskChanged,
+  rememberPlatformOnboardingTask,
+} from "./utils/platformOnboardingTask";
 
 const OverviewPage = lazy(() =>
   import("./pages/OverviewPage").then((module) => ({
@@ -822,12 +825,19 @@ export function PlatformOnboardingRoute() {
         setImportError(undefined);
       }}
       onGenerate={async (sessionId: string, expectedVersion: number) => {
-        rememberPlatformOnboardingTask(sessionId, activeSession?.displayName ?? "资料辅助建企");
         const updated = await platformApi.generateOnboardingSuggestions(
           sessionId,
           expectedVersion,
         );
+        rememberPlatformOnboardingTask(sessionId, activeSession?.displayName ?? "资料辅助建企");
         replaceSession(updated, sessionId);
+        notifyPlatformOnboardingTaskChanged();
+      }}
+      onSynthesize={async (sessionId: string, expectedVersion: number) => {
+        rememberPlatformOnboardingTask(sessionId, activeSession?.displayName ?? "资料辅助建企");
+        const updated = await platformApi.synthesizeOnboardingSources(sessionId, expectedVersion);
+        replaceSession(updated, sessionId);
+        notifyPlatformOnboardingTaskChanged();
       }}
       onUpdateCandidate={async (sessionId, candidate) => {
         await platformApi.updateOnboardingCandidate(sessionId, candidate);

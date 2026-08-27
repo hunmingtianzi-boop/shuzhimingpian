@@ -107,6 +107,16 @@
   animation: content-import-running 1.8s ease-in-out infinite;
 }
 
+.content-import-task-dock[data-state="failure"] .content-import-task-dock-trigger,
+.content-import-task-dock[data-state="failure"] .content-import-task-dock-detail {
+  border-color: color-mix(in srgb, #b42318 34%, var(--border));
+}
+
+.content-import-task-dock[data-state="failure"] .content-import-task-dock-icon,
+.content-import-task-dock[data-state="failure"] .content-import-task-dock-heading span {
+  color: #b42318;
+}
+
 .content-import-task-dock-trigger-copy {
   display: grid;
   gap: 2px;
@@ -214,6 +224,17 @@
     right: 12px;
     bottom: calc(12px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
+  }
+
+  .content-import-task-dock-trigger {
+    width: 48px;
+    min-height: 48px;
+    padding: 6px;
+    border-radius: 50%;
+  }
+
+  .content-import-task-dock-trigger-copy {
+    display: none;
   }
 
   .content-import-task-dock-detail {

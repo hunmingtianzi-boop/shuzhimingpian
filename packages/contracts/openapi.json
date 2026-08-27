@@ -10568,6 +10568,85 @@
         }
       }
     },
+    "/platform/onboarding/{onboarding_id}/candidates/{candidate_id}/accept": {
+      "post": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Accept Onboarding Candidate",
+        "operationId": "acceptPlatformOnboardingCandidate",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewContentCandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentImportCandidateEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/platform/onboarding/{onboarding_id}": {
       "get": {
         "tags": [
@@ -10827,6 +10906,75 @@
         ],
         "summary": "Generate Onboarding Suggestions",
         "operationId": "generatePlatformOnboardingSuggestions",
+        "parameters": [
+          {
+            "name": "onboarding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Onboarding Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePlatformOnboardingSuggestionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOnboardingSessionEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/onboarding/{onboarding_id}/synthesis": {
+      "post": {
+        "tags": [
+          "Platform Onboarding"
+        ],
+        "summary": "Synthesize Onboarding Sources",
+        "operationId": "synthesizePlatformOnboardingSources",
         "parameters": [
           {
             "name": "onboarding_id",
@@ -27457,6 +27605,58 @@
             },
             "type": "array",
             "title": "Business Profile"
+          },
+          "synthesis_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "ready",
+              "failed"
+            ],
+            "title": "Synthesis Status",
+            "default": "pending"
+          },
+          "synthesis_failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synthesis Failure Code"
+          },
+          "synthesis_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synthesis Started At"
+          },
+          "synthesis_completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synthesis Completed At"
+          },
+          "synthesis_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Synthesis Version",
+            "default": 0
           },
           "content_review": {
             "anyOf": [

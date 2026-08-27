@@ -90,6 +90,268 @@ afterEach(() => {
 });
 
 describe("PlatformOnboardingPage", () => {
+  it("shows all candidate sources and filters candidates by uploaded file", async () => {
+    const user = userEvent.setup();
+    renderPage(buildProps({
+      importItems: [
+        { id: "item-1", fileName: "企业介绍.pdf", status: "completed" },
+        { id: "item-2", fileName: "产品手册.docx", status: "completed" },
+        { id: "item-3", fileName: "商会接口报告.pdf", status: "completed" },
+      ],
+      session: {
+        ...reviewSession,
+        contentReview: {
+          id: "review-multi-source",
+          batchId: "batch-2",
+          status: "review",
+          provider: "deepseek",
+          model: "flash",
+          attempts: 1,
+          counts: { pending_review: 2 },
+          stage: "completed",
+          progressCurrent: 2,
+          progressTotal: 2,
+          candidates: [
+            {
+              id: "candidate-1",
+              runId: "run-1",
+              category: "enterprise_profile",
+              payload: { field: "summary", value: "企业介绍" },
+              sourceId: "item-1",
+              sourceText: "企业介绍原文",
+              confidence: 0.9,
+              status: "pending_review",
+              version: 1,
+            },
+            {
+              id: "candidate-2",
+              runId: "run-2",
+              category: "products",
+              payload: { name: "复合材料产品", summary: "产品介绍" },
+              sourceId: "item-2",
+              sourceText: "产品手册原文",
+              confidence: 0.88,
+              status: "pending_review",
+              version: 1,
+            },
+          ],
+        },
+      },
+    }));
+
+    await user.click(screen.getByRole("tab", { name: "按资料查看" }));
+    expect(screen.getByRole("button", { name: /全部资料\s*2/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /企业介绍\.pdf\s*1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /产品手册\.docx\s*1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /商会接口报告\.pdf\s*0\s*未形成候选/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /产品手册\.docx\s*1/ }));
+    expect(screen.getByText("复合材料产品")).toBeInTheDocument();
+    expect(screen.queryByText("企业介绍原文")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /商会接口报告\.pdf\s*0\s*未形成候选/ }));
+    expect(screen.getByText("这份资料暂未形成候选")).toBeInTheDocument();
+    expect(screen.queryByText("产品手册原文")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes useful candidates from an unclassified fallback", async () => {
+    const user = userEvent.setup();
+    renderPage(buildProps({
+      session: {
+        ...reviewSession,
+        contentReview: {
+          id: "review-unclassified",
+          batchId: "batch-1",
+          status: "review",
+          provider: "deepseek",
+          model: "flash",
+          attempts: 1,
+          counts: { unclassified: 1 },
+          stage: "completed",
+          progressCurrent: 1,
+          progressTotal: 1,
+          candidates: [
+            {
+              id: "candidate-unclassified",
+              runId: "run-1",
+              category: "unclassified",
+              payload: { text: "待人工识别的资料" },
+              sourceId: "item-1",
+              sourceText: "待人工识别的资料",
+              confidence: 0,
+              status: "pending_review",
+              version: 1,
+            },
+          ],
+        },
+      },
+    }));
+
+    await user.click(screen.getByRole("tab", { name: "按资料查看" }));
+    expect(
+      screen.getByRole("button", { name: /企业介绍\.pdf\s*1\s*1 条待分类 · 识别不足/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders editable cross-source candidates with evidence and draft action", async () => {
+    const user = userEvent.setup();
+    const onAcceptCandidate = vi.fn().mockResolvedValue(undefined);
+    renderPage(buildProps({
+      onAcceptCandidate,
+      importItems: [
+        { id: "item-1", fileName: "材料说明.pdf", status: "completed" },
+        { id: "item-2", fileName: "协作机制.pdf", status: "completed" },
+      ],
+      session: {
+        ...reviewSession,
+        synthesisStatus: "ready",
+        synthesisVersion: 2,
+        businessProfile: [],
+        contentReview: {
+          id: "review-synthesis",
+          batchId: "batch-1",
+          status: "review",
+          provider: "deepseek",
+          model: "flash",
+          attempts: 1,
+          counts: { pending_review: 1 },
+          stage: "completed",
+          progressCurrent: 2,
+          progressTotal: 2,
+          candidates: [{
+            id: "merged-candidate-1",
+            runId: "run-1",
+            category: "products",
+            payload: {
+              name: "机器人蛋糕协作系统",
+              category: "智能制造",
+              summary: "跨资料摘要",
+              detail: "共同补充后的完整内容",
+              audience: "食品工厂",
+              price_boundary: "",
+            },
+            sourceId: "synthesis:onboarding-session-7:2",
+            sourceText: "材料说明.pdf：提供机器人躯体材料\n协作机制.pdf：补充共同协作机制",
+            confidence: 0.88,
+            status: "pending_review",
+            version: 1,
+          }],
+        },
+      },
+    }));
+
+    expect(screen.getByRole("heading", { name: "共同补充后的知识候选" })).toBeInTheDocument();
+    expect(screen.getByText(/已联合分析 2\/2 份资料/)).toBeInTheDocument();
+    expect(screen.getByText(/引用 2 份资料/)).toBeInTheDocument();
+    expect(screen.getByText("条由多份资料共同补充")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("机器人蛋糕协作系统")).toBeInTheDocument();
+    expect(screen.getByText(/材料说明\.pdf：提供机器人躯体材料/)).toBeInTheDocument();
+    expect(screen.queryByText("阿特拉斯材料实验室")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认并写入草稿" }));
+    await waitFor(() => expect(onAcceptCandidate).toHaveBeenCalled());
+  });
+
+  it("automatically synthesizes settled sources and keeps source review available", async () => {
+    const onSynthesize = vi.fn().mockResolvedValue(undefined);
+    renderPage(buildProps({
+      onSynthesize,
+      session: {
+        ...reviewSession,
+        synthesisStatus: "pending",
+        synthesisVersion: 0,
+        suggestions: [],
+        businessProfile: [],
+        contentReview: {
+          id: "review-complete-1",
+          batchId: "batch-1",
+          status: "review",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          attempts: 1,
+          counts: { pending_review: 1 },
+          stage: "completed",
+          stageMessage: "已完成 1 份资料分析，共生成 1 条候选",
+          progressCurrent: 1,
+          progressTotal: 1,
+          candidates: [{
+            id: "candidate-auto-1",
+            runId: "run-auto-1",
+            category: "products",
+            payload: { name: "复合材料", summary: "材料说明", detail: "完整说明" },
+            sourceId: "item-1",
+            sourceText: "原文证据",
+            confidence: 0.9,
+            status: "pending_review",
+            version: 1,
+          }],
+        },
+      },
+    }));
+
+    await waitFor(() => expect(onSynthesize).toHaveBeenCalledWith(reviewSession.id, reviewSession.version));
+    expect(screen.getByRole("tab", { name: "综合归纳（推荐）" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "按资料查看" })).toBeInTheDocument();
+  });
+
+  it("does not synthesize a stale completed review while newly attached sources are processing", async () => {
+    const onSynthesize = vi.fn().mockResolvedValue(undefined);
+    renderPage(buildProps({
+      onSynthesize,
+      session: {
+        ...reviewSession,
+        status: "processing",
+        synthesisStatus: "pending",
+        synthesisVersion: 0,
+        contentReview: {
+          id: "review-from-previous-imports",
+          batchId: "batch-1",
+          status: "review",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          attempts: 1,
+          counts: { pending_review: 1 },
+          stage: "completed",
+          stageMessage: "已完成旧资料分析，共生成 1 条候选",
+          progressCurrent: 1,
+          progressTotal: 1,
+          candidates: [],
+        },
+      },
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onSynthesize).not.toHaveBeenCalled();
+  });
+
+  it("shows the real analysis failure message and keeps retry available", async () => {
+    renderPage(buildProps({
+      session: {
+        ...reviewSession,
+        status: "manual_required",
+        contentReview: {
+          id: "review-failed-1",
+          batchId: "batch-1",
+          status: "manual_required",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          attempts: 1,
+          failureCode: "classification_internal_error",
+          counts: {},
+          stage: "failed",
+          stageMessage: "智能整理未完成，可以安全重试",
+          progressCurrent: 1,
+          progressTotal: 1,
+          candidates: [],
+        },
+      },
+    }));
+
+    expect(screen.getByText("智能分析未完成")).toBeInTheDocument();
+    expect(screen.getByText("智能整理未完成，可以安全重试")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新智能分析" })).toBeEnabled();
+    expect(screen.queryByText("分析完成，等待复核")).not.toBeInTheDocument();
+  });
+
   it("starts onboarding from identity fields and maps them into the legacy start payload", async () => {
     const user = userEvent.setup();
     const onStart = vi.fn().mockResolvedValue(undefined);

@@ -632,6 +632,11 @@ class PlatformOnboardingSessionRecord(PlatformModel):
     import_batch_ids: list[uuid.UUID] = Field(default_factory=list)
     suggestions: list[PlatformOnboardingSuggestion] = Field(default_factory=list)
     business_profile: list[PlatformOnboardingSuggestion] = Field(default_factory=list)
+    synthesis_status: Literal["pending", "processing", "ready", "failed"] = "pending"
+    synthesis_failure_code: str | None = None
+    synthesis_started_at: datetime | None = None
+    synthesis_completed_at: datetime | None = None
+    synthesis_version: int = Field(default=0, ge=0)
     content_review: ContentImportRunRecord | None = None
     expires_at: datetime | None = None
     retention_cleanup_after: datetime | None = None

@@ -133,6 +133,62 @@ async def test_progressive_directory_is_one_compact_whole_document_call() -> Non
 
 
 @pytest.mark.asyncio
+async def test_progressive_directory_gives_every_document_an_independent_call() -> None:
+    second_document = ClassificationDocument(
+        source_id="doc-2",
+        file_name="技术报告.txt",
+        content="腾讯生态接口报告说明企业微信工作台接入方案。",
+    )
+    provider = FakeProvider(
+        _completion(
+            {
+                "candidates": [
+                    {
+                        "category": "products",
+                        "label": "设备数据接入与协同",
+                        "meta": {
+                            "source_id": "doc-1",
+                            "source_text": "核心业务：设备数据接入与协同。",
+                            "confidence": 0.91,
+                        },
+                    }
+                ]
+            }
+        ),
+        _completion(
+            {
+                "candidates": [
+                    {
+                        "category": "products",
+                        "label": "企业微信工作台接入方案",
+                        "meta": {
+                            "source_id": "doc-2",
+                            "source_text": "腾讯生态接口报告说明企业微信工作台接入方案。",
+                            "confidence": 0.88,
+                        },
+                    }
+                ]
+            }
+        ),
+    )
+
+    discovered = await discover_content_candidates(
+        provider=provider,
+        credentials=ProviderCredentials(api_key="test-only"),
+        documents=[DOCUMENT, second_document],
+        max_tokens=4_096,
+    )
+
+    assert len(provider.calls) == 2
+    assert {item.source_id for item in discovered} == {"doc-1", "doc-2"}
+    request_documents = [
+        json.loads(call[0][1].content)["documents"]
+        for call in provider.calls
+    ]
+    assert all(len(documents) == 1 for documents in request_documents)
+
+
+@pytest.mark.asyncio
 async def test_progressive_directory_accepts_provider_bare_array() -> None:
     provider = FakeProvider(
         _completion(
