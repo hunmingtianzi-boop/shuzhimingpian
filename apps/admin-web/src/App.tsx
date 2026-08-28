@@ -506,6 +506,7 @@ export function PlatformOnboardingRoute() {
   const [sessionHistory, setSessionHistory] = useState<PlatformOnboardingSession[]>([]);
   const [sessionOwnerId, setSessionOwnerId] = useState<string>();
   const [importItems, setImportItems] = useState<PlatformOnboardingImportItem[]>([]);
+  const [importPollRevision, setImportPollRevision] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<ApiError>();
   const [importError, setImportError] = useState<ApiError>();
@@ -708,7 +709,7 @@ export function PlatformOnboardingRoute() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [activeSession?.id, activeSession?.status, actorId, importBatchKey, replaceSession]);
+  }, [activeSession?.id, activeSession?.status, actorId, importBatchKey, importPollRevision, replaceSession]);
 
   useEffect(() => {
     if (!actorId || !activeSession || activeSession.contentReview?.status !== "processing") {
@@ -822,6 +823,17 @@ export function PlatformOnboardingRoute() {
         const updated = await platformApi.uploadOnboardingDocuments(sessionId, files);
         if (!replaceSession(updated, sessionId)) return;
         setImportItems([]);
+        setImportError(undefined);
+      }}
+      onRetryImport={async (sessionId, item) => {
+        const status = await platformApi.retryOnboardingImportItem(sessionId, item);
+        setImportItems(status.items);
+        setImportError(undefined);
+        setImportPollRevision((current) => current + 1);
+      }}
+      onClearImport={async (sessionId, item) => {
+        const status = await platformApi.clearOnboardingImportItemPayload(sessionId, item);
+        setImportItems(status.items);
         setImportError(undefined);
       }}
       onGenerate={async (sessionId: string, expectedVersion: number) => {

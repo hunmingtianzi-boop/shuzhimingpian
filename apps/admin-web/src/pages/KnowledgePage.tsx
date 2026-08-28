@@ -1,11 +1,14 @@
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
   DialogContent,
   DialogSurface,
   DialogTitle,
+  Field,
+  Input,
   MessageBar,
   MessageBarBody,
   Table,
@@ -48,6 +51,13 @@ export function hasPublishableDraft(document: KnowledgeDocument): boolean {
   return document.latestVersion?.reviewStatus === "draft";
 }
 
+function initialBulkScheduleTime(): string {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5, 0, 0);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 export function KnowledgePage() {
   const resource = useResource(() => adminApi.listKnowledgeDocuments());
   const schedules = useResource<ScheduledPublication[]>(() =>
@@ -67,6 +77,11 @@ export function KnowledgePage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<"publish" | "schedule">();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkScheduleTime, setBulkScheduleTime] = useState(initialBulkScheduleTime);
+  const [bulkError, setBulkError] = useState<string>();
 
   const openCreate = () => {
     setEditing(undefined);
@@ -175,6 +190,62 @@ export function KnowledgePage() {
     }
   };
 
+  const selectableDocuments = resource.data?.filter((document) => hasPublishableDraft(document) && !activeSchedule(document.id)) ?? [];
+  const selectedDocuments = selectableDocuments.filter((document) => selectedIds.has(document.id));
+  const allSelected = selectableDocuments.length > 0 && selectedDocuments.length === selectableDocuments.length;
+
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const runBulkAction = async () => {
+    if (!bulkAction || bulkBusy || selectedDocuments.length === 0) return;
+    const scheduledFor = new Date(bulkScheduleTime);
+    if (bulkAction === "schedule" && (!bulkScheduleTime || Number.isNaN(scheduledFor.getTime()) || scheduledFor.getTime() <= Date.now())) {
+      setBulkError("请选择当前时间之后的发布时间。");
+      return;
+    }
+    setBulkBusy(true);
+    setBulkError(undefined);
+    const failures: string[] = [];
+    const failedIds: string[] = [];
+    let succeeded = 0;
+    for (const document of selectedDocuments) {
+      try {
+        if (bulkAction === "publish") {
+          const impact = await adminApi.previewKnowledgePublication(document.id);
+          await adminApi.publishKnowledgeDocument(document.id, undefined, impact.impactDigest);
+        } else {
+          const targetVersion = document.version ?? document.latestVersion?.versionNumber;
+          if (targetVersion === undefined) throw new ApiError("缺少可发布版本。", { code: "VERSION_MISSING" });
+          await scheduledPublicationsApi.create({
+            targetType: "knowledge_document",
+            targetId: document.id,
+            version: targetVersion,
+            knowledgeVersionId: document.latestVersion?.id,
+            scheduledFor: scheduledFor.toISOString(),
+          });
+        }
+        succeeded += 1;
+      } catch (caught) {
+        const message = caught instanceof ApiError ? caught.message : "未知错误";
+        failures.push(`${document.title || "未命名知识"}：${message}`);
+        failedIds.push(document.id);
+      }
+    }
+    setBulkBusy(false);
+    setBulkAction(undefined);
+    setSelectedIds(new Set(failedIds));
+    setNotice(`${bulkAction === "publish" ? "批量发布" : "批量定时发布"}完成：成功 ${succeeded} 条，失败 ${failures.length} 条。`);
+    setBulkError(failures.length ? failures.join("；") : undefined);
+    resource.reload();
+    schedules.reload();
+  };
+
   return (
     <main className="page-stack">
       <PageHeader
@@ -193,6 +264,7 @@ export function KnowledgePage() {
           <MessageBarBody>{notice}</MessageBarBody>
         </MessageBar>
       )}
+      {bulkError && !bulkAction ? <MessageBar intent="warning"><MessageBarBody>未完成项目：{bulkError}</MessageBarBody></MessageBar> : null}
 
       {schedules.status === "error" && (
         <MessageBar intent="error">
@@ -241,10 +313,20 @@ export function KnowledgePage() {
         )}
 
         {resource.status === "ready" && resource.data && (
+          <>
+          {selectedDocuments.length > 0 ? (
+            <div className="knowledge-bulk-toolbar" role="toolbar" aria-label="FAQ 批量操作">
+              <strong>已选择 {selectedDocuments.length} 条可发布草稿</strong>
+              <Button size="small" appearance="primary" icon={<Send24Regular />} onClick={() => { setBulkError(undefined); setBulkAction("publish"); }}>发布所选</Button>
+              <Button size="small" appearance="secondary" onClick={() => { setBulkScheduleTime(initialBulkScheduleTime()); setBulkError(undefined); setBulkAction("schedule"); }}>定时发布所选</Button>
+              <Button size="small" appearance="subtle" onClick={() => setSelectedIds(new Set())}>取消选择</Button>
+            </div>
+          ) : null}
           <div className="table-scroll">
             <Table aria-label="知识 FAQ 列表" size="small">
               <TableHeader>
                 <TableRow>
+                  <TableHeaderCell className="selection-column"><Checkbox aria-label="全选当前列表中的可发布草稿" checked={allSelected ? true : selectedDocuments.length > 0 ? "mixed" : false} disabled={selectableDocuments.length === 0} onChange={(_, data) => setSelectedIds(data.checked ? new Set(selectableDocuments.map((document) => document.id)) : new Set())} /></TableHeaderCell>
                   <TableHeaderCell>标题与问题</TableHeaderCell>
                   <TableHeaderCell className="status-column">状态</TableHeaderCell>
                   <TableHeaderCell className="updated-column">更新时间</TableHeaderCell>
@@ -257,6 +339,7 @@ export function KnowledgePage() {
                   const targetVersion = document.version ?? document.latestVersion?.versionNumber;
                   return (
                   <TableRow key={document.id}>
+                    <TableCell className="selection-column"><Checkbox aria-label={`选择 ${document.title || "未命名知识"}`} checked={selectedIds.has(document.id)} disabled={!hasPublishableDraft(document) || Boolean(schedule)} onChange={(_, data) => toggleSelected(document.id, data.checked === true)} /></TableCell>
                     <TableCell>
                       <div className="knowledge-title-cell">
                         <strong>{document.title || "未命名知识"}</strong>
@@ -328,6 +411,7 @@ export function KnowledgePage() {
               </TableBody>
             </Table>
           </div>
+          </>
         )}
       </section>
 
@@ -466,6 +550,22 @@ export function KnowledgePage() {
           resource.reload();
         }}
       />
+      <Dialog open={Boolean(bulkAction)} onOpenChange={(_, data) => { if (!data.open && !bulkBusy) setBulkAction(undefined); }}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{bulkAction === "publish" ? "确认批量发布 FAQ" : "确认批量定时发布 FAQ"}</DialogTitle>
+            <DialogContent>
+              <p>将处理已选择的 {selectedDocuments.length} 条可发布草稿。各条内容独立执行，失败项会保留选中并显示原因。</p>
+              {bulkAction === "schedule" ? <Field label="统一发布时间" required><Input type="datetime-local" value={bulkScheduleTime} disabled={bulkBusy} onChange={(_, data) => setBulkScheduleTime(data.value)} /></Field> : null}
+              {bulkError && bulkAction ? <MessageBar intent="error"><MessageBarBody>{bulkError}</MessageBarBody></MessageBar> : null}
+            </DialogContent>
+            <DialogActions>
+              <Button disabled={bulkBusy} onClick={() => setBulkAction(undefined)}>取消</Button>
+              <Button appearance="primary" disabled={bulkBusy || selectedDocuments.length === 0} onClick={() => void runBulkAction()}>{bulkBusy ? "正在处理" : bulkAction === "publish" ? "确认发布所选" : "确认定时发布"}</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </main>
   );
 }

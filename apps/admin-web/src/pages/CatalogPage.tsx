@@ -42,7 +42,7 @@ import type {
   PublicationRevision,
 } from "../api/types";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
-import { CaseStudyEditor } from "../components/CatalogEditor";
+import { CaseStudyEditor, ProductEditor } from "../components/CatalogEditor";
 import { ContentDistributionControl } from "../components/ContentDistributionControl";
 import { FormFeedback } from "../components/FormFeedback";
 import { PageHeader } from "../components/PageHeader";
@@ -58,6 +58,7 @@ import { formatTimestamp } from "../utils/format";
 
 type CatalogKind = "product" | "case";
 type CatalogAction = "publish" | "archive" | "delete";
+type InlineCatalogItem = Product | CaseStudy;
 
 type PendingProductAction = {
   type: CatalogAction;
@@ -130,6 +131,76 @@ function actionCopy(action?: PendingProductAction) {
     pendingLabel: "正在删除",
     destructive: true,
   };
+}
+
+function InlineCatalogActions({ kind, item, activeSchedule, schedulesStatus, onEdit, onChanged, showDetails = false }: {
+  kind: CatalogKind;
+  item: InlineCatalogItem;
+  activeSchedule?: ScheduledPublication;
+  schedulesStatus?: string;
+  onEdit: () => void;
+  onChanged: (notice: string) => void;
+  showDetails?: boolean;
+}) {
+  const [action, setAction] = useState<CatalogAction>();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ApiError>();
+  const [impact, setImpact] = useState<PublicationImpact>();
+  const label = kind === "product" ? (item as Product).name : (item as CaseStudy).title;
+  const noun = kind === "product" ? "产品" : "案例";
+
+  const requestAction = (next: CatalogAction) => {
+    setAction(next);
+    setError(undefined);
+    setImpact(undefined);
+    if (next === "publish") {
+      const preview = kind === "product" ? adminApi.previewProductPublication(item.id) : adminApi.previewCasePublication(item.id);
+      void preview.then(setImpact, (caught) => setError(toApiError(caught, "无法核对关联名片。")));
+    }
+  };
+
+  const execute = async () => {
+    if (!action || pending || (action === "publish" && !impact)) return;
+    setPending(true);
+    setError(undefined);
+    try {
+      if (kind === "product") {
+        if (action === "publish") await adminApi.publishProductConfirmed(item.id, item.version, impact!.impactDigest);
+        else if (action === "archive") await adminApi.archiveProduct(item.id, item.version);
+        else await adminApi.deleteProduct(item.id, item.version);
+      } else {
+        if (action === "publish") await adminApi.publishCaseStudyConfirmed(item.id, item.version, impact!.impactDigest);
+        else if (action === "archive") await adminApi.archiveCaseStudy(item.id, item.version);
+        else await adminApi.deleteCaseStudy(item.id, item.version);
+      }
+      setAction(undefined);
+      const notice = action === "publish"
+        ? `${noun}已由服务端确认发布。`
+        : action === "archive"
+          ? `${noun}“${label}”已归档。`
+          : `${noun}“${label}”已删除。`;
+      onChanged(notice);
+    } catch (caught) {
+      setError(toApiError(caught, `操作${noun}时发生未知错误。`));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const title = action === "publish" ? `确认发布${noun}` : action === "archive" ? `确认归档${noun}` : `确认删除${noun}`;
+  const description = action === "publish" ? `发布后，符合公开范围的${noun}会立即进入访客可见状态。` : action === "archive" ? `归档后，该${noun}会从公开页面消失，但保留历史记录。` : `删除后，该${noun}会从管理列表和公开页面消失。`;
+
+  return <>
+    <div className="row-actions catalog-row-actions catalog-inline-actions">
+      <Button appearance="subtle" size="small" icon={<Edit24Regular />} onClick={onEdit}>编辑</Button>
+      {(item.status !== "published" || item.hasUnpublishedChanges) && !activeSchedule ? <Button appearance="subtle" size="small" icon={<Send24Regular />} onClick={() => requestAction("publish")}>发布</Button> : null}
+      {item.status !== "published" ? <ScheduledPublicationActions targetType={kind === "product" ? "product" : "case_study"} targetId={item.id} targetVersion={item.version} targetLabel={label} current={activeSchedule} disabled={schedulesStatus === "loading" || schedulesStatus === "permission"} onChanged={onChanged} /> : null}
+      {item.status !== "archived" ? <Button appearance="subtle" size="small" icon={<Archive24Regular />} onClick={() => requestAction("archive")}>归档</Button> : null}
+      <Button appearance="subtle" size="small" icon={<Delete24Regular />} onClick={() => requestAction("delete")}>删除</Button>
+      {showDetails ? <a className="catalog-detail-link" href={appHref(productDetailPath(item.id))}>查看详情</a> : null}
+    </div>
+    <ActionConfirmDialog open={Boolean(action)} title={title} description={description} confirmLabel={action === "publish" ? "确认发布" : action === "archive" ? "确认归档" : "确认删除"} pendingLabel="正在处理" pending={pending} error={error} destructive={action === "archive" || action === "delete"} onCancel={() => { setAction(undefined); setError(undefined); }} onConfirm={() => void execute()} detail={action === "publish" && impact ? <div className="publish-target"><strong>本次将更新 {impact.affectedCardCount} 张已发布名片</strong>{impact.breakdown.map((entry) => <span key={entry.reason}>{entry.label}：{entry.cardCount} 张</span>)}<span>确认后同步公开内容</span></div> : undefined} />
+  </>;
 }
 
 function ProductFormFields({
@@ -597,7 +668,10 @@ export function ProductDetailPage({
 
 export function ProductsPage() {
   const resource = useResource<Product[]>(() => adminApi.listProducts());
+  const schedules = useResource<ScheduledPublication[]>(() => scheduledPublicationsApi.list("product"), "product-list");
   const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState<string>();
+  const [editing, setEditing] = useState<Product>();
   const filtered = useMemo(() => {
     if (resource.status !== "ready" || !resource.data) return [];
     const keyword = query.trim().toLocaleLowerCase();
@@ -617,6 +691,7 @@ export function ProductsPage() {
           </Button>
         }
       />
+      {notice ? <MessageBar intent="success"><MessageBarBody>{notice}</MessageBarBody></MessageBar> : null}
       <section className="content-panel filter-panel" aria-label="产品筛选">
         <Input
           aria-label="搜索产品"
@@ -664,7 +739,15 @@ export function ProductsPage() {
                     </TableCell>
                     <TableCell className="updated-column">{formatTimestamp(record.updatedAt)}</TableCell>
                     <TableCell className="catalog-actions-column">
-                      <a href={appHref(productDetailPath(record.id))}>查看详情</a>
+                      <InlineCatalogActions
+                        kind="product"
+                        item={record}
+                        activeSchedule={schedules.data?.find((entry) => entry.resourceId === record.id && ["pending", "processing", "failed"].includes(entry.status))}
+                        schedulesStatus={schedules.status}
+                        onEdit={() => setEditing(record)}
+                        showDetails
+                        onChanged={(message) => { setNotice(message); resource.reload(); schedules.reload(); }}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -673,13 +756,17 @@ export function ProductsPage() {
           </div>
         )}
       </section>
+      <ProductEditor item={editing} open={Boolean(editing)} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); resource.reload(); }} />
     </main>
   );
 }
 
 export function CatalogPage({ kind }: { kind: CatalogKind }) {
   const resource = useResource<CaseStudy[]>(() => adminApi.listCaseStudies(), kind);
+  const schedules = useResource<ScheduledPublication[]>(() => scheduledPublicationsApi.list("case_study"), "case-list");
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<CaseStudy>();
+  const [notice, setNotice] = useState<string>();
 
   if (kind === "product") return <ProductsPage />;
 
@@ -690,6 +777,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
         description="维护项目背景、解决方案和成果。只有公开且已发布的案例会对访客展示。"
         actions={<Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditorOpen(true)}>新建案例</Button>}
       />
+      {notice ? <MessageBar intent="success"><MessageBarBody>{notice}</MessageBarBody></MessageBar> : null}
       <section className="content-panel catalog-panel">
         {resource.status !== "ready" ? (
           <ResourceState
@@ -708,6 +796,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
                   <TableHeaderCell>案例</TableHeaderCell>
                   <TableHeaderCell>状态</TableHeaderCell>
                   <TableHeaderCell>更新时间</TableHeaderCell>
+                  <TableHeaderCell className="catalog-actions-column">操作</TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -721,6 +810,16 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
                     </TableCell>
                     <TableCell><StatusBadge status={record.status} /></TableCell>
                     <TableCell>{formatTimestamp(record.updatedAt)}</TableCell>
+                    <TableCell className="catalog-actions-column">
+                      <InlineCatalogActions
+                        kind="case"
+                        item={record}
+                        activeSchedule={schedules.data?.find((entry) => entry.resourceId === record.id && ["pending", "processing", "failed"].includes(entry.status))}
+                        schedulesStatus={schedules.status}
+                        onEdit={() => { setEditing(record); setEditorOpen(true); }}
+                        onChanged={(message) => { setNotice(message); resource.reload(); schedules.reload(); }}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -728,7 +827,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
           </div>
         )}
       </section>
-      <CaseStudyEditor open={editorOpen} onClose={() => setEditorOpen(false)} onSaved={() => { setEditorOpen(false); resource.reload(); }} />
+      <CaseStudyEditor item={editing} open={editorOpen} onClose={() => { setEditorOpen(false); setEditing(undefined); }} onSaved={() => { setEditorOpen(false); setEditing(undefined); resource.reload(); }} />
     </main>
   );
 }

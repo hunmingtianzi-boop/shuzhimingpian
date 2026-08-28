@@ -90,6 +90,35 @@ afterEach(() => {
 });
 
 describe("PlatformOnboardingPage", () => {
+  it("explains a dead-letter interruption and invokes the real retry action", async () => {
+    const user = userEvent.setup();
+    const onRetryImport = vi.fn().mockResolvedValue(undefined);
+    renderPage(buildProps({
+      importItems: [{
+        id: "failed-item",
+        batchId: "batch-1",
+        batchVersion: 3,
+        fileName: "异常资料.pdf",
+        status: "dead_letter",
+        errorCode: "IMPORT_DANGEROUS_VALUE",
+        attempts: 1,
+        maxAttempts: 6,
+        retryAvailable: true,
+      }],
+      onRetryImport,
+    }));
+
+    await user.click(screen.getByRole("button", { name: /资料与智能候选/ }));
+    expect(await screen.findByText("中断位置：文件解析与安全检查")).toBeInTheDocument();
+    expect(screen.getByText(/旧版安全规则因此中止/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "安全重试" }));
+
+    await waitFor(() => expect(onRetryImport).toHaveBeenCalledWith(
+      "onboarding-session-7",
+      expect.objectContaining({ id: "failed-item", batchId: "batch-1" }),
+    ));
+  });
+
   it("shows all candidate sources and filters candidates by uploaded file", async () => {
     const user = userEvent.setup();
     renderPage(buildProps({

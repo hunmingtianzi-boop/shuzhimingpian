@@ -29,9 +29,11 @@ from app.api.content_import_schemas import (
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
 from app.api.knowledge_import_schemas import (
+    ClearKnowledgeImportItemRequest,
     KnowledgeImportBatchEnvelope,
     KnowledgeImportBatchListEnvelope,
     RenameKnowledgeImportBatchRequest,
+    RetryKnowledgeImportItemRequest,
 )
 from app.api.knowledge_ops_schemas import (
     EvaluationJobEnvelope,
@@ -279,6 +281,49 @@ async def get_knowledge_import(
             scope=_import_scope(principal), batch_id=batch_id
         )
     )
+
+
+@router.post(
+    "/admin/knowledge/imports/{batch_id}/items/{item_id}:retry",
+    response_model=KnowledgeImportBatchEnvelope,
+    operation_id="retryKnowledgeImportItem",
+)
+async def retry_knowledge_import_item(
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: RetryKnowledgeImportItemRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> KnowledgeImportBatchEnvelope:
+    _require_permission(principal, "knowledge.write")
+    return KnowledgeImportBatchEnvelope(
+        data=await _import_store(request).retry_item(
+            scope=_import_scope(principal),
+            batch_id=batch_id,
+            item_id=item_id,
+            expected_batch_version=body.expected_batch_version,
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
+@router.post(
+    "/admin/knowledge/imports/{batch_id}/items/{item_id}:clear",
+    response_model=KnowledgeImportBatchEnvelope,
+    operation_id="clearKnowledgeImportItemPayload",
+)
+async def clear_knowledge_import_item_payload(
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: ClearKnowledgeImportItemRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> KnowledgeImportBatchEnvelope:
+    _require_permission(principal, "knowledge.write")
+    return KnowledgeImportBatchEnvelope(data=await _import_store(request).clear_failed_item_payload(
+        scope=_import_scope(principal), batch_id=batch_id, item_id=item_id,
+        expected_batch_version=body.expected_batch_version, trace_id=request_id_ctx.get(),
+    ))
 
 
 @router.post(

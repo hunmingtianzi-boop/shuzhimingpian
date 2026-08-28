@@ -153,6 +153,15 @@ function stageCopy(label: string, status: KnowledgeImportStageStatus | undefined
   return status ? `${label}：${stageLabels[status]}` : `${label}：等待服务端回执`;
 }
 
+const importErrorCopy: Record<string, { stage: string; reason: string }> = {
+  IMPORT_DANGEROUS_VALUE: { stage: "文件解析与安全检查", reason: "解析结果含异常控制字符，处理已按安全规则中止。" },
+  IMPORT_ENCRYPTED_PDF: { stage: "PDF 解密", reason: "PDF 已加密，无法读取正文。" },
+  IMPORT_PDF_INVALID: { stage: "PDF 解析", reason: "PDF 结构损坏或不符合标准。" },
+  IMPORT_EMPTY_TEXT: { stage: "正文提取", reason: "没有提取到可用文字。" },
+  IMPORT_DECRYPT_FAILED: { stage: "原始文件解密", reason: "服务端无法解密已保存的原始文件。" },
+  IMPORT_PAYLOAD_TAMPERED: { stage: "文件完整性校验", reason: "文件摘要与保存内容不一致。" },
+};
+
 export function validateKnowledgeImportFiles(files: File[]): string | undefined {
   if (files.length === 0) return "请选择要导入的文件。";
   for (const file of files) {
@@ -177,9 +186,15 @@ function isActive(batch: KnowledgeImportBatch): boolean {
 function ImportDetail({
   batch,
   onRequestDeleteDocument,
+  onRetryItem,
+  onClearItem,
+  retryingItemId,
 }: {
   batch: KnowledgeImportBatch;
   onRequestDeleteDocument?: (documentId: string) => void;
+  onRetryItem?: (itemId: string) => void;
+  onClearItem?: (itemId: string) => void;
+  retryingItemId?: string;
 }) {
   const completed = batch.succeededItems + batch.failedItems;
   const progress = batch.totalItems > 0 ? completed / batch.totalItems : 0;
@@ -209,7 +224,28 @@ function ImportDetail({
                     <span>{stageCopy("发布", item.publishStatus)}</span>
                   </div>
                 </TableCell>
-                <TableCell>{item.errorCode ? `错误码：${item.errorCode}` : item.documentId ? (
+                <TableCell>{item.errorCode ? (() => {
+                  const detail = importErrorCopy[item.errorCode] ?? { stage: "后台处理", reason: "处理过程中发生未分类错误。" };
+                  return <div className="knowledge-import-error-detail">
+                    <strong>中断位置：{detail.stage}</strong>
+                    <span>原因：{detail.reason}</span>
+                    <span>已尝试 {item.attempts ?? 0}/{item.maxAttempts ?? 6} 次</span>
+                    <code>错误码：{item.errorCode}</code>
+                    {item.retryAvailable && onRetryItem ? (
+                      <Button
+                        size="small"
+                        icon={<ArrowClockwise24Regular />}
+                        disabled={retryingItemId === item.id}
+                        onClick={() => onRetryItem(item.id)}
+                      >{retryingItemId === item.id ? "正在重新排队" : "安全重试"}</Button>
+                    ) : <span>原始文件已按旧策略清理，请重新上传该文件。</span>}
+                    {item.retryAvailable && onClearItem && (
+                      <Button appearance="subtle" size="small" icon={<Delete24Regular />} onClick={() => {
+                        if (window.confirm("清除后无法原地重试，但错误记录会保留。确定清除原文件吗？")) onClearItem(item.id);
+                      }}>清除原文件</Button>
+                    )}
+                  </div>;
+                })() : item.documentId ? (
                   <div className="row-actions">
                     {item.publishStatus === "completed" ? <span>已更新并发布</span> : <a href="#knowledge-documents">已生成待审核草稿，去审核</a>}
                     {onRequestDeleteDocument ? (
@@ -537,6 +573,7 @@ export function KnowledgeImportPanel({
   const [validationError, setValidationError] = useState<string>();
   const [operationError, setOperationError] = useState<ApiError>();
   const [notice, setNotice] = useState<string>();
+  const [retryingItemId, setRetryingItemId] = useState<string>();
   const manualSelectionRef = useRef(false);
 
   const clearFocusedRun = () => {
@@ -637,6 +674,40 @@ export function KnowledgeImportPanel({
     } catch (caught) { setOperationError(asApiError(caught)); } finally { setUploading(false); }
   };
 
+  const retryItem = async (itemId: string) => {
+    if (!selectedBatch || retryingItemId) return;
+    setRetryingItemId(itemId);
+    setOperationError(undefined);
+    setNotice(undefined);
+    try {
+      const retried = await knowledgeImportsApi.retryItem(selectedBatch, itemId);
+      setSelectedBatch(retried);
+      setEditingBatchName(retried.displayName);
+      setNotice("失败文件已重新进入处理队列，页面会持续刷新真实状态。");
+      await resource.reload();
+    } catch (caught) {
+      setOperationError(asApiError(caught));
+    } finally {
+      setRetryingItemId(undefined);
+    }
+  };
+
+  const clearItem = async (itemId: string) => {
+    if (!selectedBatch || retryingItemId) return;
+    setRetryingItemId(itemId);
+    setOperationError(undefined);
+    try {
+      const cleared = await knowledgeImportsApi.clearItemPayload(selectedBatch, itemId);
+      setSelectedBatch(cleared);
+      setNotice("已清除失败任务保存的原始文件；错误记录和审计信息仍然保留。");
+      await resource.reload();
+    } catch (caught) {
+      setOperationError(asApiError(caught));
+    } finally {
+      setRetryingItemId(undefined);
+    }
+  };
+
   return (
     <section className="content-panel knowledge-import-panel" aria-labelledby="knowledge-import-title">
       <div className="knowledge-import-heading">
@@ -678,7 +749,13 @@ export function KnowledgeImportPanel({
             <Input aria-label="批次名称" value={editingBatchName} onChange={(_, data) => setEditingBatchName(data.value)} />
             <Button disabled={uploading || !editingBatchName.trim() || editingBatchName.trim() === selectedBatch.displayName} onClick={() => void renameBatch()}>保存名称</Button>
           </div>
-          <ImportDetail batch={selectedBatch} onRequestDeleteDocument={canImport ? onRequestDeleteDocument : undefined} />
+          <ImportDetail
+            batch={selectedBatch}
+            onRequestDeleteDocument={canImport ? onRequestDeleteDocument : undefined}
+            onRetryItem={canImport ? (itemId) => void retryItem(itemId) : undefined}
+            onClearItem={canImport ? (itemId) => void clearItem(itemId) : undefined}
+            retryingItemId={retryingItemId}
+          />
           {canImport && <ContentImportReview key={selectedBatch.id} batch={selectedBatch} />}
         </>
       )}

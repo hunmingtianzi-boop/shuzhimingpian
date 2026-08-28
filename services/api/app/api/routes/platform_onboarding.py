@@ -12,6 +12,10 @@ from app.api.content_import_schemas import (
 )
 from app.api.dependencies import get_staff_principal
 from app.api.errors import ApiError
+from app.api.knowledge_import_schemas import (
+    ClearKnowledgeImportItemRequest,
+    RetryKnowledgeImportItemRequest,
+)
 from app.api.platform_schemas import (
     CancelPlatformOnboardingRequest,
     ConfirmPlatformOnboardingRequest,
@@ -250,6 +254,56 @@ async def get_onboarding_import_status(
         data=await _service(request).get_import_status(
             actor=_actor(principal),
             onboarding_id=onboarding_id,
+        )
+    )
+
+
+@router.post(
+    "/{onboarding_id}/imports/{batch_id}/items/{item_id}:retry",
+    response_model=PlatformOnboardingImportStatusEnvelope,
+    operation_id="retryPlatformOnboardingImportItem",
+)
+async def retry_onboarding_import_item(
+    onboarding_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: RetryKnowledgeImportItemRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> PlatformOnboardingImportStatusEnvelope:
+    return PlatformOnboardingImportStatusEnvelope(
+        data=await _service(request).retry_import_item(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            batch_id=batch_id,
+            item_id=item_id,
+            expected_batch_version=body.expected_batch_version,
+            trace_id=request_id_ctx.get(),
+        )
+    )
+
+
+@router.post(
+    "/{onboarding_id}/imports/{batch_id}/items/{item_id}:clear",
+    response_model=PlatformOnboardingImportStatusEnvelope,
+    operation_id="clearPlatformOnboardingImportItemPayload",
+)
+async def clear_onboarding_import_item_payload(
+    onboarding_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: ClearKnowledgeImportItemRequest,
+    request: Request,
+    principal: StaffDependency,
+) -> PlatformOnboardingImportStatusEnvelope:
+    return PlatformOnboardingImportStatusEnvelope(
+        data=await _service(request).clear_import_item_payload(
+            actor=_actor(principal),
+            onboarding_id=onboarding_id,
+            batch_id=batch_id,
+            item_id=item_id,
+            expected_batch_version=body.expected_batch_version,
+            trace_id=request_id_ctx.get(),
         )
     )
 

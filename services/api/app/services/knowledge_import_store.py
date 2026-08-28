@@ -15,7 +15,13 @@ from app.api.knowledge_import_schemas import (
 )
 from app.core.config import Settings
 from app.core.pii import PiiCipher
-from app.db.models import Company, KnowledgeImportBatch, KnowledgeImportItem
+from app.db.models import (
+    Company,
+    KnowledgeImportBatch,
+    KnowledgeImportBatchStatus,
+    KnowledgeImportItem,
+    KnowledgeImportItemStatus,
+)
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
 
@@ -190,6 +196,137 @@ class KnowledgeImportStore:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "知识导入批次不存在")
             return await self._record(session, scope, batch, with_items=True)
 
+    async def retry_item(
+        self,
+        *,
+        scope: KnowledgeImportScope,
+        batch_id: uuid.UUID,
+        item_id: uuid.UUID,
+        expected_batch_version: int,
+        trace_id: str | None,
+    ) -> KnowledgeImportBatchRecord:
+        """Requeue one failed file while preserving tenant scope and audit history."""
+
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            batch = await session.scalar(
+                select(KnowledgeImportBatch)
+                .where(
+                    KnowledgeImportBatch.id == batch_id,
+                    KnowledgeImportBatch.tenant_id == scope.tenant_id,
+                    KnowledgeImportBatch.company_id == scope.company_id,
+                )
+                .with_for_update()
+            )
+            if batch is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "知识导入批次不存在")
+            if batch.version != expected_batch_version:
+                raise ApiError(409, "VERSION_CONFLICT", "任务已发生变化，请刷新后重试")
+            item = await session.scalar(
+                select(KnowledgeImportItem)
+                .where(
+                    KnowledgeImportItem.id == item_id,
+                    KnowledgeImportItem.batch_id == batch_id,
+                    KnowledgeImportItem.tenant_id == scope.tenant_id,
+                    KnowledgeImportItem.company_id == scope.company_id,
+                )
+                .with_for_update()
+            )
+            if item is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "知识导入文件不存在")
+            if item.status not in {
+                KnowledgeImportItemStatus.FAILED,
+                KnowledgeImportItemStatus.DEAD_LETTER,
+            }:
+                raise ApiError(409, "IMPORT_RETRY_NOT_ALLOWED", "只有失败或已终止的文件可以重试")
+            if item.payload_ciphertext is None:
+                raise ApiError(
+                    409,
+                    "IMPORT_RETRY_PAYLOAD_UNAVAILABLE",
+                    "该旧任务的原始文件已按历史策略清理，请重新上传此文件",
+                )
+
+            previous_error = item.error_code
+            item.status = KnowledgeImportItemStatus.PENDING
+            item.attempts = 0
+            item.next_attempt_at = datetime.now(UTC)
+            item.lock_token = None
+            item.locked_by = None
+            item.lease_expires_at = None
+            item.error_code = None
+            item.parse_status = "pending"
+            item.publish_status = None
+            item.completed_at = None
+            item.published_at = None
+            batch.version += 1
+            await session.flush()
+            await self._refresh_batch_counts(session, batch)
+            await append_audit(
+                session,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+                actor_user_id=scope.actor_user_id,
+                action="knowledge.import.retry",
+                resource_type="knowledge_import_item",
+                resource_id=item.id,
+                trace_id=trace_id,
+                event_data={
+                    "batch_id": str(batch.id),
+                    "previous_error_code": previous_error,
+                },
+            )
+            await session.flush()
+            return await self._record(session, scope, batch, with_items=True)
+
+    async def clear_failed_item_payload(
+        self,
+        *,
+        scope: KnowledgeImportScope,
+        batch_id: uuid.UUID,
+        item_id: uuid.UUID,
+        expected_batch_version: int,
+        trace_id: str | None,
+    ) -> KnowledgeImportBatchRecord:
+        async with self._sessions() as session, session.begin():
+            await self._set_scope(session, scope)
+            batch = await session.scalar(select(KnowledgeImportBatch).where(
+                KnowledgeImportBatch.id == batch_id,
+                KnowledgeImportBatch.tenant_id == scope.tenant_id,
+                KnowledgeImportBatch.company_id == scope.company_id,
+            ).with_for_update())
+            if batch is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "知识导入批次不存在")
+            if batch.version != expected_batch_version:
+                raise ApiError(409, "VERSION_CONFLICT", "任务已发生变化，请刷新后重试")
+            item = await session.scalar(select(KnowledgeImportItem).where(
+                KnowledgeImportItem.id == item_id,
+                KnowledgeImportItem.batch_id == batch_id,
+                KnowledgeImportItem.tenant_id == scope.tenant_id,
+                KnowledgeImportItem.company_id == scope.company_id,
+            ).with_for_update())
+            if item is None:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "知识导入文件不存在")
+            if item.status not in {
+                KnowledgeImportItemStatus.FAILED,
+                KnowledgeImportItemStatus.DEAD_LETTER,
+            }:
+                raise ApiError(409, "IMPORT_CLEAR_NOT_ALLOWED", "只有失败或已终止文件可以清除")
+            item.payload_ciphertext = None
+            batch.version += 1
+            await append_audit(
+                session,
+                tenant_id=scope.tenant_id,
+                company_id=scope.company_id,
+                actor_user_id=scope.actor_user_id,
+                action="knowledge.import.clear_payload",
+                resource_type="knowledge_import_item",
+                resource_id=item.id,
+                trace_id=trace_id,
+                event_data={"batch_id": str(batch.id), "error_code": item.error_code},
+            )
+            await session.flush()
+            return await self._record(session, scope, batch, with_items=True)
+
     async def get_batches_by_ids(
         self,
         *,
@@ -298,6 +435,16 @@ class KnowledgeImportStore:
                     document_id=item.document_id,
                     version_id=item.version_id,
                     error_code=item.error_code,
+                    attempts=item.attempts,
+                    max_attempts=item.max_attempts,
+                    retry_available=(
+                        item.status
+                        in {
+                            KnowledgeImportItemStatus.FAILED,
+                            KnowledgeImportItemStatus.DEAD_LETTER,
+                        }
+                        and item.payload_ciphertext is not None
+                    ),
                     created_at=item.created_at,
                     completed_at=item.completed_at,
                     published_at=item.published_at,
@@ -305,6 +452,47 @@ class KnowledgeImportStore:
                 for item in rows
             ],
         )
+
+    @staticmethod
+    async def _refresh_batch_counts(
+        session: AsyncSession, batch: KnowledgeImportBatch
+    ) -> None:
+        statuses = list(
+            (
+                await session.scalars(
+                    select(KnowledgeImportItem.status).where(
+                        KnowledgeImportItem.batch_id == batch.id,
+                        KnowledgeImportItem.tenant_id == batch.tenant_id,
+                        KnowledgeImportItem.company_id == batch.company_id,
+                    )
+                )
+            ).all()
+        )
+        pending = sum(
+            status
+            in {
+                KnowledgeImportItemStatus.PENDING,
+                KnowledgeImportItemStatus.PROCESSING,
+                KnowledgeImportItemStatus.FAILED,
+            }
+            for status in statuses
+        )
+        succeeded = sum(status == KnowledgeImportItemStatus.COMPLETED for status in statuses)
+        failed = sum(status == KnowledgeImportItemStatus.DEAD_LETTER for status in statuses)
+        batch.pending_items = pending
+        batch.succeeded_items = succeeded
+        batch.failed_items = failed
+        batch.completed_at = None if pending else datetime.now(UTC)
+        if pending and (succeeded or failed):
+            batch.status = KnowledgeImportBatchStatus.PROCESSING
+        elif pending:
+            batch.status = KnowledgeImportBatchStatus.PENDING
+        elif succeeded and not failed:
+            batch.status = KnowledgeImportBatchStatus.COMPLETED
+        elif succeeded and failed:
+            batch.status = KnowledgeImportBatchStatus.COMPLETED_WITH_ERRORS
+        else:
+            batch.status = KnowledgeImportBatchStatus.DEAD_LETTER
 
     @staticmethod
     async def _set_scope(session: AsyncSession, scope: KnowledgeImportScope) -> None:

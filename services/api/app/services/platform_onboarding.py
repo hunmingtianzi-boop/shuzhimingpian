@@ -498,6 +498,69 @@ class PlatformOnboardingService:
             batches=batches,
         )
 
+    async def retry_import_item(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        batch_id: uuid.UUID,
+        item_id: uuid.UUID,
+        expected_batch_version: int,
+        trace_id: str | None,
+    ) -> PlatformOnboardingImportStatusRecord:
+        """Requeue an owned onboarding import without granting cross-tenant listing access."""
+
+        self._require_platform(actor)
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(session, onboarding_id, actor_user_id=actor.user_id)
+            await self._expire_if_needed(row)
+            self._require_open(row)
+            if batch_id not in row.import_batch_ids:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "该资料不属于当前建企任务")
+            import_scope = KnowledgeImportScope(
+                tenant_id=row.tenant_id,
+                company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+            )
+
+        await KnowledgeImportStore(self._sessions, self._settings).retry_item(
+            scope=import_scope,
+            batch_id=batch_id,
+            item_id=item_id,
+            expected_batch_version=expected_batch_version,
+            trace_id=trace_id,
+        )
+        return await self.get_import_status(actor=actor, onboarding_id=onboarding_id)
+
+    async def clear_import_item_payload(
+        self,
+        *,
+        actor: PlatformActor,
+        onboarding_id: uuid.UUID,
+        batch_id: uuid.UUID,
+        item_id: uuid.UUID,
+        expected_batch_version: int,
+        trace_id: str | None,
+    ) -> PlatformOnboardingImportStatusRecord:
+        self._require_platform(actor)
+        async with self._sessions() as session, session.begin():
+            await self._set_platform_scope(session, actor)
+            row = await self._row(session, onboarding_id, actor_user_id=actor.user_id)
+            await self._expire_if_needed(row)
+            self._require_open(row)
+            if batch_id not in row.import_batch_ids:
+                raise ApiError(404, "RESOURCE_NOT_FOUND", "该资料不属于当前建企任务")
+            scope = KnowledgeImportScope(
+                tenant_id=row.tenant_id, company_id=row.company_id,
+                actor_user_id=row.admin_user_id,
+            )
+        await KnowledgeImportStore(self._sessions, self._settings).clear_failed_item_payload(
+            scope=scope, batch_id=batch_id, item_id=item_id,
+            expected_batch_version=expected_batch_version, trace_id=trace_id,
+        )
+        return await self.get_import_status(actor=actor, onboarding_id=onboarding_id)
+
     async def list_sessions(
         self,
         *,

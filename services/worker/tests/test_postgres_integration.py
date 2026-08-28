@@ -261,7 +261,7 @@ async def test_real_knowledge_import_rls_lease_draft_cleanup_retry_and_idempoten
                     {"id": item_ids[1]},
                 )
             ).one()
-            assert dead.status == "dead_letter" and dead.payload_ciphertext is None
+            assert dead.status == "dead_letter" and dead.payload_ciphertext is not None
     finally:
         async with owner.begin() as connection:
             await connection.execute(

@@ -138,4 +138,31 @@ describe("KnowledgePage scheduled publication", () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith("knowledge-1", 2));
     expect(await screen.findByText(/AI 将不再检索该内容/)).toBeInTheDocument();
   });
+
+  it("publishes all selected FAQ drafts and reports the batch result", async () => {
+    const user = userEvent.setup();
+    vi.mocked(adminApi.listKnowledgeDocuments).mockResolvedValue([
+      { ...documentWith("draft", "draft"), id: "knowledge-1", title: "企业知识一" },
+      { ...documentWith("draft", "draft"), id: "knowledge-2", title: "企业知识二", latestVersion: { ...documentWith("draft", "draft").latestVersion!, id: "version-2" } },
+    ]);
+    vi.spyOn(adminApi, "previewKnowledgePublication").mockImplementation(async (id) => ({
+      resourceType: "knowledge_document",
+      resourceId: id,
+      affectedCardCount: 0,
+      affectedCardIds: [],
+      breakdown: [],
+      impactDigest: id.repeat(8).slice(0, 64),
+    }));
+    const publish = vi.spyOn(adminApi, "publishKnowledgeDocument").mockResolvedValue(undefined);
+    render(<FluentProvider theme={adminLightTheme}><KnowledgePage /></FluentProvider>);
+
+    await screen.findByText("企业知识一");
+    await user.click(screen.getByRole("checkbox", { name: "全选当前列表中的可发布草稿" }));
+    expect(screen.getByText("已选择 2 条可发布草稿")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发布所选" }));
+    await user.click(screen.getByRole("button", { name: "确认发布所选" }));
+
+    await waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("批量发布完成：成功 2 条，失败 0 条。")).toBeInTheDocument();
+  });
 });

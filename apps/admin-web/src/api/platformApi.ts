@@ -520,10 +520,17 @@ function onboardingImportStatus(value: unknown): PlatformOnboardingImportStatus 
       if (!isRecord(batch) || !Array.isArray(batch.items)) {
         invalid("资料辅助建企导入批次");
       }
+      const batchId = requiredString(batch.id, "onboarding_import_batch.id");
+      const batchVersion = nonNegativeInteger(
+        batch.version ?? 1,
+        "onboarding_import_batch.version",
+      );
       return batch.items.map((item) => {
         if (!isRecord(item)) invalid("资料辅助建企导入文件");
         return {
           id: requiredString(item.id, "onboarding_import_item.id"),
+          batchId,
+          batchVersion,
           fileName: requiredString(
             item.file_name,
             "onboarding_import_item.file_name",
@@ -541,6 +548,15 @@ function onboardingImportStatus(value: unknown): PlatformOnboardingImportStatus 
             item.error_code,
             "onboarding_import_item.error_code",
           ),
+          attempts: nonNegativeInteger(
+            item.attempts ?? 0,
+            "onboarding_import_item.attempts",
+          ),
+          maxAttempts: nonNegativeInteger(
+            item.max_attempts ?? 6,
+            "onboarding_import_item.max_attempts",
+          ),
+          retryAvailable: item.retry_available === true,
           createdAt: requiredString(
             item.created_at,
             "onboarding_import_item.created_at",
@@ -1211,6 +1227,38 @@ export function createPlatformApi(client: ApiClient) {
         form,
       );
       return onboardingSession(unwrapData(payload, "资料辅助建企会话"));
+    },
+
+    async retryOnboardingImportItem(
+      sessionId: string,
+      item: PlatformOnboardingImportStatus["items"][number],
+    ): Promise<PlatformOnboardingImportStatus> {
+      if (!item.batchId || !item.batchVersion) {
+        throw new ApiError("资料任务缺少批次信息，请刷新后重试。", {
+          code: "INVALID_IMPORT_RETRY_STATE",
+        });
+      }
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/imports/${encodeURIComponent(item.batchId)}/items/${encodeURIComponent(item.id)}:retry`,
+        { expected_batch_version: item.batchVersion },
+      );
+      return onboardingImportStatus(
+        unwrapData(payload, "资料辅助建企导入进度"),
+      );
+    },
+
+    async clearOnboardingImportItemPayload(
+      sessionId: string,
+      item: PlatformOnboardingImportStatus["items"][number],
+    ): Promise<PlatformOnboardingImportStatus> {
+      if (!item.batchId || !item.batchVersion) {
+        throw new ApiError("资料任务缺少批次信息，请刷新后重试。", { code: "INVALID_IMPORT_CLEAR_STATE" });
+      }
+      const payload = await client.post(
+        `/platform/onboarding/${encodeURIComponent(sessionId)}/imports/${encodeURIComponent(item.batchId)}/items/${encodeURIComponent(item.id)}:clear`,
+        { expected_batch_version: item.batchVersion },
+      );
+      return onboardingImportStatus(unwrapData(payload, "资料辅助建企导入进度"));
     },
 
     async generateOnboardingSuggestions(

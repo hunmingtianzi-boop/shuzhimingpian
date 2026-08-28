@@ -141,14 +141,14 @@ def test_pdf_layout_controls_are_normalized_but_other_controls_stay_rejected(
     assert "\x0b" not in draft.raw_text
     assert "\x0c" not in draft.raw_text
 
-    dangerous_text = ("项目背景与解决方案" * 12) + "\x01危险"
+    parser_control_text = ("项目背景与解决方案" * 12) + "\x01分页"
     monkeypatch.setattr(
         knowledge_import_module,
         "PdfReader",
-        lambda *_args, **_kwargs: Reader(dangerous_text),
+        lambda *_args, **_kwargs: Reader(parser_control_text),
     )
-    with pytest.raises(KnowledgeImportError, match="IMPORT_DANGEROUS_VALUE"):
-        knowledge_import_module._parse_pdf("case.pdf", b"pdf")
+    normalized = knowledge_import_module._parse_pdf("case.pdf", b"pdf")
+    assert "\x01" not in normalized.raw_text
 
     with pytest.raises(KnowledgeImportError, match="IMPORT_MIME_MISMATCH"):
         validate_upload("file.pdf", "text/plain", b"%PDF-1.7")

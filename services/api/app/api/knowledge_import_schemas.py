@@ -22,6 +22,9 @@ class KnowledgeImportItemRecord(ImportModel):
     document_id: uuid.UUID | None = None
     version_id: uuid.UUID | None = None
     error_code: str | None = None
+    attempts: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=6, ge=1)
+    retry_available: bool = False
     created_at: datetime
     completed_at: datetime | None = None
     published_at: datetime | None = None
@@ -52,6 +55,14 @@ class RenameKnowledgeImportBatchRequest(ImportModel):
     expected_version: int = Field(ge=1)
 
 
+class RetryKnowledgeImportItemRequest(ImportModel):
+    expected_batch_version: int = Field(ge=1)
+
+
+class ClearKnowledgeImportItemRequest(ImportModel):
+    expected_batch_version: int = Field(ge=1)
+
+
 class KnowledgeImportBatchListEnvelope(ImportModel):
     data: list[KnowledgeImportBatchRecord]
     total: int = Field(ge=0)
@@ -64,5 +75,7 @@ __all__ = [
     "KnowledgeImportBatchListEnvelope",
     "KnowledgeImportBatchRecord",
     "KnowledgeImportItemRecord",
+    "ClearKnowledgeImportItemRequest",
     "RenameKnowledgeImportBatchRequest",
+    "RetryKnowledgeImportItemRequest",
 ]

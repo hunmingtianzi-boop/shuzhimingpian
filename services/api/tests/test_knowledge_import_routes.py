@@ -56,6 +56,14 @@ class _Store:
             }
         )
 
+    async def retry_item(self, **kwargs: Any) -> KnowledgeImportBatchRecord:
+        self.calls.append(("retry", kwargs))
+        return self.record.model_copy(update={"status": "pending", "version": 2})
+
+    async def clear_failed_item_payload(self, **kwargs: Any) -> KnowledgeImportBatchRecord:
+        self.calls.append(("clear", kwargs))
+        return self.record.model_copy(update={"version": 2})
+
 
 def _principal(role: str, permissions: tuple[str, ...] = ()) -> StaffPrincipal:
     return StaffPrincipal(
@@ -145,6 +153,36 @@ def test_upload_accepts_more_than_five_files(client) -> None:
     assert response.status_code == 202
     assert len(store.calls[0][1]["items"]) == 8
     assert response.json()["data"]["total_items"] == 8
+
+
+def test_failed_import_item_can_be_requeued(client) -> None:
+    test_client, store, _ = client
+    item_id = uuid.uuid4()
+
+    response = test_client.post(
+        f"/api/v1/admin/knowledge/imports/{store.record.id}/items/{item_id}:retry",
+        json={"expected_batch_version": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["version"] == 2
+    assert store.calls[-1][0] == "retry"
+    assert store.calls[-1][1]["item_id"] == item_id
+
+
+def test_failed_import_item_payload_can_be_cleared(client) -> None:
+    test_client, store, _ = client
+    item_id = uuid.uuid4()
+
+    response = test_client.post(
+        f"/api/v1/admin/knowledge/imports/{store.record.id}/items/{item_id}:clear",
+        json={"expected_batch_version": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["version"] == 2
+    assert store.calls[-1][0] == "clear"
+    assert store.calls[-1][1]["item_id"] == item_id
 
 
 def test_upload_rejects_unsupported_file_and_missing_permission(client) -> None:

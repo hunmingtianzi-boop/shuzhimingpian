@@ -56,6 +56,9 @@ export type KnowledgeImportItem = {
   documentId?: string;
   versionId?: string;
   errorCode?: string;
+  attempts?: number;
+  maxAttempts?: number;
+  retryAvailable?: boolean;
   parseStatus?: KnowledgeImportStageStatus;
   indexStatus?: KnowledgeImportStageStatus;
   publishStatus?: KnowledgeImportStageStatus;
@@ -202,6 +205,9 @@ function normalizeItem(value: unknown): KnowledgeImportItem {
     documentId: optionalString(value.document_id),
     versionId: optionalString(value.version_id),
     errorCode: optionalString(value.error_code),
+    attempts: optionalCount(value.attempts, 0),
+    maxAttempts: optionalCount(value.max_attempts, 6),
+    retryAvailable: value.retry_available === true,
     parseStatus: optionalStageStatus(value.parse_status),
     indexStatus: optionalStageStatus(value.index_status),
     publishStatus: optionalStageStatus(value.publish_status),
@@ -359,6 +365,20 @@ export function createKnowledgeImportsApi(client: ApiClient = apiClient) {
       return normalizeBatch(unwrapData(await client.patch(
         `/admin/knowledge/imports/${encodeURIComponent(batch.id)}`,
         { display_name: displayName.trim(), expected_version: batch.version },
+      )));
+    },
+
+    async retryItem(batch: KnowledgeImportBatch, itemId: string): Promise<KnowledgeImportBatch> {
+      return normalizeBatch(unwrapData(await client.post(
+        `/admin/knowledge/imports/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(itemId)}:retry`,
+        { expected_batch_version: batch.version },
+      )));
+    },
+
+    async clearItemPayload(batch: KnowledgeImportBatch, itemId: string): Promise<KnowledgeImportBatch> {
+      return normalizeBatch(unwrapData(await client.post(
+        `/admin/knowledge/imports/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(itemId)}:clear`,
+        { expected_batch_version: batch.version },
       )));
     },
   };

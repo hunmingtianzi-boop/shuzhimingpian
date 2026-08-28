@@ -1179,6 +1179,25 @@ a:hover {
   line-height: 1.5;
 }
 
+.knowledge-import-error-detail {
+  display: grid;
+  gap: 4px;
+  min-width: 240px;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.knowledge-import-error-detail strong {
+  color: var(--danger);
+}
+
+.knowledge-import-error-detail button {
+  width: fit-content;
+  margin-top: 4px;
+}
+
 .knowledge-import-stages {
   display: grid;
   gap: 2px;
@@ -1694,7 +1713,7 @@ a:hover {
 }
 
 .catalog-actions-column {
-  width: 330px;
+  width: 430px;
   text-align: right;
 }
 
@@ -1713,6 +1732,47 @@ a:hover {
 
 .catalog-row-actions {
   flex-wrap: wrap;
+}
+
+.catalog-inline-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.catalog-detail-link {
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.knowledge-panel .actions-column {
+  width: 430px;
+}
+
+.knowledge-panel .row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.selection-column {
+  width: 44px;
+  padding-right: 4px !important;
+  padding-left: 12px !important;
+}
+
+.knowledge-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+
+.knowledge-bulk-toolbar strong {
+  margin-right: auto;
+  font-size: 13px;
 }
 
 .inline-loading {

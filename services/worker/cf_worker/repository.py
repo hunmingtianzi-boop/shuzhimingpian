@@ -481,8 +481,6 @@ class PostgresOutboxRepository:
                     """
                     UPDATE knowledge_import_items
                     SET status=:status,
-                        payload_ciphertext=CASE WHEN :dead_letter THEN NULL
-                          ELSE payload_ciphertext END,
                         next_attempt_at=CASE WHEN :dead_letter THEN next_attempt_at
                           ELSE clock_timestamp()+make_interval(secs => :backoff) END,
                         completed_at=CASE WHEN :dead_letter THEN clock_timestamp() ELSE NULL END,

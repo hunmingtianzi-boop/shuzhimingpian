@@ -702,11 +702,16 @@ export type PlatformOnboardingImportItemStatus =
 
 export type PlatformOnboardingImportItem = {
   id: string;
+  batchId?: string;
+  batchVersion?: number;
   fileName: string;
-  sourceType: string;
+  sourceType?: string;
   status: PlatformOnboardingImportItemStatus;
   errorCode?: string;
-  createdAt: string;
+  attempts?: number;
+  maxAttempts?: number;
+  retryAvailable?: boolean;
+  createdAt?: string;
   completedAt?: string;
 };
 

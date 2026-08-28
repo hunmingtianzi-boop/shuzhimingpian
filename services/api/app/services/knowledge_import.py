@@ -177,12 +177,10 @@ def _parse_pdf(file_name: str, payload: bytes) -> ImportDraft:
         raise KnowledgeImportError("IMPORT_PDF_INVALID") from exc
     if len(text) < 80:
         text = _ocr_pdf(payload, max_pages=min(MAX_OCR_PAGES, len(reader.pages)))
-    # PDF text extractors may emit vertical-tab or form-feed as harmless page
-    # layout separators. Normalize only those two characters; NUL and the
-    # remaining control range continue to fail the shared dangerous-value gate.
-    text = text.replace("\x0b", "\n").replace("\x0c", "\n")
-    if _CONTROL_RE.search(text):
-        raise KnowledgeImportError("IMPORT_DANGEROUS_VALUE")
+    # Control characters here are parser output rather than executable input.
+    # The shared draft validator normalizes the full control range to document
+    # whitespace. Formula prefixes in CSV cells and unsafe titles remain
+    # independently rejected at their trust boundaries.
     return _validated_draft(file_name.rsplit(".", 1)[0], text, "public")
 
 

@@ -44,11 +44,37 @@ import styles from "./PlatformOnboardingPage.module.css";
 
 export type PlatformOnboardingImportItem = {
   id: string;
+  batchId?: string;
+  batchVersion?: number;
   fileName: string;
   status: "pending" | "processing" | "completed" | "failed" | "dead_letter";
   errorCode?: string;
   errorMessage?: string;
+  sourceType?: string;
+  createdAt?: string;
+  attempts?: number;
+  maxAttempts?: number;
+  retryAvailable?: boolean;
 };
+
+const importFailureDetails: Record<string, { stage: string; reason: string }> = {
+  IMPORT_DANGEROUS_VALUE: {
+    stage: "文件解析与安全检查",
+    reason: "解析结果含异常控制字符，旧版安全规则因此中止了处理。新版会将解析器产生的控制字符规范化后再校验。",
+  },
+  IMPORT_ENCRYPTED_PDF: { stage: "PDF 解密", reason: "PDF 已加密，系统无法读取正文。请上传未加密版本。" },
+  IMPORT_PDF_INVALID: { stage: "PDF 解析", reason: "PDF 结构损坏或不符合标准，解析器无法读取。" },
+  IMPORT_DECRYPT_FAILED: { stage: "原始文件解密", reason: "服务端无法解密已保存的原始文件，需要管理员检查加密配置。" },
+  IMPORT_PAYLOAD_TAMPERED: { stage: "文件完整性校验", reason: "文件摘要与保存内容不一致，为避免使用异常数据已中止。" },
+  IMPORT_EMPTY_TEXT: { stage: "正文提取", reason: "文件中没有提取到可用文字。扫描件可尝试转为清晰 PDF 或图片后重新上传。" },
+};
+
+function importFailureDetail(item: PlatformOnboardingImportItem) {
+  return importFailureDetails[item.errorCode ?? ""] ?? {
+    stage: item.status === "dead_letter" ? "文件解析" : "后台处理",
+    reason: item.errorMessage ?? "处理过程中发生未分类错误。可安全重试；若仍失败，请保留错误码交由管理员排查。",
+  };
+}
 
 export type PlatformOnboardingOperationError = {
   status?: number;
@@ -109,6 +135,14 @@ export type PlatformOnboardingPageProps = {
     displayName: string,
   ) => Promise<void>;
   onUpload: (onboardingSessionId: string, files: File[]) => Promise<void>;
+  onRetryImport?: (
+    onboardingSessionId: string,
+    item: PlatformOnboardingImportItem,
+  ) => Promise<void>;
+  onClearImport?: (
+    onboardingSessionId: string,
+    item: PlatformOnboardingImportItem,
+  ) => Promise<void>;
   onGenerate: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
   onSynthesize?: (onboardingSessionId: string, expectedVersion: number) => Promise<void>;
   onUpdateCandidate?: (
@@ -145,6 +179,8 @@ type BusyOperation =
   | "start"
   | "rename"
   | "upload"
+  | "retry-import"
+  | "clear-import"
   | "generate"
   | "synthesize"
   | "candidate"
@@ -719,6 +755,8 @@ export function PlatformOnboardingPage({
   onOpenSession,
   onRename,
   onUpload,
+  onRetryImport,
+  onClearImport,
   onGenerate,
   onSynthesize,
   onUpdateCandidate,
@@ -1463,16 +1501,44 @@ export function PlatformOnboardingPage({
                   </div>
                   <ProgressBar value={importProgress} aria-label="资料解析进度" />
                   <ul>
-                    {importItems.map((item) => (
-                      <li key={item.id}>
+                    {importItems.map((item) => {
+                      const failure = importFailureDetail(item);
+                      const failed = item.status === "failed" || item.status === "dead_letter";
+                      return <li key={item.id}>
                         <div>
                           <strong>{item.fileName}</strong>
-                          {item.errorMessage && <span>{item.errorMessage}</span>}
-                          {item.errorCode && <code>{item.errorCode}</code>}
+                          {failed && <span>中断位置：{failure.stage}</span>}
+                          {failed && <span>原因：{failure.reason}</span>}
+                          {failed && <span>处理尝试：{item.attempts ?? 0}/{item.maxAttempts ?? 6} 次</span>}
+                          {item.errorCode && <code>错误码：{item.errorCode}</code>}
+                          {failed && item.retryAvailable && onRetryImport && (
+                            <Button
+                              size="small"
+                              icon={<ArrowClockwise24Regular />}
+                              disabled={busy === "retry-import"}
+                              onClick={() => void run("retry-import", () => onRetryImport(session!.id, item))}
+                            >{busy === "retry-import" ? "正在重新排队" : "安全重试"}</Button>
+                          )}
+                          {failed && item.retryAvailable && onClearImport && (
+                            <Button
+                              appearance="subtle"
+                              size="small"
+                              icon={<Dismiss24Regular />}
+                              disabled={busy === "clear-import"}
+                              onClick={() => {
+                                if (window.confirm("清除后将无法原地重试，但失败记录和审计信息会保留。确定清除原文件吗？")) {
+                                  void run("clear-import", () => onClearImport(session!.id, item));
+                                }
+                              }}
+                            >清除原文件</Button>
+                          )}
+                          {failed && !item.retryAvailable && (
+                            <span>此旧任务的原始文件已清理，无法原地重试。请在上方重新选择并上传该文件。</span>
+                          )}
                         </div>
                         <StatusBadge status={item.status} />
-                      </li>
-                    ))}
+                      </li>;
+                    })}
                   </ul>
                 </div>
               )}
@@ -1547,7 +1613,7 @@ export function PlatformOnboardingPage({
                       <div>
                         <span>智能候选</span>
                         <h3 id="onboarding-candidate-title">逐条确认资料归类</h3>
-                        <p>左侧选择候选，右侧编辑；确认后写入企业后台草稿，不会自动发布。</p>
+                        <p>目标企业：{review.legalName || session.tenantName || "当前企业"}。左侧选择候选，右侧编辑；确认后写入对应的企业资料、产品、案例或 FAQ 草稿，不会自动发布。</p>
                       </div>
                       <strong>{sourceCandidates.length} 条</strong>
                     </div>
@@ -1814,7 +1880,7 @@ export function PlatformOnboardingPage({
                       <div>
                         <span>跨资料候选</span>
                         <h3 id="synthesis-candidate-title">共同补充后的知识候选</h3>
-                        <p>同一事项已合并互补；每条仍可编辑、查看来源并确认写入企业工作台草稿。</p>
+                        <p>目标企业：{review.legalName || session.tenantName || "当前企业"}。同一事项已合并互补；每条仍可编辑、查看来源并确认写入对应工作台草稿，不会自动发布。</p>
                       </div>
                       <strong>{synthesisCandidates.length} 条</strong>
                     </div>
