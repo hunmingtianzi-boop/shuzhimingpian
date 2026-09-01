@@ -166,10 +166,11 @@ def test_wecom_suite_authorization_is_exposed_only_for_the_claimed_scope() -> No
     sql = WECOM_SUITE_DELIVERY_MIGRATION.read_text(encoding="utf-8").lower()
     assert "security definer" in sql
     assert "set search_path = pg_catalog, public, app" in sql
-    assert "to_regclass('public.wecom_enterprise_scopes')" in sql
-    assert "to_regclass('public.wecom_enterprise_authorizations')" in sql
+    assert "from public.wecom_enterprise_scopes as scope" in sql
+    assert "join public.wecom_enterprise_authorizations as authz" in sql
     assert "scope.tenant_id = p_tenant_id" in sql
     assert "scope.company_id = p_company_id" in sql
+    assert "authz.suite_id_hmac = p_suite_id_hmac" in sql
     assert "authz.status = 'active'" in sql
     assert "grant execute on function" in sql
     assert "cf_ai_card_worker" in sql

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ CONTRACT_PATH = ROOT / "packages" / "contracts" / "openapi.json"
 
 sys.path.insert(0, str(API_ROOT))
 
-from app.main import app
+app = import_module("app.main").app
 
 
 def _without_runtime_prefix(path: str) -> str:

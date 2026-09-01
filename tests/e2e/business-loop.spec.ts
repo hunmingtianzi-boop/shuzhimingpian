@@ -264,6 +264,15 @@ async function mockAdminApi(page: Page) {
         },
       });
     }
+    if (method === "GET" && path === "/platform/company-aggregates") {
+      return json(route, { data: [] });
+    }
+    if (method === "GET" && path === "/platform/tasks") {
+      return json(route, { data: [] });
+    }
+    if (method === "GET" && path === "/platform/health") {
+      return json(route, { data: [] });
+    }
     if (method === "GET" && path === "/platform/enterprises") {
       return json(route, { data: enterprises, total: enterprises.length, limit: 50, offset: 0 });
     }
@@ -271,18 +280,35 @@ async function mockAdminApi(page: Page) {
       createBody = request.postDataJSON() as Record<string, unknown>;
       const created = {
         tenant_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        tenant_slug: String(createBody.tenant_slug),
-        tenant_name: String(createBody.tenant_name),
+        tenant_slug: "new-enterprise",
+        tenant_name: "新企业有限公司",
         company_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-        company_name: String(createBody.company_name),
-        company_status: "active",
+        legal_name: String(createBody.legal_name),
+        short_name: String(createBody.short_name),
+        subject_type: String(createBody.subject_type),
+        social_credit_code: String(createBody.social_credit_code),
+        business_tenant_key: "91330100E2ENEW0001",
+        status: "active",
         admin_user_id: "12121212-1212-4212-8212-121212121212",
         admin_membership_id: "13131313-1313-4313-8313-131313131313",
-        initial_card_id: "14141414-1414-4414-8414-141414141414",
-        initial_card_slug: "c-e2e-random-slug",
+        credential_delivery: {
+          account: String(createBody.admin_account),
+          temporary_password: "Generated-Once-Password-2026!",
+          expires_at: "2026-07-12T03:00:00Z",
+        },
         created_at: "2026-07-11T03:00:00Z",
       };
-      enterprises.push({ ...created, status: "active" });
+      enterprises.push({
+        tenant_id: created.tenant_id,
+        tenant_slug: created.tenant_slug,
+        tenant_name: created.tenant_name,
+        company_id: created.company_id,
+        company_name: created.legal_name,
+        subject_type: created.subject_type,
+        social_credit_code: created.social_credit_code,
+        status: created.status,
+        created_at: created.created_at,
+      });
       return json(route, { data: created }, 201);
     }
     unhandled.push(`${method} ${path}`);
@@ -298,32 +324,31 @@ test("platform administrator signs in and creates an isolated enterprise", async
   await page.getByLabel("账号").fill("platform@example.test");
   await page.getByLabel("密码").fill("Local-Platform-Password-2026!");
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "平台运营中心" })).toBeVisible();
-  await page.getByRole("link", { name: "企业管理" }).click();
+  await expect(page.getByRole("heading", { name: "平台运营概览" })).toBeVisible();
+  await page.getByRole("link", { name: "企业中心" }).click();
   await expect(page.getByRole("heading", { name: "企业中心" })).toBeVisible();
   await expect(
     page
       .getByRole("table", { name: "平台企业列表" })
-      .getByRole("cell", { name: "现有企业", exact: true }),
+      .getByRole("button", { name: "现有企业", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "直接开通空白企业" }).click();
-  await page.getByLabel("租户标识").fill("new-enterprise");
-  await page.getByLabel("租户名称").fill("新企业租户");
-  await page.getByLabel("企业名称").fill("新企业有限公司");
+  await page.getByRole("button", { name: "直接开通企业" }).click();
+  await page.getByLabel("企业正式名称").fill("新企业有限公司");
+  await page.getByLabel("企业简称").fill("新企业");
+  await page.getByLabel("统一社会信用代码").fill("91330100E2ENEW0001");
   await page.getByLabel("行业").fill("企业服务");
   await page.getByLabel("管理员账号").fill("admin@new-enterprise.test");
   await page.getByLabel("管理员姓名").fill("新企业管理员");
-  await page.getByLabel("初始密码").fill("Initial-Enterprise-Password-2026!");
-  await page.getByLabel("初始名片标题").fill("新企业数智名片");
   await page.getByRole("button", { name: "确认开通" }).click();
 
   await expect(page.getByText(/企业 新企业有限公司 已开通/)).toBeVisible();
+  await expect(page.getByText("Generated-Once-Password-2026!", { exact: true })).toBeVisible();
   expect(mock.createBody()).toMatchObject({
-    tenant_slug: "new-enterprise",
+    legal_name: "新企业有限公司",
+    social_credit_code: "91330100E2ENEW0001",
     admin_account: "admin@new-enterprise.test",
-    admin_password: "Initial-Enterprise-Password-2026!",
+    default_plan_code: "starter",
   });
-  await expect(page.locator("body")).not.toContainText("Initial-Enterprise-Password-2026!");
   expect(mock.unhandled).toEqual([]);
 });
