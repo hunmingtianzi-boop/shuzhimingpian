@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.commercial_schemas import (
@@ -21,9 +22,10 @@ from app.commercial.entitlements import (
     commercial_settings_payload,
     feature_definition,
     limit_definition,
+    monthly_usage_period,
     resolve_commercial_entitlements,
 )
-from app.db.models import Company, MembershipRole
+from app.db.models import Company, MembershipRole, Message, MessageRole, MessageStatus
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
 
@@ -63,7 +65,17 @@ class CommercialStore:
             )
             if company is None:
                 raise ApiError(404, "ENTERPRISE_NOT_FOUND", "企业不存在")
-            return _record(company)
+            usage, period_started_at, period_ends_at = await _limit_usage(
+                session,
+                tenant_id=company.tenant_id,
+                company_id=company.id,
+            )
+            return _record(
+                company,
+                limit_usage=usage,
+                usage_period_started_at=period_started_at,
+                usage_period_ends_at=period_ends_at,
+            )
 
     async def update_entitlements(
         self,
@@ -158,7 +170,17 @@ class CommercialStore:
                     "company_version": company.version,
                 },
             )
-            return _record(company)
+            usage, period_started_at, period_ends_at = await _limit_usage(
+                session,
+                tenant_id=company.tenant_id,
+                company_id=company.id,
+            )
+            return _record(
+                company,
+                limit_usage=usage,
+                usage_period_started_at=period_started_at,
+                usage_period_ends_at=period_ends_at,
+            )
 
     @staticmethod
     async def _set_scope(session: AsyncSession, actor: CommercialActor) -> None:
@@ -171,8 +193,49 @@ class CommercialStore:
         )
 
 
-def _record(company: Company) -> CommercialEntitlementRecord:
+async def _limit_usage(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    company_id: uuid.UUID,
+) -> tuple[dict[str, int], datetime, datetime]:
+    period_started_at, period_ends_at = monthly_usage_period()
+    ai_conversations = int(
+        await session.scalar(
+            select(func.count(Message.id)).where(
+                Message.tenant_id == tenant_id,
+                Message.company_id == company_id,
+                Message.role == MessageRole.ASSISTANT,
+                Message.status != MessageStatus.FAILED,
+                Message.created_at >= period_started_at,
+                Message.created_at < period_ends_at,
+            )
+        )
+        or 0
+    )
+    return (
+        {"ai.conversations.monthly": ai_conversations},
+        period_started_at,
+        period_ends_at,
+    )
+
+
+def _record(
+    company: Company,
+    *,
+    limit_usage: dict[str, int],
+    usage_period_started_at: datetime,
+    usage_period_ends_at: datetime,
+) -> CommercialEntitlementRecord:
     state = resolve_commercial_entitlements(company.settings)
+    limit_remaining = {
+        limit_id: (
+            None
+            if state.limits.get(limit_id) is None
+            else max(int(state.limits[limit_id] or 0) - used, 0)
+        )
+        for limit_id, used in limit_usage.items()
+    }
     return CommercialEntitlementRecord(
         company_id=company.id,
         company_version=company.version,
@@ -184,6 +247,10 @@ def _record(company: Company) -> CommercialEntitlementRecord:
         features=state.features,
         limit_overrides=state.limit_overrides,
         limits=state.limits,
+        limit_usage=limit_usage,
+        limit_remaining=limit_remaining,
+        usage_period_started_at=usage_period_started_at,
+        usage_period_ends_at=usage_period_ends_at,
         plans=[
             CommercialPlanRecord(
                 code=plan.code,

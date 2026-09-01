@@ -76,7 +76,9 @@ def upgrade() -> None:
                    pg_catalog.min(created_at) AS created_at,
                    pg_catalog.max(updated_at) AS updated_at,
                    pg_catalog.count(*)::integer AS source_count,
-                   pg_catalog.count(*) FILTER (WHERE status <> 'processing')::integer AS processed_count
+                   pg_catalog.count(*) FILTER (
+                     WHERE status <> 'processing'
+                   )::integer AS processed_count
             FROM selected_runs
             GROUP BY session_id
           )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -118,32 +119,52 @@ class WeComSuiteStore:
                 "WECOM_ENTERPRISE_NOT_AUTHORIZED",
                 "该企业尚未授权安装数智名片应用",
             )
-        stored_corp_id = self._cipher.decrypt(row["auth_corpid_ciphertext"])
+        stored = self._authorization_from_row(row)
+        stored_corp_id = stored.auth_corpid
         if stored_corp_id != auth_corpid:
             raise ApiError(403, "WECOM_ENTERPRISE_NOT_AUTHORIZED", "企业授权校验失败")
-        metadata_raw = self._cipher.decrypt(row["authorization_ciphertext"])
-        try:
-            metadata = json.loads(metadata_raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("WeCom authorization metadata is invalid") from exc
-        corp_info = metadata.get("auth_corp_info") if isinstance(metadata, dict) else None
-        corp_name = corp_info.get("corp_name") if isinstance(corp_info, dict) else None
-        return WeComStoredAuthorization(
-            id=row["authorization_id"],
-            auth_corpid=stored_corp_id,
-            permanent_code=self._cipher.decrypt(row["permanent_code_ciphertext"]),
-            corp_name=(
-                corp_name[:200]
-                if isinstance(corp_name, str) and corp_name
-                else "企业微信企业"
-            ),
-            agent_id=row["agent_id"] if isinstance(row["agent_id"], int) else None,
-            authorizer_user_id=(
-                self._cipher.decrypt(row["authorizer_user_id_ciphertext"])
-                if row["authorizer_user_id_ciphertext"] is not None
-                else None
-            ),
-        )
+        return stored
+
+    async def get_authorization_for_scope(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        company_id: uuid.UUID,
+    ) -> WeComStoredAuthorization:
+        """Resolve the active provider authorization bound to one exact company."""
+
+        async with self._sessions() as session, session.begin():
+            result = await session.execute(
+                text(
+                    """
+                    SELECT authorization_id,
+                           auth_corpid_ciphertext,
+                           permanent_code_ciphertext,
+                           authorization_ciphertext,
+                           authorizer_user_id_ciphertext,
+                           encryption_key_ref,
+                           agent_id
+                    FROM app.get_wecom_enterprise_authorization_for_scope(
+                      :suite_hash,
+                      :tenant_id,
+                      :company_id
+                    )
+                    """
+                ),
+                {
+                    "suite_hash": self.suite_hash(),
+                    "tenant_id": tenant_id,
+                    "company_id": company_id,
+                },
+            )
+            row = result.mappings().one_or_none()
+        if row is None:
+            raise ApiError(
+                403,
+                "WECOM_ENTERPRISE_NOT_AUTHORIZED",
+                "该名片所属企业尚未授权安装数智名片应用",
+            )
+        return self._authorization_from_row(row)
 
     async def revoke_authorization(self, *, auth_corpid: str) -> bool:
         async with self._sessions() as session, session.begin():
@@ -196,6 +217,33 @@ class WeComSuiteStore:
 
     def corp_hash(self, corp_id: str) -> str:
         return self._cipher.hmac(f"wecom-corp:{corp_id}")
+
+    def _authorization_from_row(
+        self, row: Mapping[str, object]
+    ) -> WeComStoredAuthorization:
+        metadata_raw = self._cipher.decrypt(row["authorization_ciphertext"])
+        try:
+            metadata = json.loads(metadata_raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("WeCom authorization metadata is invalid") from exc
+        corp_info = metadata.get("auth_corp_info") if isinstance(metadata, dict) else None
+        corp_name = corp_info.get("corp_name") if isinstance(corp_info, dict) else None
+        return WeComStoredAuthorization(
+            id=row["authorization_id"],
+            auth_corpid=self._cipher.decrypt(row["auth_corpid_ciphertext"]),
+            permanent_code=self._cipher.decrypt(row["permanent_code_ciphertext"]),
+            corp_name=(
+                corp_name[:200]
+                if isinstance(corp_name, str) and corp_name
+                else "企业微信企业"
+            ),
+            agent_id=row["agent_id"] if isinstance(row["agent_id"], int) else None,
+            authorizer_user_id=(
+                self._cipher.decrypt(row["authorizer_user_id_ciphertext"])
+                if row["authorizer_user_id_ciphertext"] is not None
+                else None
+            ),
+        )
 
 
 __all__ = ["WeComStoredAuthorization", "WeComSuiteStore"]

@@ -234,6 +234,16 @@ describe("EnterpriseTemplateEditor", () => {
     );
   });
 
+  it("opens a preset directly on the executive template", async () => {
+    vi.spyOn(adminApi, "getEnterpriseTemplate").mockResolvedValue(template());
+    vi.spyOn(adminApi, "listCaseStudies").mockResolvedValue([]);
+    vi.spyOn(adminApi, "getCompanyProfile").mockResolvedValue(companyProfile);
+    renderEditor({ initialThemeKey: "executive" });
+
+    expect(await screen.findByLabelText("视觉模板")).toHaveValue("executive");
+    expect(screen.getByText(/已应用黑金商务名片模板/)).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.spyOn(adminApi, "listProducts").mockResolvedValue([]);
     vi.spyOn(adminApi, "listSelectableFaqDocuments").mockResolvedValue([]);

@@ -290,6 +290,7 @@ function TemplateCanvasComponent({
               title: identity.cardKind === "employee" ? "员工数字名片" : "企业官方名片",
               primaryAction: { label: "咨询 AI", onClick: () => setDraftView({ kind: "assistant" }) },
               secondaryAction: { label: "提交合作需求", onClick: () => undefined },
+              inlineIdentityActions: themeKey === "executive",
             }}
             directory={{
               ariaLabel: "企业名片内容导航预览",

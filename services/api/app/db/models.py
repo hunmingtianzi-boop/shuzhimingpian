@@ -1550,6 +1550,12 @@ class Message(UUIDPrimaryKeyMixin, CompanyScopeMixin, Base):
         UniqueConstraint("tenant_id", "company_id", "id", name="uq_messages_scope_id"),
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
         Index(
+            "ix_messages_company_ai_quota",
+            "company_id",
+            "created_at",
+            postgresql_where=text("role = 'assistant' AND status <> 'failed'"),
+        ),
+        Index(
             "uq_messages_client_message",
             "conversation_id",
             "client_message_id",

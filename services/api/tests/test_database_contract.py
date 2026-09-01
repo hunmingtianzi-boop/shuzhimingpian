@@ -225,6 +225,14 @@ def test_wecom_first_login_bootstrap_uses_narrow_security_definer_boundary(
     )[1].split("create function app.resolve_wecom_identity", 1)[0]
 
 
+def test_legacy_company_creation_gets_a_business_tenant_key(
+    migration_sql: str,
+) -> None:
+    assert "create function app.ensure_company_business_tenant_key" in migration_sql
+    assert "create trigger trg_companies_ensure_business_tenant_key" in migration_sql
+    assert "before insert on companies" in migration_sql
+
+
 def test_wecom_third_party_authorization_is_encrypted_and_function_only(
     migration_sql: str,
 ) -> None:

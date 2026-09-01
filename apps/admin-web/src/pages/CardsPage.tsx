@@ -33,7 +33,12 @@ import { useState } from "react";
 import { adminApi } from "../api/adminApi";
 import { ApiError } from "../api/client";
 import { memberApi } from "../api/memberApi";
-import type { EnterpriseTemplate, ManagedCard, ManagedCardInput } from "../api/types";
+import type {
+  EnterpriseTemplate,
+  EnterpriseTemplateThemeKey,
+  ManagedCard,
+  ManagedCardInput,
+} from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionConfirmDialog } from "../components/ActionConfirmDialog";
 import { CardEditor, syncEnterpriseLogo } from "../components/CardEditor";
@@ -222,6 +227,49 @@ function CardTable({
   );
 }
 
+export function CardTemplateLibraryPanel({
+  canManageEnterpriseCards,
+  onSelect,
+}: {
+  canManageEnterpriseCards: boolean;
+  onSelect: (kind: ManagedCard["cardKind"], themeKey: EnterpriseTemplateThemeKey) => void;
+}) {
+  return (
+    <section
+      className="content-panel card-template-library-panel"
+      aria-labelledby="card-template-library-title"
+    >
+      <div className="card-template-library-copy">
+        <span className="card-template-library-label">名片模板</span>
+        <h2 id="card-template-library-title">黑金商务名片</h2>
+        <p>适合董事长、创始人、高管与商务负责人。包含个人介绍、企业能力、AI 客服和分享入口。</p>
+        <div className="card-template-library-actions">
+          <Button appearance="primary" onClick={() => onSelect("employee", "executive")}>
+            设置员工默认
+          </Button>
+          {canManageEnterpriseCards && (
+            <Button appearance="secondary" onClick={() => onSelect("enterprise", "executive")}>
+              设置企业默认
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="card-template-library-preview" aria-label="黑金商务名片模板预览">
+        <div className="card-template-preview-portrait" aria-hidden="true">CF</div>
+        <div>
+          <small>商务人物名片</small>
+          <strong>姓名与职务</strong>
+          <span>公司与业务身份</span>
+        </div>
+        <div className="card-template-preview-actions" aria-hidden="true">
+          <i>联系本人</i>
+          <i>AI 客服</i>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function CardsPage() {
   const auth = useAuth();
   const resource = useResource(() => adminApi.listManagedCards());
@@ -231,6 +279,7 @@ export function CardsPage() {
   const [creatingFromComposer, setCreatingFromComposer] = useState(false);
   const [templateTarget, setTemplateTarget] = useState<ManagedCard>();
   const [defaultTemplateKind, setDefaultTemplateKind] = useState<ManagedCard["cardKind"]>();
+  const [initialTemplateTheme, setInitialTemplateTheme] = useState<EnterpriseTemplateThemeKey>();
   const [createKind, setCreateKind] = useState<ManagedCard["cardKind"]>("enterprise");
   const [shareTarget, setShareTarget] = useState<ManagedCard>();
   const [overrideTarget, setOverrideTarget] = useState<ManagedCard>();
@@ -249,6 +298,21 @@ export function CardsPage() {
     setCreationDraft(undefined);
     setNotice(undefined);
     setActionError(undefined);
+  };
+
+  const openDefaultTemplate = (
+    kind: ManagedCard["cardKind"],
+    themeKey?: EnterpriseTemplateThemeKey,
+  ) => {
+    setTemplateTarget(undefined);
+    setInitialTemplateTheme(themeKey);
+    setDefaultTemplateKind(kind);
+  };
+
+  const openCardTemplate = (card: ManagedCard) => {
+    setInitialTemplateTheme(undefined);
+    setDefaultTemplateKind(undefined);
+    setTemplateTarget(card);
   };
 
   const saved = () => {
@@ -446,11 +510,11 @@ export function CardsPage() {
               >
                 新建员工名片
               </Button>
-              <Button appearance="secondary" onClick={() => setDefaultTemplateKind("employee")}>
+              <Button appearance="secondary" onClick={() => openDefaultTemplate("employee")}>
                 员工默认配置
               </Button>
               {canManageEnterpriseCards && (
-                <Button appearance="secondary" onClick={() => setDefaultTemplateKind("enterprise")}>
+                <Button appearance="secondary" onClick={() => openDefaultTemplate("enterprise")}>
                   企业默认配置
                 </Button>
               )}
@@ -471,6 +535,13 @@ export function CardsPage() {
             {actionError.requestId ? `（请求 ${actionError.requestId}）` : ""}
           </MessageBarBody>
         </MessageBar>
+      )}
+
+      {resource.status !== "permission" && (
+        <CardTemplateLibraryPanel
+          canManageEnterpriseCards={canManageEnterpriseCards}
+          onSelect={openDefaultTemplate}
+        />
       )}
 
       {resource.status !== "ready" && (
@@ -528,7 +599,7 @@ export function CardsPage() {
               kind="enterprise"
               onCreate={canManageEnterpriseCards ? () => openCreate("enterprise") : undefined}
               onEdit={edit}
-              onTemplate={setTemplateTarget}
+              onTemplate={openCardTemplate}
               onShare={share}
               onOverride={setOverrideTarget}
               onWeCom={provisionWeCom}
@@ -551,7 +622,7 @@ export function CardsPage() {
               kind="employee"
               onCreate={() => openCreate("employee")}
               onEdit={edit}
-              onTemplate={setTemplateTarget}
+              onTemplate={openCardTemplate}
               onShare={share}
               onOverride={setOverrideTarget}
               onWeCom={provisionWeCom}
@@ -564,6 +635,7 @@ export function CardsPage() {
       <EnterpriseTemplateEditor
         card={templateTarget}
         defaultKind={defaultTemplateKind}
+        initialThemeKey={initialTemplateTheme}
         creationDraft={creationDraft ? {
           cardKind: creationDraft.input.cardKind,
           identityPreview: creationDraft.identityPreview,
@@ -573,6 +645,7 @@ export function CardsPage() {
           if (creatingFromComposer) return;
           setTemplateTarget(undefined);
           setDefaultTemplateKind(undefined);
+          setInitialTemplateTheme(undefined);
           setCreationDraft(undefined);
         }}
         onDraftConfirm={createFromComposer}
@@ -583,10 +656,12 @@ export function CardsPage() {
         onRequestPublish={(card) => {
           setTemplateTarget(undefined);
           setDefaultTemplateKind(undefined);
+          setInitialTemplateTheme(undefined);
           requestAction("publish", card);
         }}
         onSaved={(card) => {
           if (card) setTemplateTarget(card);
+          setInitialTemplateTheme(undefined);
           setNotice(card ? "名片内容草稿已保存；公开页仍保持上一次发布内容。" : "默认配置已保存；之后新建的同类名片会自动使用它。");
           resource.reload();
         }}

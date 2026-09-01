@@ -219,6 +219,14 @@ function commercialEntitlements(value: unknown): CommercialEntitlements {
       ),
     );
   };
+  const usageRecord = (candidate: unknown): Record<string, number> => {
+    if (!isRecord(candidate)) return {};
+    return Object.fromEntries(
+      Object.entries(candidate).filter((entry): entry is [string, number] =>
+        typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1] >= 0,
+      ),
+    );
+  };
   const contractPriceCny = typeof rawPrice === "number"
     ? rawPrice
     : typeof rawPrice === "string" && Number.isFinite(Number(rawPrice))
@@ -243,6 +251,10 @@ function commercialEntitlements(value: unknown): CommercialEntitlements {
     features: booleanRecord(value.features),
     limitOverrides: limitRecord(value.limit_overrides),
     limits: limitRecord(value.limits),
+    limitUsage: usageRecord(value.limit_usage),
+    limitRemaining: limitRecord(value.limit_remaining),
+    usagePeriodStartedAt: optionalString(value.usage_period_started_at, "商业授权 usage_period_started_at"),
+    usagePeriodEndsAt: optionalString(value.usage_period_ends_at, "商业授权 usage_period_ends_at"),
     plans: plansValue.map((item) => {
       if (!isRecord(item)) invalid("商业套餐");
       return {

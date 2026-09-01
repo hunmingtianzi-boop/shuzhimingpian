@@ -47,6 +47,10 @@ class CommercialEntitlementRecord(CommercialModel):
     features: dict[str, bool]
     limit_overrides: dict[str, int | None]
     limits: dict[str, int | None]
+    limit_usage: dict[str, int]
+    limit_remaining: dict[str, int | None]
+    usage_period_started_at: datetime
+    usage_period_ends_at: datetime
     plans: list[CommercialPlanRecord]
     feature_catalog: list[CommercialFeatureRecord]
     limit_catalog: list[CommercialLimitRecord]

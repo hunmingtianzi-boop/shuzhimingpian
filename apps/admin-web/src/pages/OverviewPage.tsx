@@ -20,6 +20,7 @@ import type {
   DashboardOverview,
   EmployeeAnalyticsPage,
   EnterpriseReadiness,
+  CommercialEntitlements,
   TopicAnalysis,
 } from "../api/types";
 import { workflowApi } from "../api/workflowApi";
@@ -46,6 +47,37 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
+  );
+}
+
+function AiQuotaPanel({ entitlements }: { entitlements: CommercialEntitlements }) {
+  const limitId = "ai.conversations.monthly";
+  const limit = entitlements.limits[limitId];
+  const used = entitlements.limitUsage?.[limitId];
+  if (used === undefined) return null;
+  const remaining = limit === null ? null : Math.max((limit ?? 0) - used, 0);
+  const usageRate = limit && limit > 0 ? Math.min(used / limit, 1) : 0;
+  return (
+    <section className="content-panel" aria-labelledby="ai-quota-title">
+      <div className="section-heading-inline">
+        <div>
+          <h2 id="ai-quota-title">AI 调用额度</h2>
+          <p>当前企业按自然月计费，访客每提交一个问题计一次有效调用。</p>
+        </div>
+        <span>{entitlements.planCode === "starter" ? "基础版" : entitlements.planCode === "professional" ? "专业版" : "企业版"}</span>
+      </div>
+      <div className="dashboard-metrics">
+        <Metric label="本月已用" value={`${used.toLocaleString()} 次`} />
+        <Metric label="本月额度" value={limit === null ? "不限" : `${(limit ?? 0).toLocaleString()} 次`} />
+        <Metric label="剩余额度" value={remaining === null ? "不限" : `${remaining.toLocaleString()} 次`} />
+        <Metric label="使用率" value={limit === null ? "不限" : formatRate(usageRate)} />
+      </div>
+      {entitlements.usagePeriodEndsAt ? (
+        <div className="dashboard-generated">
+          下次重置：{new Date(entitlements.usagePeriodEndsAt).toLocaleString("zh-CN")}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -312,6 +344,10 @@ function DashboardContent({ data }: { data: DashboardOverview }) {
           服务端统计生成于 {formatTimestamp(data.generatedAt)}
         </div>
       </section>
+
+      {auth.user?.role === "company_admin" && auth.entitlements ? (
+        <AiQuotaPanel entitlements={auth.entitlements} />
+      ) : null}
 
       {auth.user?.role === "company_admin" && <EnterpriseReadinessPanel />}
 

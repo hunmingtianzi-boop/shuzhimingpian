@@ -230,12 +230,25 @@ export function CommercialEntitlementPanel({
               const planDefault = limit.planDefaults[planCode];
               const effective = overridden ? override : planDefault;
               const mode = !overridden ? "plan" : override === null ? "unlimited" : "custom";
+              const used = entitlement.limitUsage?.[limit.id];
+              const remaining = used === undefined || effective === null
+                ? undefined
+                : Math.max(effective - used, 0);
               return (
                 <div className={styles.entitlementFeature} key={limit.id}>
                   <div>
                     <strong>{limit.name}</strong>
                     <p>{limit.description}</p>
                     <small>当前生效：{effective === null ? "不限" : `${effective.toLocaleString()} ${limit.unit}`}</small>
+                    {used !== undefined ? (
+                      <small className={styles.entitlementUsage}>
+                        本月已用 {used.toLocaleString()} 次
+                        {effective === null ? " · 剩余额度不限" : ` · 剩余 ${remaining?.toLocaleString() ?? 0} 次`}
+                        {entitlement.usagePeriodEndsAt
+                          ? ` · ${new Date(entitlement.usagePeriodEndsAt).toLocaleDateString("zh-CN")} 重置`
+                          : ""}
+                      </small>
+                    ) : null}
                   </div>
                   <div className={styles.entitlementLimitControl}>
                     <Select

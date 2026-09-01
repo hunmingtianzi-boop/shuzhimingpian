@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Mapping
+from zoneinfo import ZoneInfo
 
 PlanCode = Literal["starter", "professional", "enterprise"]
 BillingCycle = Literal["monthly", "yearly", "contract"]
@@ -318,6 +320,19 @@ def limit_value(company_settings: Mapping[str, Any] | None, limit_id: str) -> in
     return resolve_commercial_entitlements(company_settings).limits[limit_id]
 
 
+def monthly_usage_period(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """Return the China business-month window as UTC timestamps."""
+
+    business_timezone = ZoneInfo("Asia/Shanghai")
+    current = (now or datetime.now(UTC)).astimezone(business_timezone)
+    local_started_at = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if local_started_at.month == 12:
+        local_ends_at = local_started_at.replace(year=local_started_at.year + 1, month=1)
+    else:
+        local_ends_at = local_started_at.replace(month=local_started_at.month + 1)
+    return local_started_at.astimezone(UTC), local_ends_at.astimezone(UTC)
+
+
 def _optional_decimal(value: object) -> Decimal | None:
     if value is None or value == "":
         return None
@@ -344,5 +359,6 @@ __all__ = [
     "feature_is_enabled",
     "limit_definition",
     "limit_value",
+    "monthly_usage_period",
     "resolve_commercial_entitlements",
 ]

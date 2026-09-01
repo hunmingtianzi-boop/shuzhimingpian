@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
@@ -69,7 +70,19 @@ async def require_commercial_feature_for_admin_path(
     if "/admin/" not in path:
         return
 
-    principal = await get_staff_principal(request, authorization)
+    # This mixed public/admin router cannot declare StaffDependency directly:
+    # FastAPI would resolve it even for the visitor endpoint above. Honor an
+    # app-level dependency override when a router is embedded in a contract or
+    # unit harness; production has no override and uses the real bearer-token
+    # resolver.
+    app = request.scope.get("app")
+    overrides = getattr(app, "dependency_overrides", {})
+    override = overrides.get(get_staff_principal)
+    if override is None:
+        principal = await get_staff_principal(request, authorization)
+    else:
+        value = override()
+        principal = await value if inspect.isawaitable(value) else value
     feature_id: str | None = None
     if ":schedule-publish" in path or "/admin/scheduled-publishes" in path:
         await require_commercial_feature("catalog.scheduled_publish")(request, principal)

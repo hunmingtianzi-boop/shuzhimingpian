@@ -45,6 +45,7 @@ const adapters: readonly CardBlockPluginAdapter[] = [
       base.identity = identity ? {
         ...identity,
         imageUrl: identity.imageUrl ? resolveResourceUrl(identity.imageUrl) : undefined,
+        companyLogoUrl: identity.companyLogoUrl ? resolveResourceUrl(identity.companyLogoUrl) : undefined,
         layout: block.presentation?.identityLayout
           || (block.layoutVariant === "vertical" ? "vertical" : "horizontal"),
         background: {
@@ -120,6 +121,9 @@ export function adaptRegisteredCardPluginBlock(
 function safePluginActionHref(item: NonNullable<CardPageBlock["actionItems"]>[number]) {
   const value = item.targetValue.trim();
   if (!value || /[\\\u0000-\u001f]/.test(value)) return undefined;
+  if (item.targetType === "internal_path" && value.startsWith("/__wecom/miniprogram?")) {
+    return "#";
+  }
   if (item.targetType === "external_url" || item.targetType === "map") {
     try {
       const url = new URL(value);

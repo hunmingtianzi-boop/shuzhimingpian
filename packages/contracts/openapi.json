@@ -13931,6 +13931,59 @@
         }
       }
     },
+    "/public/cards/{slug}/wecom-js-sdk": {
+      "get": {
+        "tags": [
+          "Public WeCom"
+        ],
+        "summary": "Get Public Card Wecom Js Sdk Config",
+        "operationId": "getPublicCardWeComJSSDKConfig",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeComPublicJSSDKConfigEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/dashboard": {
       "get": {
         "tags": [
@@ -17799,6 +17852,37 @@
             "type": "object",
             "title": "Limits"
           },
+          "limit_usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Limit Usage"
+          },
+          "limit_remaining": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Limit Remaining"
+          },
+          "usage_period_started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Usage Period Started At"
+          },
+          "usage_period_ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Usage Period Ends At"
+          },
           "plans": {
             "items": {
               "$ref": "#/components/schemas/CommercialPlanRecord"
@@ -17832,6 +17916,10 @@
           "features",
           "limit_overrides",
           "limits",
+          "limit_usage",
+          "limit_remaining",
+          "usage_period_started_at",
+          "usage_period_ends_at",
           "plans",
           "feature_catalog",
           "limit_catalog"
@@ -22722,7 +22810,8 @@
             "enum": [
               "brand",
               "clean",
-              "warm"
+              "warm",
+              "executive"
             ],
             "title": "Theme Key",
             "default": "brand"
@@ -31103,7 +31192,8 @@
             "enum": [
               "brand",
               "clean",
-              "warm"
+              "warm",
+              "executive"
             ],
             "title": "Theme Key",
             "default": "brand"
@@ -31930,7 +32020,8 @@
             "enum": [
               "brand",
               "clean",
-              "warm"
+              "warm",
+              "executive"
             ],
             "title": "Theme Key",
             "default": "brand"
@@ -34640,6 +34731,79 @@
           "data"
         ],
         "title": "WeComOAuthUrlEnvelope"
+      },
+      "WeComPublicJSSDKConfig": {
+        "properties": {
+          "corp_id": {
+            "type": "string",
+            "title": "Corp Id"
+          },
+          "agent_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Agent Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "timestamp": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Timestamp"
+          },
+          "nonce_str": {
+            "type": "string",
+            "title": "Nonce Str"
+          },
+          "config_signature": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 40,
+            "title": "Config Signature"
+          },
+          "agent_config_signature": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 40,
+            "title": "Agent Config Signature"
+          },
+          "js_api_list": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Js Api List",
+            "default": [
+              "launchMiniprogram"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "corp_id",
+          "agent_id",
+          "url",
+          "timestamp",
+          "nonce_str",
+          "config_signature",
+          "agent_config_signature"
+        ],
+        "title": "WeComPublicJSSDKConfig"
+      },
+      "WeComPublicJSSDKConfigEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WeComPublicJSSDKConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "WeComPublicJSSDKConfigEnvelope"
       },
       "WeComTestMessageEnvelope": {
         "properties": {

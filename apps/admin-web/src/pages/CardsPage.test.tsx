@@ -20,6 +20,8 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
   EnterpriseTemplateEditor: ({
     open,
     card,
+    defaultKind,
+    initialThemeKey,
     creationDraft,
     onClose,
     onDraftConfirm,
@@ -27,6 +29,8 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
   }: {
     open: boolean;
     card?: ManagedCard;
+    defaultKind?: ManagedCard["cardKind"];
+    initialThemeKey?: EnterpriseTemplateThemeKey;
     creationDraft?: {
       cardKind: ManagedCard["cardKind"];
       identityPreview: {
@@ -50,6 +54,15 @@ vi.mock("../components/EnterpriseTemplateEditor", () => ({
         <div role="dialog" aria-label="名片页面编辑器">
           <span>{card.displayName}</span>
           <button type="button" onClick={() => onEditBasicSettings?.(card)}>编辑基础资料</button>
+          <button type="button" onClick={onClose}>关闭编辑器</button>
+        </div>
+      );
+    }
+    if (defaultKind) {
+      return (
+        <div role="dialog" aria-label="名片页面编辑器">
+          <span>{defaultKind === "employee" ? "员工默认配置" : "企业默认配置"}</span>
+          <span>{initialThemeKey === "executive" ? "黑金商务名片已选中" : "当前默认模板"}</span>
           <button type="button" onClick={onClose}>关闭编辑器</button>
         </div>
       );
@@ -158,6 +171,19 @@ function renderPage(auth: AuthContextValue = companyAdminAuth) {
 describe("CardsPage", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("shows the executive template on the management page and opens it directly", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "黑金商务名片" })).toBeInTheDocument();
+    expect(screen.getByLabelText("黑金商务名片模板预览")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "设置员工默认" }));
+
+    const editor = await screen.findByRole("dialog", { name: "名片页面编辑器" });
+    expect(within(editor).getByText("黑金商务名片已选中")).toBeInTheDocument();
   });
 
   it("returns from basic settings cancellation to the card page editor", async () => {

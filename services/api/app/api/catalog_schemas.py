@@ -812,7 +812,7 @@ class EnterpriseTemplateBlock(CatalogStrictModel):
 
 class EnterpriseTemplateDocument(CatalogStrictModel):
     schema_version: Literal[1, 2] = 1
-    theme_key: Literal["brand", "clean", "warm"] = "brand"
+    theme_key: Literal["brand", "clean", "warm", "executive"] = "brand"
     blocks: list[EnterpriseTemplateBlock] = Field(default_factory=list, max_length=24)
 
     @model_validator(mode="after")

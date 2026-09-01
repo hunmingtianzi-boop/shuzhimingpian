@@ -251,6 +251,53 @@ class WeComSuiteClient:
         await self._redis.set(cache_key, token, ex=max(60, int(expires_in or 7_200) - 300))
         return token
 
+    async def jsapi_ticket(
+        self,
+        *,
+        auth_corpid: str,
+        permanent_code: str,
+        ticket_type: str,
+        force_refresh: bool = False,
+    ) -> str:
+        """Return a cached corporation or agent-config JS-SDK ticket."""
+
+        if ticket_type not in {"corp", "agent_config"}:
+            raise WeComConfigurationError("wecom_jsapi_ticket_type_invalid")
+        if self._redis is None:
+            raise WeComConfigurationError("wecom_suite_token_store_unavailable")
+        cache_key = self._jsapi_ticket_key(auth_corpid, ticket_type)
+        if not force_refresh:
+            cached = await self._redis.get(cache_key)
+            if cached:
+                return str(cached)
+        access_token = await self.corp_access_token(
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+            force_refresh=force_refresh,
+        )
+        if ticket_type == "agent_config":
+            payload = await self._request_json(
+                "GET",
+                "/cgi-bin/ticket/get",
+                params={"access_token": access_token, "type": "agent_config"},
+            )
+        else:
+            payload = await self._request_json(
+                "GET",
+                "/cgi-bin/get_jsapi_ticket",
+                params={"access_token": access_token},
+            )
+        ticket = payload.get("ticket")
+        expires_in = payload.get("expires_in")
+        if not isinstance(ticket, str) or not ticket:
+            raise WeComProviderError("WECOM_INVALID_RESPONSE")
+        await self._redis.set(
+            cache_key,
+            ticket,
+            ex=max(60, int(expires_in or 7_200) - 300),
+        )
+        return ticket
+
     async def get_member(
         self,
         *,
@@ -452,6 +499,13 @@ class WeComSuiteClient:
     def _corp_token_key(self, corp_id: str) -> str:
         suite_id, _secret = self._credentials()
         return f"wecom:corp-access-token:{self._digest(suite_id)}:{self._digest(corp_id)}"
+
+    def _jsapi_ticket_key(self, corp_id: str, ticket_type: str) -> str:
+        suite_id, _secret = self._credentials()
+        return (
+            f"wecom:jsapi-ticket:{self._digest(suite_id)}:"
+            f"{self._digest(corp_id)}:{ticket_type}"
+        )
 
 
 __all__ = [

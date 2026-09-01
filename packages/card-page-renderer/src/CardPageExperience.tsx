@@ -26,7 +26,7 @@ export type CardPageActionTemplate = "quick" | "shortcuts" | "media" | "event" |
 export type CardPageActionIcon = "external" | "phone" | "mail" | "message" | "map" | "building" | "calendar" | "file" | "play";
 export type CardPageActionItem = { id: string; title: string; summary?: string; label?: string; tag?: string; icon?: CardPageActionIcon; date?: string; location?: string; source?: string; status?: string; duration?: string; imageUrl?: string; targetType: "external_url" | "internal_path" | "phone" | "map"; targetValue: string; openMode?: "self" | "new_tab" };
 export type CardPageGalleryItem = { id: string; imageUrl: string; title?: string; description?: string; timeLabel?: string; periodLabel?: string; badgeMode?: "title" | "time" | "period" | "custom" | "none"; badgeText?: string; altText?: string; linkUrl?: string };
-export type CardPageIdentity = { variant?: "legacy" | "v2"; kind: "enterprise" | "employee"; name: string; headline?: string; titles?: string[]; summary?: string; imageUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; facts?: Array<{ label: string; value: string }>; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
+export type CardPageIdentity = { variant?: "legacy" | "v2"; kind: "enterprise" | "employee"; name: string; headline?: string; position?: string; department?: string; titles?: string[]; summary?: string; imageUrl?: string; companyLogoUrl?: string; companyName?: string; verificationLabel?: string; positioning?: string; meta?: string[]; facts?: Array<{ label: string; value: string }>; tags?: string[]; contacts?: Array<{ id?: string; kind?: "phone" | "wechat" | "email" | "location" | "website" | "other"; label: string; value: string; href?: string }> };
 export type CardPageProduct = { id: string; slug?: string; name: string; category?: string; summary?: string; imageUrl?: string; ctaLabel?: string };
 export type CardPageCase = { id: string; slug?: string; title: string; industry?: string; clientName?: string; background?: string; solution?: string; summary?: string; result?: string; metrics?: Array<{ value: string; label: string }>; imageUrl?: string; ctaLabel?: string };
 export type CardPageFaqItem = { id: string; documentId?: string; question: string; answer: string; sourceLabel?: string };
@@ -43,7 +43,7 @@ export type CardPageDirectoryOptions = { ariaLabel?: string; onNavigate?: (block
 export type CardPageExperienceProps = {
   blocks: CardPageBlock[]; data?: CardPageResolvedData; actions?: CardPageExperienceActions; identityContent?: ReactNode; directory?: boolean | CardPageDirectoryOptions;
   resolveResourceUrl?: (url: string) => string; editorAdapter?: CardPageEditorAdapter; className?: string;
-  shell?: { title?: string; onBack?: () => void; onShare?: () => void; switchTarget?: { href: string; label: string; ariaLabel: string }; contentAriaLabel?: string; primaryAction?: { label: string; onClick: () => void; disabled?: boolean }; secondaryAction?: { label: string; onClick: () => void; disabled?: boolean } };
+  shell?: { title?: string; onBack?: () => void; onShare?: () => void; switchTarget?: { href: string; label: string; ariaLabel: string }; contentAriaLabel?: string; primaryAction?: { label: string; onClick: () => void; disabled?: boolean }; secondaryAction?: { label: string; onClick: () => void; disabled?: boolean }; inlineIdentityActions?: boolean };
 };
 
 const blockSelector = {
@@ -69,6 +69,7 @@ export function safeCardPageVideoUrl(value?: string, resolveResourceUrl: (url: s
 export function safeCardPageActionHref(item: CardPageActionItem) {
   const value = item.targetValue.trim();
   if (!value || /[\\\u0000-\u001f]/.test(value)) return undefined;
+  if (item.targetType === "internal_path" && value.startsWith("/__wecom/miniprogram?")) return "#";
   if (item.targetType === "external_url" || item.targetType === "map") return safeCardPageExternalUrl(value);
   if (item.targetType === "internal_path") {
     if (!value.startsWith("/") || value.startsWith("//")) return undefined;
@@ -159,6 +160,7 @@ export function CardPageExperience({ blocks, data = {}, actions = {}, directory 
       directoryAriaLabel={directoryOptions?.ariaLabel || "名片内容导航"}
       primaryAction={shell?.primaryAction}
       secondaryAction={shell?.secondaryAction}
+      inlineIdentityActions={shell?.inlineIdentityActions}
     />
   </CardStudioSurface>;
 }

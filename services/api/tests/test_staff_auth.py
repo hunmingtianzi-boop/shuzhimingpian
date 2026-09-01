@@ -219,7 +219,7 @@ def test_staff_tokens_have_distinct_access_refresh_and_visitor_boundaries() -> N
 @pytest.mark.asyncio
 async def test_login_sets_credential_scope_before_membership_and_stores_only_refresh_hash() -> None:
     credential, membership, user, tenant, company = _identity_rows()
-    session = FakeSession([credential, membership, user, tenant, company])
+    session = FakeSession([credential, membership, credential, user, tenant, company])
     store = AuthStore(FakeSessionFactory([session]), _settings())  # type: ignore[arg-type]
 
     result = await store.login(
@@ -288,7 +288,7 @@ async def test_wrong_password_counts_failures_locks_and_keeps_error_uniform() ->
 async def test_cross_company_membership_is_rejected_after_scope_resolution() -> None:
     credential, membership, *_ = _identity_rows()
     membership.company_id = uuid.uuid4()
-    session = FakeSession([credential, membership])
+    session = FakeSession([credential, membership, credential])
     store = AuthStore(FakeSessionFactory([session]), _settings())  # type: ignore[arg-type]
 
     with pytest.raises(ApiError) as captured:
@@ -306,7 +306,9 @@ async def test_cross_company_membership_is_rejected_after_scope_resolution() -> 
 @pytest.mark.asyncio
 async def test_refresh_rotates_hash_and_replay_revokes_the_session() -> None:
     credential, membership, user, tenant, company = _identity_rows()
-    login_session = FakeSession([credential, membership, user, tenant, company])
+    login_session = FakeSession(
+        [credential, membership, credential, user, tenant, company]
+    )
     settings = _settings()
     login_store = AuthStore(FakeSessionFactory([login_session]), settings)  # type: ignore[arg-type]
     login = await login_store.login(
@@ -315,7 +317,9 @@ async def test_refresh_rotates_hash_and_replay_revokes_the_session() -> None:
     )
     auth_session = next(item for item in login_session.added if isinstance(item, AuthSession))
 
-    refresh_session = FakeSession([auth_session, membership, user, tenant, company])
+    refresh_session = FakeSession(
+        [auth_session, membership, credential, user, tenant, company]
+    )
     refresh_store = AuthStore(
         FakeSessionFactory([refresh_session]),  # type: ignore[arg-type]
         settings,
@@ -357,7 +361,9 @@ async def test_invalid_refresh_is_audited_without_storing_the_token() -> None:
 @pytest.mark.asyncio
 async def test_logout_revokes_the_exact_scoped_session() -> None:
     credential, membership, user, tenant, company = _identity_rows()
-    login_session = FakeSession([credential, membership, user, tenant, company])
+    login_session = FakeSession(
+        [credential, membership, credential, user, tenant, company]
+    )
     settings = _settings()
     login_store = AuthStore(FakeSessionFactory([login_session]), settings)  # type: ignore[arg-type]
     login = await login_store.login(

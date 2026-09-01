@@ -38,7 +38,7 @@ from app.api.schemas import (
 from app.api.schemas import (
     MessageCitation as MessageCitationSchema,
 )
-from app.commercial.entitlements import feature_is_enabled
+from app.commercial.entitlements import feature_is_enabled, limit_value, monthly_usage_period
 from app.core.config import Settings
 from app.core.pii import PiiCipher
 from app.core.redaction import redact_sensitive_text
@@ -784,6 +784,62 @@ class PublicStore:
                         idempotency_key=idempotency_key,
                         card_slug=card.slug,
                     )
+
+            configured_monthly_limit = limit_value(
+                company.settings,
+                "ai.conversations.monthly",
+            )
+            if configured_monthly_limit is not None:
+                # Serialize quota reservations per enterprise. The assistant row
+                # created below is the reservation; failed runs are excluded and
+                # therefore release the slot automatically.
+                locked_company = (
+                    await session.execute(
+                        select(Company)
+                        .where(
+                            Company.tenant_id == principal.tenant_id,
+                            Company.id == principal.company_id,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one()
+                monthly_limit = limit_value(
+                    locked_company.settings,
+                    "ai.conversations.monthly",
+                )
+                if monthly_limit is not None:
+                    period_started_at, period_ends_at = monthly_usage_period()
+                    monthly_usage = int(
+                        (
+                            await session.execute(
+                                select(func.count(Message.id)).where(
+                                    Message.tenant_id == principal.tenant_id,
+                                    Message.company_id == principal.company_id,
+                                    Message.role == MessageRole.ASSISTANT,
+                                    Message.status != MessageStatus.FAILED,
+                                    Message.created_at >= period_started_at,
+                                    Message.created_at < period_ends_at,
+                                )
+                            )
+                        ).scalar_one()
+                        or 0
+                    )
+                    if monthly_usage >= monthly_limit:
+                        retry_after = max(
+                            int((period_ends_at - datetime.now(UTC)).total_seconds()),
+                            1,
+                        )
+                        raise ApiError(
+                            429,
+                            "AI_MONTHLY_QUOTA_EXCEEDED",
+                            "本月 AI 调用额度已用完，请联系企业管理员",
+                            details={
+                                "limit": monthly_limit,
+                                "used": monthly_usage,
+                                "period_ends_at": period_ends_at.isoformat(),
+                            },
+                            headers={"Retry-After": str(retry_after)},
+                        )
 
             message_count = (
                 await session.execute(

@@ -386,6 +386,7 @@ function normalizeIdentityContactFields(fields: IdentityContactField[]) {
 type EnterpriseTemplateEditorProps = {
   card?: ManagedCard;
   defaultKind?: ManagedCard["cardKind"];
+  initialThemeKey?: EnterpriseTemplateThemeKey;
   creationDraft?: {
     cardKind: ManagedCard["cardKind"];
     sourceCardId?: string;
@@ -428,6 +429,7 @@ export type EnterpriseTemplateEditorDataSource = Pick<
 export function EnterpriseTemplateEditor({
   card,
   defaultKind,
+  initialThemeKey,
   creationDraft,
   open,
   onClose,
@@ -485,10 +487,10 @@ export function EnterpriseTemplateEditor({
   // typing. Reloading on object identity would replace every controlled input,
   // making clicks and keystrokes appear to flash and disappear.
   const editorSourceKey = card
-    ? `card:${card.id}`
+    ? `card:${card.id}:theme:${initialThemeKey ?? "current"}`
     : creationDraft
-      ? `draft:${creationDraft.cardKind}:${creationDraft.sourceCardId ?? "new"}`
-      : `default:${defaultKind ?? ""}`;
+      ? `draft:${creationDraft.cardKind}:${creationDraft.sourceCardId ?? "new"}:theme:${initialThemeKey ?? "current"}`
+      : `default:${defaultKind ?? ""}:theme:${initialThemeKey ?? "current"}`;
 
   useEffect(() => {
     if (!open || (!card && !defaultKind && !creationDraft)) return;
@@ -561,7 +563,8 @@ export function EnterpriseTemplateEditor({
         setUndoStack([]);
         setRedoStack([]);
         setVersion(template.version);
-        setThemeKey(document.themeKey);
+        const presetThemeChanged = Boolean(initialThemeKey && initialThemeKey !== document.themeKey);
+        setThemeKey(initialThemeKey ?? document.themeKey);
         setProducts(productResult);
         setCases(caseResult);
         setCompany(companyProfile);
@@ -579,7 +582,7 @@ export function EnterpriseTemplateEditor({
             ? current
             : editableBlocks[0]?.id
         ));
-        if (upgradedLegacySchema || removedLegacyAiBlock || upgradedLegacyOverview || upgradedLegacyActions || upgradedLegacyIdentityLayout) {
+        if (upgradedLegacySchema || removedLegacyAiBlock || upgradedLegacyOverview || upgradedLegacyActions || upgradedLegacyIdentityLayout || presetThemeChanged) {
           setDirty(true);
           setSavedNotice([
             upgradedLegacySchema ? "已升级为新版名片结构" : "",
@@ -587,6 +590,7 @@ export function EnterpriseTemplateEditor({
             upgradedLegacyOverview ? "已将旧版预览文案转为可编辑的真实内容" : "",
             upgradedLegacyActions ? "已将旧版行动入口升级为快捷入口" : "",
             upgradedLegacyIdentityLayout ? "已统一为当前基础名片布局" : "",
+            presetThemeChanged ? "已应用黑金商务名片模板" : "",
           ].filter(Boolean).join("；") + "。保存草稿后生效。");
         }
         // The editor must open on the current shared renderer. Published mode
@@ -1341,6 +1345,7 @@ export function EnterpriseTemplateEditor({
                         <option value="brand">清透商务模板</option>
                         <option value="clean">纯净内容模板</option>
                         <option value="warm">温和关系模板</option>
+                        <option value="executive">黑金商务名片</option>
                       </select>
                       <div className="template-preview-modes segmented" role="tablist" aria-label="名片预览模式">
                         <button type="button" role="tab" aria-selected={previewMode === "draft"} className={previewMode === "draft" ? "active is-active" : undefined} onClick={() => setPreviewMode("draft")}>草稿</button>

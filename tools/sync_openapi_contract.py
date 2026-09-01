@@ -12,12 +12,12 @@ CONTRACT_PATH = ROOT / "packages" / "contracts" / "openapi.json"
 
 sys.path.insert(0, str(API_ROOT))
 
-from app.main import app  # noqa: E402
+from app.main import app
 
 
 def _without_runtime_prefix(path: str) -> str:
     prefix = "/api/v1"
-    return path[len(prefix) :] if path.startswith(prefix) else path
+    return path.removeprefix(prefix)
 
 
 def sync_contract(contract: dict[str, Any], implemented: dict[str, Any]) -> dict[str, Any]:

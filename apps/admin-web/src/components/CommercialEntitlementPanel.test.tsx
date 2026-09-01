@@ -14,7 +14,11 @@ const entitlement: CommercialEntitlements = {
   featureOverrides: {},
   features: { "card.core": true, "data.exports": false },
   limitOverrides: {},
-  limits: { "members.max": 50 },
+  limits: { "members.max": 50, "ai.conversations.monthly": 5000 },
+  limitUsage: { "ai.conversations.monthly": 1280 },
+  limitRemaining: { "ai.conversations.monthly": 3720 },
+  usagePeriodStartedAt: "2026-08-01T00:00:00Z",
+  usagePeriodEndsAt: "2026-09-01T00:00:00Z",
   plans: [
     { code: "starter", name: "基础版", description: "基础能力" },
     { code: "professional", name: "专业版", description: "AI 与知识" },
@@ -47,6 +51,14 @@ const entitlement: CommercialEntitlements = {
       unit: "人",
       planDefaults: { starter: 5, professional: 50, enterprise: null },
     },
+    {
+      id: "ai.conversations.monthly",
+      name: "AI 对话额度",
+      group: "AI 与数据",
+      description: "每个自然月可发起的 AI 对话次数",
+      unit: "次/月",
+      planDefaults: { starter: 0, professional: 5000, enterprise: 50000 },
+    },
   ],
 };
 
@@ -65,7 +77,9 @@ describe("CommercialEntitlementPanel", () => {
 
     render(<CommercialEntitlementPanel companyId="company-1" />);
 
-    await user.click(await screen.findByRole("switch", { name: "打开数据导出" }));
+    expect(await screen.findByText(/本月已用 1,280 次 · 剩余 3,720 次/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("switch", { name: "打开数据导出" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "员工账号数额度模式" }), "custom");
     await user.clear(screen.getByRole("spinbutton", { name: "员工账号数自定义额度" }));
     await user.type(screen.getByRole("spinbutton", { name: "员工账号数自定义额度" }), "80");

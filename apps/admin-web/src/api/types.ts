@@ -466,6 +466,10 @@ export type CommercialEntitlements = {
   features: Record<string, boolean>;
   limitOverrides: Record<string, number | null>;
   limits: Record<string, number | null>;
+  limitUsage?: Record<string, number>;
+  limitRemaining?: Record<string, number | null>;
+  usagePeriodStartedAt?: string;
+  usagePeriodEndsAt?: string;
   plans: CommercialPlan[];
   featureCatalog: CommercialFeature[];
   limitCatalog: CommercialLimit[];
@@ -1190,7 +1194,7 @@ export type CardComposerDefault = {
   document: EnterpriseTemplate["draft"];
 };
 
-export type EnterpriseTemplateThemeKey = "brand" | "clean" | "warm";
+export type EnterpriseTemplateThemeKey = "brand" | "clean" | "warm" | "executive";
 
 export type CardPluginRelease = {
   id: string;

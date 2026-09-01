@@ -96,6 +96,21 @@ class WeComCardContactWayEnvelope(WeComModel):
     data: WeComCardContactWayRecord | None
 
 
+class WeComPublicJSSDKConfig(WeComModel):
+    corp_id: str
+    agent_id: int = Field(ge=1)
+    url: str
+    timestamp: int = Field(ge=1)
+    nonce_str: str
+    config_signature: str = Field(min_length=40, max_length=40)
+    agent_config_signature: str = Field(min_length=40, max_length=40)
+    js_api_list: tuple[str, ...] = ("launchMiniprogram",)
+
+
+class WeComPublicJSSDKConfigEnvelope(WeComModel):
+    data: WeComPublicJSSDKConfig
+
+
 __all__ = [
     "WeComIntegrationStatus",
     "WeComIntegrationStatusEnvelope",
@@ -109,6 +124,8 @@ __all__ = [
     "WeComOAuthExchangeRequest",
     "WeComOAuthUrl",
     "WeComOAuthUrlEnvelope",
+    "WeComPublicJSSDKConfig",
+    "WeComPublicJSSDKConfigEnvelope",
     "WeComTestMessageEnvelope",
     "WeComTestMessageRecord",
     "WeComTestMessageRequest",

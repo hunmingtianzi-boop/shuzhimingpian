@@ -272,6 +272,13 @@
   font-size: 11px;
 }
 
+.entitlementUsage {
+  display: block;
+  margin-top: 6px;
+  color: var(--brand) !important;
+  font-weight: 650;
+}
+
 .entitlementControl,
 .entitlementLimitControl,
 .entitlementActions {

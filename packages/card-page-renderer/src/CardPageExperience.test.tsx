@@ -51,6 +51,11 @@ describe("CardPageExperience production presentation", () => {
 
     expect(safeCardPageActionHref(safeInternal)).toBe("/company?from=card");
     expect(safeCardPageActionHref(unsafeInternal)).toBeUndefined();
+    expect(safeCardPageActionHref({
+      ...safeInternal,
+      id: "mini-program",
+      targetValue: "/__wecom/miniprogram?app_id=wxe79dc0e12345620d&path=pages%2Findex%2Findex.html",
+    })).toBe("#");
   });
 
   it("labels enterprise introduction data as enterprise material", () => {

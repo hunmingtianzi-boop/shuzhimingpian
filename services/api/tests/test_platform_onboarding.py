@@ -25,9 +25,9 @@ from app.api.routes import platform_onboarding as routes
 from app.core.tokens import StaffPrincipal
 from app.services.knowledge_import_store import KnowledgeImportScope
 from app.services.platform_onboarding import (
-    _TERMINAL_IMPORT_REVIEW_SKIP_CODES,
     _BUSINESS_PROFILE_FIELDS,
     _MERGED_CANDIDATE_SYSTEM_PROMPT,
+    _TERMINAL_IMPORT_REVIEW_SKIP_CODES,
     PlatformOnboardingImportScope,
     PlatformOnboardingService,
     _decode_synthesis_payload,

@@ -166,7 +166,7 @@ export function EnterpriseTemplateBlocks({
   secondaryAction,
 }: {
   blocks: PublicEnterpriseTemplateBlock[];
-  themeKey?: "brand" | "clean" | "warm";
+  themeKey?: "brand" | "clean" | "warm" | "executive";
   directory?: boolean | CardPageDirectoryOptions;
   identity?: ReactNode;
   identityData?: CardPageIdentity;
@@ -214,7 +214,7 @@ export function EnterpriseTemplateBlocks({
           : undefined,
         onAction,
       }}
-      shell={{ title, onBack, onShare, switchTarget, contentAriaLabel, primaryAction, secondaryAction }}
+      shell={{ title, onBack, onShare, switchTarget, contentAriaLabel, primaryAction, secondaryAction, inlineIdentityActions: themeKey === "executive" }}
     />
   );
 }

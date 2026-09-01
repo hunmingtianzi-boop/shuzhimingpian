@@ -473,7 +473,7 @@ function normalizeEnterpriseTemplate(payload: unknown): EnterpriseTemplate {
     const record = isRecord(value) ? value : {};
     return {
       schemaVersion: record.schema_version === 2 ? 2 as const : 1 as const,
-      themeKey: ["brand", "clean", "warm"].includes(optionalString(record.theme_key))
+      themeKey: ["brand", "clean", "warm", "executive"].includes(optionalString(record.theme_key))
         ? optionalString(record.theme_key) as EnterpriseTemplateThemeKey
         : "brand",
       blocks: Array.isArray(record.blocks)
@@ -582,6 +582,12 @@ function normalizeCommercialEntitlements(payload: unknown): CommercialEntitlemen
       entry[1] === null || (typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1] >= 0),
     ));
   };
+  const usageRecord = (value: unknown): Record<string, number> => {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] =>
+      typeof entry[1] === "number" && Number.isInteger(entry[1]) && entry[1] >= 0,
+    ));
+  };
   const limitCatalog = Array.isArray(raw.limit_catalog) ? raw.limit_catalog.flatMap((item) => {
     if (!isRecord(item) || typeof item.id !== "string" || typeof item.name !== "string") return [];
     const defaults = limitRecord(item.plan_defaults);
@@ -618,6 +624,10 @@ function normalizeCommercialEntitlements(payload: unknown): CommercialEntitlemen
     features: booleanRecord(raw.features),
     limitOverrides: limitRecord(raw.limit_overrides),
     limits: limitRecord(raw.limits),
+    limitUsage: usageRecord(raw.limit_usage),
+    limitRemaining: limitRecord(raw.limit_remaining),
+    usagePeriodStartedAt: optionalString(raw.usage_period_started_at) || undefined,
+    usagePeriodEndsAt: optionalString(raw.usage_period_ends_at) || undefined,
     plans,
     featureCatalog,
     limitCatalog,

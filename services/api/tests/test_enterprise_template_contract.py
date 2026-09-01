@@ -71,6 +71,25 @@ def test_template_requires_one_visible_identity_block() -> None:
         )
 
 
+def test_template_accepts_reusable_executive_theme() -> None:
+    document = EnterpriseTemplateDocument.model_validate(
+        {
+            "schema_version": 2,
+            "theme_key": "executive",
+            "blocks": [
+                {
+                    "id": "identity",
+                    "type": "identity",
+                    "sort_order": 0,
+                    "directory_enabled": False,
+                }
+            ],
+        }
+    )
+
+    assert document.theme_key == "executive"
+
+
 def test_template_accepts_action_icon_presets_and_rejects_unknown_icons() -> None:
     document = EnterpriseTemplateDocument.model_validate(
         {

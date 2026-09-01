@@ -14,6 +14,7 @@ from app.api.routes import workflow
 from app.commercial.entitlements import (
     commercial_settings_payload,
     feature_is_enabled,
+    monthly_usage_period,
     resolve_commercial_entitlements,
 )
 from app.services.catalog_store import _effective_card_plugin_installations
@@ -83,6 +84,13 @@ def test_legacy_company_defaults_to_enterprise_without_disabling_existing_featur
     assert state.plan_code == "enterprise"
     assert all(state.features.values())
     assert all(value is None for value in state.limits.values())
+
+
+def test_monthly_usage_period_uses_china_natural_month_boundaries() -> None:
+    started_at, ends_at = monthly_usage_period(datetime(2026, 12, 28, 16, 30, tzinfo=UTC))
+
+    assert started_at == datetime(2026, 11, 30, 16, tzinfo=UTC)
+    assert ends_at == datetime(2026, 12, 31, 16, tzinfo=UTC)
 
 
 def test_starter_plan_enables_only_starter_and_required_features() -> None:

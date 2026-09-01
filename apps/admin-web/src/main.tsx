@@ -15,6 +15,10 @@ async function renderApplication() {
     ? await import("./dev/StandaloneCardStudioV2").then(({ StandaloneCardStudioV2 }) => (
         <StandaloneCardStudioV2 />
       ))
+    : import.meta.env.DEV && window.location.pathname === "/__dev/cards-management"
+      ? await import("./dev/StandaloneCardsManagement").then(({ StandaloneCardsManagement }) => (
+          <StandaloneCardsManagement />
+        ))
     : import.meta.env.DEV && window.location.pathname === "/__dev/card-editor"
       ? await import("./dev/StandaloneCardEditor").then(({ StandaloneCardEditor }) => (
         <StandaloneCardEditor />

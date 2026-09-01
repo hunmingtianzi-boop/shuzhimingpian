@@ -32,6 +32,7 @@ import { copyText } from "../lib/clipboard";
 import type { PublicCardData, PublicEnterpriseTemplateBlock } from "../lib/publicCardApi";
 import { EnterpriseTemplateBlocks } from "../components/EnterpriseTemplateBlocks";
 import { resolvePublicResourceUrl } from "../lib/publicResourceUrl";
+import { isWeComMiniProgramTarget, launchWeComMiniProgram } from "../lib/wecomMiniProgram";
 import {
   fetchPublicCaseStudy,
   fetchPublicCatalog,
@@ -1042,7 +1043,7 @@ export const BusinessCardPrototypeApp = forwardRef<
   const effectiveTemplateBlocks = (isStandaloneCard
     ? completeStandaloneTemplateBlocks(publishedTemplateBlocks, standaloneDefaultBlocks)
     : publishedTemplateBlocks
-  ).filter((block) => block.type !== "ai_assistant");
+  ).filter((block) => card?.enterprise_template?.theme_key === "executive" || block.type !== "ai_assistant");
   const hasComposableStandalonePage = isStandaloneCard;
   const hasComposableEnterprisePage = isStandaloneEnterprise;
   const hasComposableEmployeePage = isStandaloneEmployee;
@@ -1110,10 +1111,13 @@ export const BusinessCardPrototypeApp = forwardRef<
         variant: "v2",
         kind: "employee",
         name: displayName,
-        headline: card?.identity_positioning || title,
+        headline: title,
+        position: title,
+        department: card?.identity_positioning || undefined,
         titles: card?.identity_titles || [],
         summary: card?.business_summary || undefined,
         imageUrl: avatar,
+        companyLogoUrl: companyLogo,
         companyName,
         verificationLabel: isPublished ? "已发布" : "本地展示",
         positioning: card?.business_summary || companySummary,
@@ -1262,7 +1266,7 @@ export const BusinessCardPrototypeApp = forwardRef<
       onOpenProduct={(slug) => openDetailRoute({ kind: "product", slug })}
       onOpenCase={(slug) => openDetailRoute({ kind: "case", slug })}
       onAssistant={assistantAvailable ? (question) => onAssistant(question) : undefined}
-      title={isStandaloneEmployee ? "员工数字名片" : "企业官方名片"}
+      title={card?.enterprise_template?.theme_key === "executive" ? "" : isStandaloneEmployee ? "员工数字名片" : "企业官方名片"}
       onShare={onShare}
       switchTarget={isStandaloneEmployee && officialCompanyHref ? {
         href: officialCompanyHref,
@@ -1274,8 +1278,12 @@ export const BusinessCardPrototypeApp = forwardRef<
         ariaLabel: "切换到员工名片",
       } : undefined}
       contentAriaLabel={isStandaloneEmployee ? "员工名片内容" : "企业名片内容"}
-      primaryAction={assistantAvailable ? { label: "咨询 AI", onClick: () => onAssistant() } : undefined}
-      secondaryAction={{ label: isStandaloneEmployee ? "发起合作" : "提交合作需求", onClick: onLead }}
+      primaryAction={card?.enterprise_template?.theme_key === "executive" && isStandaloneEmployee
+        ? { label: "联系我", onClick: onLead }
+        : assistantAvailable ? { label: "咨询 AI", onClick: () => onAssistant() } : undefined}
+      secondaryAction={card?.enterprise_template?.theme_key === "executive" && isStandaloneEmployee
+        ? { label: "我的名片", onClick: onShare }
+        : { label: isStandaloneEmployee ? "发起合作" : "提交合作需求", onClick: onLead }}
       onAction={(item) => {
         if (!card) return;
         void recordPublicCardAction({
@@ -1293,6 +1301,14 @@ export const BusinessCardPrototypeApp = forwardRef<
         }).catch(() => {
           // Analytics must never block or cancel the user's navigation.
         });
+        if (item.targetType === "internal_path" && isWeComMiniProgramTarget(item.targetValue)) {
+          void launchWeComMiniProgram({
+            cardSlug: card.slug,
+            targetValue: item.targetValue,
+          }).catch((error: unknown) => {
+            window.alert(error instanceof Error ? error.message : "暂时无法打开小程序");
+          });
+        }
       }}
     />
   ) : null;

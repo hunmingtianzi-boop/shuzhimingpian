@@ -273,14 +273,14 @@ describe("CurrentPage workspace routing", () => {
     expect(await screen.findByText("admin@safe.example")).toBeInTheDocument();
     expect(screen.getByText("安全管理员")).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByLabelText("租户名称")).toHaveValue("安全恢复租户"),
+      expect(screen.getByLabelText("企业正式名称")).toHaveValue("安全恢复租户"),
     );
-    expect(screen.getByLabelText("企业名称")).toHaveValue("安全恢复租户");
-    expect(screen.getByLabelText("初始名片姓名")).toHaveValue("安全顾问");
-    expect(screen.getByLabelText("初始名片职位")).toHaveValue("企业顾问");
+    expect(screen.getByLabelText("企业简称")).toHaveValue("安全恢复租户");
+    expect(screen.getByText("安全顾问")).toBeInTheDocument();
+    expect(screen.getByText("企业顾问")).toBeInTheDocument();
 
-    await user.clear(screen.getByLabelText("企业名称"));
-    await user.type(screen.getByLabelText("企业名称"), "本地未提交编辑");
+    await user.clear(screen.getByLabelText("企业正式名称"));
+    await user.type(screen.getByLabelText("企业正式名称"), "本地未提交编辑");
     await user.click(screen.getByRole("button", { name: "刷新进度" }));
 
     await waitFor(() => expect(getOnboarding).toHaveBeenCalledTimes(2));
@@ -288,7 +288,7 @@ describe("CurrentPage workspace routing", () => {
       await screen.findByRole("button", { name: /人工复核与确认/ }),
     );
     await waitFor(() =>
-      expect(screen.getByLabelText("企业名称")).toHaveValue(
+      expect(screen.getByLabelText("企业正式名称")).toHaveValue(
         "安全恢复租户",
       ),
     );

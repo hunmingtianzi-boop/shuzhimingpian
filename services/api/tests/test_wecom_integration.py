@@ -181,6 +181,66 @@ async def test_wecom_suite_install_and_per_corp_tokens_are_separately_cached() -
 
 
 @pytest.mark.asyncio
+async def test_wecom_suite_caches_corp_and_agent_jsapi_tickets_separately() -> None:
+    requests: list[httpx.Request] = []
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/cgi-bin/get_jsapi_ticket":
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "ticket": "corp-ticket", "expires_in": 7200},
+            )
+        if request.url.path == "/cgi-bin/ticket/get":
+            assert request.url.params["type"] == "agent_config"
+            return httpx.Response(
+                200,
+                json={"errcode": 0, "ticket": "agent-ticket", "expires_in": 7200},
+            )
+        raise AssertionError(f"unexpected provider path: {request.url.path}")
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+    )
+    redis = MemoryRedis()
+    suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
+    corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
+    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
+        assert (
+            await connector.jsapi_ticket(
+                auth_corpid="wwcorp123456",
+                permanent_code="permanent-code",
+                ticket_type="corp",
+            )
+            == "corp-ticket"
+        )
+        assert (
+            await connector.jsapi_ticket(
+                auth_corpid="wwcorp123456",
+                permanent_code="permanent-code",
+                ticket_type="agent_config",
+            )
+            == "agent-ticket"
+        )
+        assert (
+            await connector.jsapi_ticket(
+                auth_corpid="wwcorp123456",
+                permanent_code="permanent-code",
+                ticket_type="corp",
+            )
+            == "corp-ticket"
+        )
+
+    assert [request.url.path for request in requests].count("/cgi-bin/get_jsapi_ticket") == 1
+    assert [request.url.path for request in requests].count("/cgi-bin/ticket/get") == 1
+
+
+@pytest.mark.asyncio
 async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> None:
     async def provider(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/cgi-bin/message/send"

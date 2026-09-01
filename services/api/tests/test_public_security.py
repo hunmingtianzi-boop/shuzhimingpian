@@ -77,6 +77,8 @@ class _Session:
 
     async def execute(self, statement: Any, _parameters: Any = None) -> _ScalarResult:
         self.executed.append(statement)
+        if "FROM companies" in str(statement) and "FOR UPDATE" in str(statement):
+            return _ScalarResult(self.card)
         return _ScalarResult(self.result)
 
     def add_all(self, values: list[Any]) -> None:
@@ -393,6 +395,60 @@ async def test_prepare_message_persists_and_forwards_only_redacted_content(
     )
     assert "is_current" in summary_update
     assert "stale_at" in summary_update
+
+
+@pytest.mark.asyncio
+async def test_prepare_message_blocks_the_enterprise_when_monthly_ai_quota_is_exhausted(
+    monkeypatch: Any,
+) -> None:
+    card = _card()
+    card.settings = {
+        **card.settings,
+        "commercial_entitlements": {
+            "plan_code": "professional",
+            "limit_overrides": {"ai.conversations.monthly": 5_000},
+        },
+    }
+    principal = _principal(card)
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        tenant_id=card.tenant_id,
+        company_id=card.company_id,
+        card_id=card.id,
+        visitor_id=principal.visitor_id,
+        visit_id=principal.visit_id,
+        status=ConversationStatus.ACTIVE,
+    )
+    session = _Session(card=card, result=5_000)
+    store = PublicStore(_SessionFactory(session), _settings())  # type: ignore[arg-type]
+    claim_record = SimpleNamespace(
+        resource_id=None,
+        resource_type=None,
+        status=IdempotencyStatus.PROCESSING,
+    )
+    monkeypatch.setattr(store, "_set_principal_scope", AsyncMock())
+    monkeypatch.setattr(store, "_require_conversation", AsyncMock(return_value=conversation))
+    monkeypatch.setattr(store, "_require_current_consent", AsyncMock())
+    monkeypatch.setattr(
+        store,
+        "_claim_idempotency",
+        AsyncMock(return_value=IdempotencyClaim(claim_record, created=True, replay=False)),
+    )
+
+    with pytest.raises(ApiError) as error:
+        await store.prepare_message(
+            conversation_id=conversation.id,
+            principal=principal,
+            content="请介绍一下企业服务",
+            idempotency_key="quota-message-1",
+        )
+
+    assert error.value.status_code == 429
+    assert error.value.code == "AI_MONTHLY_QUOTA_EXCEEDED"
+    assert error.value.details["limit"] == 5_000
+    assert error.value.details["used"] == 5_000
+    assert session.added == []
+    assert any("FOR UPDATE" in str(statement) for statement in session.executed)
 
 
 @pytest.mark.asyncio

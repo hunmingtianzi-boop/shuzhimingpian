@@ -38,10 +38,13 @@ export type StudioIdentity = {
   variant?: "legacy" | "v2";
   name: string;
   headline?: string;
+  position?: string;
+  department?: string;
   titles?: string[];
   companyName?: string;
   summary?: string;
   imageUrl?: string;
+  companyLogoUrl?: string;
   verificationLabel?: string;
   meta?: string[];
   facts?: Array<{ label: string; value: string }>;
@@ -89,12 +92,14 @@ export type StudioCardPageProps = {
   onAction?: (item: Record<string, unknown>) => void;
   primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
   secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
+  inlineIdentityActions?: boolean;
   directoryAriaLabel?: string;
   onAssistant?: (question?: string) => void;
 };
 
 const initials = (name: string) => name.trim().replace(/\s+/g, "").slice(0, 2).toUpperCase() || "名片";
 const contactIcon = (kind?: string): StudioIconName => ({ phone: "phone", wechat: "message", email: "mail", location: "map", website: "external" } as Record<string, StudioIconName>)[kind || ""] || "external";
+const actionIcon = (kind?: string): StudioIconName => ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(String(kind)) ? String(kind) as StudioIconName : "external";
 
 const moduleHeadingIcon = (type: StudioModule["type"]): StudioIconName => ({
   overview: "grid",
@@ -123,7 +128,17 @@ function ModuleHeading({ module, more = false }: { module: StudioModule; more?: 
   </div>;
 }
 
-function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
+function StudioIdentityBlock({
+  identity,
+  primaryAction,
+  secondaryAction,
+  inlineActions = false,
+}: {
+  identity?: StudioIdentity;
+  primaryAction?: StudioCardPageProps["primaryAction"];
+  secondaryAction?: StudioCardPageProps["secondaryAction"];
+  inlineActions?: boolean;
+}) {
   if (!identity) return <section className="identity-block layout-horizontal"><div className="identity-content"><div className="empty-state"><strong>基础名片信息待同步</strong><p>选择企业或企业员工后，这里会自动读取身份资料。</p></div></div></section>;
   const background = identity.background;
   const presetPosition = ({ topLeft: "top left", topRight: "top right", bottomLeft: "bottom left", bottomRight: "bottom right" } as Record<string, string>)[background?.position || ""] || background?.position || "center";
@@ -154,17 +169,20 @@ function StudioIdentityBlock({ identity }: { identity?: StudioIdentity }) {
             {identity.imageUrl ? <img src={identity.imageUrl} alt={`${identity.name}${identity.kind === "employee" ? "的职业头像" : "企业标识"}`}/> : <span>{initials(identity.name)}</span>}
             {identity.kind === "employee" ? <i className="availability-dot" title="当前可联系"/> : null}
           </div>
+          {identity.kind === "employee" && identity.companyLogoUrl ? <img className="identity-v2-company-logo" src={identity.companyLogoUrl} alt={`${identity.companyName || "企业"}标识`}/> : null}
           <div className="identity-v2-copy">
             <div className="identity-v2-kicker">{identity.kind === "employee" ? "员工数字名片" : "企业官方名片"}</div>
-            <div className="identity-v2-name-row"><h1>{identity.name}</h1>{identity.verificationLabel ? <span className="verified"><StudioIcon name="check"/>{identity.verificationLabel}</span> : null}</div>
-            {identity.headline ? <p className="identity-v2-headline">{identity.headline}</p> : null}
+            <div className="identity-v2-name-row"><h1>{identity.name}</h1>{identity.kind === "employee" && identity.companyName ? <span className="identity-v2-company-badge">{identity.companyName}</span> : null}{identity.verificationLabel ? <span className="verified"><StudioIcon name="check"/>{identity.verificationLabel}</span> : null}</div>
+            {identity.kind === "employee" && (identity.position || identity.department) ? <p className="identity-v2-role-line"><span>{identity.position}</span>{identity.position && identity.department ? <i/> : null}<span>{identity.department}</span></p> : identity.headline ? <p className="identity-v2-headline">{identity.headline}</p> : null}
             {identity.kind === "employee" && visibleTitles.length ? <div className="identity-v2-title-lines" aria-label="身份头衔">{visibleTitles.map((title) => <span key={title}>{title}</span>)}</div> : null}
-            {identity.kind === "employee" && identity.companyName ? <p className="identity-v2-company"><StudioIcon name="building"/>{identity.companyName}</p> : null}
+            {inlineActions && identity.kind === "employee" && identity.summary ? <p className="identity-v2-summary">{identity.summary}</p> : null}
             {identity.kind === "enterprise" && visibleFacts.length ? <dl className={`identity-v2-facts count-${visibleFacts.length}`}>{visibleFacts.map((fact) => <div key={`${fact.label}-${fact.value}`}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl> : null}
             {identity.tags?.length ? <div className="identity-v2-tags">{identity.tags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
           </div>
         </div>
+        {inlineActions && identity.kind === "employee" && visibleContacts.length ? <dl className="identity-v2-contact-details" aria-label="公开联系方式">{visibleContacts.map((item, index) => <div key={item.id || index}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl> : null}
         {visibleContacts.length ? <div className={`identity-v2-contacts count-${visibleContacts.length}`} aria-label="快捷联系方式">{visibleContacts.map((item, index) => { const content = <><StudioIcon name={contactIcon(item.kind)}/><span>{item.label}</span></>; return item.href ? <a href={item.href} key={item.id || index}>{content}</a> : <button type="button" key={item.id || index}>{content}</button>; })}</div> : null}
+        {inlineActions && (primaryAction || secondaryAction) ? <div className="identity-v2-shell-actions">{primaryAction ? <button className="identity-v2-primary-action" type="button" disabled={primaryAction.disabled} onClick={primaryAction.onClick}><StudioIcon name="message"/><span>{primaryAction.label}</span></button> : null}{secondaryAction ? <button className="identity-v2-secondary-action" type="button" disabled={secondaryAction.disabled} onClick={secondaryAction.onClick}><StudioIcon name="user"/><span>{secondaryAction.label}</span></button> : null}</div> : null}
       </div>
     </section>;
   }
@@ -216,7 +234,7 @@ function QuickEntryModule({
     key={String(item.id || index)}
     onClick={(event) => activate(event, item)}
   >
-    <span className="quick-link-icon">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : <StudioIcon name={contactIcon(String(item.icon || "website"))}/>}</span>
+    <span className="quick-link-icon">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : <StudioIcon name={actionIcon(String(item.icon || "external"))}/>}</span>
     <span className="quick-link-copy"><strong>{String(item.title)}</strong>{item.subtitle ? <small>{String(item.subtitle)}</small> : null}</span>
     <StudioIcon name="external"/>
   </a>;
@@ -233,9 +251,9 @@ function QuickEntryModule({
   </section>;
 }
 
-function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onAssistant, onSelectModule }: { module: StudioModule; editor?: boolean; onOpenItem?: StudioCardPageProps["onOpenItem"]; onAction?: StudioCardPageProps["onAction"]; onAssistant?: StudioCardPageProps["onAssistant"]; onSelectModule?: StudioCardPageProps["onSelectModule"] }) {
+function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onAssistant, onSelectModule, primaryAction, secondaryAction, inlineIdentityActions }: { module: StudioModule; editor?: boolean; onOpenItem?: StudioCardPageProps["onOpenItem"]; onAction?: StudioCardPageProps["onAction"]; onAssistant?: StudioCardPageProps["onAssistant"]; onSelectModule?: StudioCardPageProps["onSelectModule"]; primaryAction?: StudioCardPageProps["primaryAction"]; secondaryAction?: StudioCardPageProps["secondaryAction"]; inlineIdentityActions?: boolean }) {
   const items = module.items || [];
-  if (module.type === "identity") return StudioIdentityBlock({ identity: module.identity });
+  if (module.type === "identity") return StudioIdentityBlock({ identity: module.identity, primaryAction, secondaryAction, inlineActions: inlineIdentityActions });
   if (module.type === "overview") return <section className="content-module"><div className="overview-panel"><small>我能帮助你</small><p>{module.body || "把企业的业务经验变成可复用的 AI 能力，让销售更懂客户，让服务更快抵达。"}</p></div></section>;
   if (module.type === "intro") return <section className="content-module"><ModuleHeading module={module}/><div className="intro-copy"><p>{module.body || "内容待补充"}</p></div></section>;
   if (module.type === "services") {
@@ -248,8 +266,7 @@ function StudioModuleContent({ module, editor = false, onOpenItem, onAction, onA
   if (module.type === "actions" && module.actionTemplate === "quick") return <QuickEntryModule module={module} editor={editor} onAction={onAction}/>;
   if (module.type === "actions") {
     const template = module.actionTemplate || (items.some((item) => item.imageUrl) ? "media" : "shortcuts");
-    const actionIcon = (item: Record<string, unknown>): StudioIconName => ["external", "phone", "mail", "message", "map", "building", "calendar", "file", "play"].includes(String(item.icon)) ? String(item.icon) as StudioIconName : "external";
-    return <section className="content-module action-module"><ModuleHeading module={module}/><div className={`action-collection template-${template} layout-${module.layout || "grid"}`}>{items.length ? items.map((item, index) => <a className={`action-entry ${item.imageUrl ? "has-image" : "no-image"}`} href={String(item.href || "#")} target={!editor && item.openMode === "new_tab" ? "_blank" : undefined} rel="noreferrer" key={String(item.id || index)} onClick={(event) => { if (editor || !item.href || item.href === "#") event.preventDefault(); onAction?.(item); }}><div className="action-visual">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : null}<span className="action-icon"><StudioIcon name={actionIcon(item)}/></span>{template === "video" ? <><span className="action-play"><StudioIcon name="play"/></span><span className="action-duration">{String(item.duration || "02:36")}</span></> : null}</div><div className="action-copy"><div className="action-topline"><span className="action-number">{String(index + 1).padStart(2, "0")}</span>{item.tag ? <span className="action-tag">{String(item.tag)}</span> : null}{template === "event" ? <span className="action-status">{String(item.status || "进行中")}</span> : null}</div><h3>{String(item.title || "未命名入口")}</h3>{template === "event" ? <div className="action-meta">{item.date ? <span><StudioIcon name="calendar"/>{String(item.date)}</span> : null}{item.location ? <span><StudioIcon name="map"/>{String(item.location)}</span> : null}</div> : template === "articles" ? <div className="action-meta">{item.source ? <span>{String(item.source)}</span> : null}{item.date ? <span>{String(item.date)}</span> : null}</div> : null}{item.summary ? <p>{String(item.summary)}</p> : null}<span className="action-cta">{String(item.label || "查看详情")} <StudioIcon name="external"/></span></div></a>) : <div className="empty-state"><strong>行动入口待配置</strong><p>添加官网、电话、地图或站内入口。</p></div>}</div></section>;
+    return <section className="content-module action-module"><ModuleHeading module={module}/><div className={`action-collection template-${template} layout-${module.layout || "grid"}`}>{items.length ? items.map((item, index) => <a className={`action-entry ${item.imageUrl ? "has-image" : "no-image"}`} href={String(item.href || "#")} target={!editor && item.openMode === "new_tab" ? "_blank" : undefined} rel="noreferrer" key={String(item.id || index)} onClick={(event) => { if (editor || !item.href || item.href === "#") event.preventDefault(); onAction?.(item); }}><div className="action-visual">{item.imageUrl ? <img src={String(item.imageUrl)} alt=""/> : null}<span className="action-icon"><StudioIcon name={actionIcon(String(item.icon))}/></span>{template === "video" ? <><span className="action-play"><StudioIcon name="play"/></span><span className="action-duration">{String(item.duration || "02:36")}</span></> : null}</div><div className="action-copy"><div className="action-topline"><span className="action-number">{String(index + 1).padStart(2, "0")}</span>{item.tag ? <span className="action-tag">{String(item.tag)}</span> : null}{template === "event" ? <span className="action-status">{String(item.status || "进行中")}</span> : null}</div><h3>{String(item.title || "未命名入口")}</h3>{template === "event" ? <div className="action-meta">{item.date ? <span><StudioIcon name="calendar"/>{String(item.date)}</span> : null}{item.location ? <span><StudioIcon name="map"/>{String(item.location)}</span> : null}</div> : template === "articles" ? <div className="action-meta">{item.source ? <span>{String(item.source)}</span> : null}{item.date ? <span>{String(item.date)}</span> : null}</div> : null}{item.summary ? <p>{String(item.summary)}</p> : null}<span className="action-cta">{String(item.label || "查看详情")} <StudioIcon name="external"/></span></div></a>) : <div className="empty-state"><strong>行动入口待配置</strong><p>添加官网、电话、地图或站内入口。</p></div>}</div></section>;
   }
   if (module.type === "contact") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel">{items.map((item, index) => <div className="contact-row" key={String(item.id || index)}><span className="contact-icon"><StudioIcon name={contactIcon(String(item.kind || "other"))}/></span><div><small>{String(item.label || "联系方式")}</small><strong>{String(item.value || "")}</strong></div><button type="button">{String(item.action || "使用")}</button></div>)}</div></section>;
   if (module.type === "trust") return <section className="content-module"><ModuleHeading module={module}/><div className="contact-panel"><div className="contact-row"><span className="contact-icon"><StudioIcon name="check"/></span><div><small>资料状态</small><strong>{module.body || "企业公开资料已确认"}</strong></div></div></div></section>;
@@ -300,7 +317,7 @@ function hasPublicModuleContent(module: StudioModule) {
   return true;
 }
 
-export function StudioCardPage({ modules, title, editor = false, className, selectedModuleId, onSelectModule, renderModuleHandle, onBack, onShare, switchTarget, contentAriaLabel, onOpenItem, onAction, primaryAction, secondaryAction, directoryAriaLabel = "名片目录", onAssistant }: StudioCardPageProps) {
+export function StudioCardPage({ modules, title, editor = false, className, selectedModuleId, onSelectModule, renderModuleHandle, onBack, onShare, switchTarget, contentAriaLabel, onOpenItem, onAction, primaryAction, secondaryAction, inlineIdentityActions = false, directoryAriaLabel = "名片目录", onAssistant }: StudioCardPageProps) {
   const hostRef = useRef<HTMLElement>(null);
   const directoryRef = useRef<HTMLElement>(null);
   const visible = useMemo(
@@ -351,7 +368,7 @@ export function StudioCardPage({ modules, title, editor = false, className, sele
   const directoryNode = directory.length ? <nav ref={directoryRef} className="card-directory" aria-label={directoryAriaLabel}>{directory.map((module) => <button className={`directory-link ${activeId === module.id ? "active" : ""}`} type="button" key={module.id} onClick={() => { setActiveId(module.id); const target = hostRef.current?.querySelector<HTMLElement>(`[data-module-id="${CSS.escape(module.id)}"]`); if (target) { if (editor) scrollEditorTarget(target); else { const directoryHeight = directoryRef.current?.getBoundingClientRect().height || 50; window.scrollTo({ top: Math.max(0, window.scrollY + target.getBoundingClientRect().top - directoryHeight - 8), behavior: "smooth" }); } } onSelectModule?.(module.id); }}>{module.title.replace("个人", "")}</button>)}</nav> : null;
   let directoryRendered = false;
   const content = visible.map((module) => {
-    const inner = StudioModuleContent({ module, editor, onOpenItem, onAction, onAssistant, onSelectModule });
+    const inner = StudioModuleContent({ module, editor, onOpenItem, onAction, onAssistant, onSelectModule, primaryAction, secondaryAction, inlineIdentityActions });
     const element = inner as ReactElement<{ className?: string; children?: ReactNode }>;
     const exactModule = isValidElement(element) ? cloneElement(element, {
       id: `bp-template-block-${module.id}`,
@@ -372,7 +389,7 @@ export function StudioCardPage({ modules, title, editor = false, className, sele
     <section className="card-page-content-region" aria-label={contentAriaLabel}>
       {!directoryRendered ? directoryNode : null}{content}
     </section>
-    {primaryAction || secondaryAction ? <div className="sticky-actions">{primaryAction ? <button className="action-primary" type="button" disabled={primaryAction.disabled} onClick={primaryAction.onClick}>{primaryAction.label}</button> : null}{secondaryAction ? <button className="action-secondary" type="button" disabled={secondaryAction.disabled} onClick={secondaryAction.onClick}>{secondaryAction.label}</button> : null}</div> : null}
+    {!inlineIdentityActions && (primaryAction || secondaryAction) ? <div className="sticky-actions">{primaryAction ? <button className="action-primary" type="button" disabled={primaryAction.disabled} onClick={primaryAction.onClick}>{primaryAction.label}</button> : null}{secondaryAction ? <button className="action-secondary" type="button" disabled={secondaryAction.disabled} onClick={secondaryAction.onClick}>{secondaryAction.label}</button> : null}</div> : null}
   </main>;
 }
 

@@ -137,7 +137,7 @@ export type PublicCardData = {
     lead_consent: string;
     profile_personalization: string;
   };
-  enterprise_template?: { schema_version: 1 | 2; theme_key?: "brand" | "clean" | "warm"; blocks: PublicEnterpriseTemplateBlock[] } | null;
+  enterprise_template?: { schema_version: 1 | 2; theme_key?: "brand" | "clean" | "warm" | "executive"; blocks: PublicEnterpriseTemplateBlock[] } | null;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -284,7 +284,7 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
         ? raw.layout_variant as PublicEnterpriseTemplateBlock["layout_variant"]
         : "auto",
       item_limit: typeof raw.item_limit === "number" ? raw.item_limit : undefined,
-      action_template: raw.type === "action_collection" && ["shortcuts", "media", "event", "banner", "articles", "video", "buttons"].includes(raw.action_template as string)
+      action_template: raw.type === "action_collection" && ["quick", "shortcuts", "media", "event", "banner", "articles", "video", "buttons"].includes(raw.action_template as string)
         ? raw.action_template as PublicEnterpriseTemplateBlock["action_template"]
         : undefined,
       presentation,
@@ -309,7 +309,7 @@ function parseEnterpriseTemplate(value: unknown): PublicCardData["enterprise_tem
     }];
   });
   const theme = value.theme_key;
-  return { schema_version: value.schema_version === 2 ? 2 : 1, theme_key: theme === "clean" || theme === "warm" ? theme : "brand", blocks };
+  return { schema_version: value.schema_version === 2 ? 2 : 1, theme_key: theme === "clean" || theme === "warm" || theme === "executive" ? theme : "brand", blocks };
 }
 
 function parsePublicCard(value: unknown): PublicCardData {

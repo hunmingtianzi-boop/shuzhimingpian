@@ -120,6 +120,23 @@ const auth: AuthContextValue = {
     role: "company_admin",
     permissions: ["analytics.read"],
   },
+  entitlements: {
+    companyId: "company-1",
+    companyVersion: 3,
+    planCode: "professional",
+    billingCycle: "monthly",
+    featureOverrides: {},
+    features: { "ai.conversations": true },
+    limitOverrides: {},
+    limits: { "ai.conversations.monthly": 5000 },
+    limitUsage: { "ai.conversations.monthly": 1280 },
+    limitRemaining: { "ai.conversations.monthly": 3720 },
+    usagePeriodStartedAt: "2026-08-01T00:00:00+08:00",
+    usagePeriodEndsAt: "2026-09-01T00:00:00+08:00",
+    plans: [],
+    featureCatalog: [],
+    limitCatalog: [],
+  },
   loginPending: false,
   apiConfigured: true,
   login: vi.fn(),
@@ -161,6 +178,8 @@ describe("OverviewPage employee analytics", () => {
     expect(screen.getByRole("table", { name: "员工表现" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "运营就绪状态" })).toBeInTheDocument();
     expect(await screen.findByText("名片 AI")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "AI 调用额度" })).toBeInTheDocument();
+    expect(screen.getByText("3,720 次")).toBeInTheDocument();
     expect(await screen.findByText("未发布名片")).toBeInTheDocument();
     expect(await screen.findByText("赛事报名")).toBeInTheDocument();
     expect(screen.getByRole("list", { name: "用户高频话题热力分布" })).toBeInTheDocument();
