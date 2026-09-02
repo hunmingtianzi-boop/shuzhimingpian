@@ -1898,7 +1898,7 @@ button.quick-link-item { font: inherit; }
   border: 1px solid rgba(234, 239, 252, .5);
   border-radius: 8px;
   color: #fff;
-  background: #0d1930 url("https://static.wshoto.com/wx-app/master/assets/deep-personal-bg-DJdWcven.png") center top / cover no-repeat;
+  background: #0d1930 url("./assets/deep-personal-bg.webp") center top / cover no-repeat;
   box-shadow: none;
 }
 .template-theme-executive .identity-v2::before { display: none; }

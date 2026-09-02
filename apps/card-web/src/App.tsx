@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import "./styles.css";
-
 import {
   DeferredAIAssistant,
   type AIAssistantHandle,

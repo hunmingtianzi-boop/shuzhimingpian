@@ -429,13 +429,42 @@ function getApiBaseUrl() {
   return (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 }
 
+type EarlyPublicCardResponse = {
+  ok: boolean;
+  payload: unknown;
+  status: number;
+};
+
+declare global {
+  interface Window {
+    __CF_PUBLIC_CARD_BOOTSTRAP__?: {
+      endpoint: string;
+      slug: string;
+      promise: Promise<EarlyPublicCardResponse>;
+    };
+  }
+}
+
 export async function fetchPublicCard(
   slug: string,
   signal?: AbortSignal,
 ): Promise<PublicCardData | undefined> {
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) return undefined;
-  const response = await fetch(`${baseUrl}/public/cards/${encodeURIComponent(slug)}`, {
+  const requestUrl = new URL(
+    `${baseUrl}/public/cards/${encodeURIComponent(slug)}`,
+    window.location.origin,
+  ).href;
+  const earlyRequest = window.__CF_PUBLIC_CARD_BOOTSTRAP__;
+  if (earlyRequest?.endpoint === requestUrl && earlyRequest.slug === slug) {
+    delete window.__CF_PUBLIC_CARD_BOOTSTRAP__;
+    const response = await earlyRequest.promise;
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`Public card request failed with ${response.status}`);
+    return parsePublicCard(response.payload);
+  }
+
+  const response = await fetch(requestUrl, {
     headers: { Accept: "application/json" },
     signal,
   });
