@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import "./styles.css";
 
+import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { TenantLoading } from "./components/TenantLoading";
 import { TenantNotFound } from "./components/TenantNotFound";
@@ -39,10 +40,7 @@ async function fetchPublishedCard(slug: string) {
   }
 }
 
-type AppComponent = typeof import("./App").default;
-
 function renderTenant(
-  App: AppComponent,
   tenant: EnterpriseCardConfig,
   publishedCard?: PublicCardData,
 ) {
@@ -85,10 +83,9 @@ if (tenantSlug) {
 async function bootstrapTenant() {
   if (!tenantSlug) return;
   // Start every critical public-card dependency together. The public card
-  // request may already be in flight from early-card-bootstrap.js, so the
+  // request may already be in flight from the inline document bootstrap, so the
   // renderer, merge logic and fallback template should never form a serial
   // waterfall behind it.
-  const appModulePromise = import("./App");
   const mergeModulePromise = import("./lib/publicCard");
   const fallbackTenantPromise = loadTenant("template");
   const registeredTenantPromise = loadTenant(tenantSlug)
@@ -115,18 +112,15 @@ async function bootstrapTenant() {
 
   try {
     if (publishedResult.error) throw publishedResult.error;
-    const [{ default: App }, { mergePublishedCard }, fallbackTemplate] =
-      await Promise.all([
-        appModulePromise,
-        mergeModulePromise,
-        fallbackTenantPromise,
-      ]);
+    const [{ mergePublishedCard }, fallbackTemplate] = await Promise.all([
+      mergeModulePromise,
+      fallbackTenantPromise,
+    ]);
     const publishedCard = publishedResult.card;
     if (publishedCard) {
       const fallbackTenant = registeredTenant ?? fallbackTemplate;
       if (!fallbackTenant) throw new Error("Generic tenant template is unavailable");
       renderTenant(
-        App,
         mergePublishedCard(publishedCard, registeredTenant, fallbackTenant),
         publishedCard,
       );
@@ -141,7 +135,7 @@ async function bootstrapTenant() {
       return;
     }
     if (registeredTenant) {
-      renderTenant(App, registeredTenant);
+      renderTenant(registeredTenant);
       return;
     }
 
@@ -156,8 +150,7 @@ async function bootstrapTenant() {
     });
     if (registeredTenant && !requiresPublishedCard) {
       try {
-        const { default: App } = await appModulePromise;
-        renderTenant(App, registeredTenant);
+        renderTenant(registeredTenant);
         return;
       } catch (runtimeError) {
         console.error("Registered tenant runtime loading failed", {

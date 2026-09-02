@@ -11,7 +11,7 @@
       content="创非凡通用企业数智名片，按企业内容包生成品牌页面与受控知识问答。"
     />
     <title>创非凡数智名片</title>
-    <script vite-ignore src="%BASE_URL%early-card-bootstrap.js"></script>
+    <script>(function(){if(new URLSearchParams(location.search).has("mock-card"))return;var m=location.pathname.match(/(?:^|\/)c\/([^/?#]+)\/?$/i);if(!m)return;var s;try{s=decodeURIComponent(m[1]).trim().toLowerCase()}catch(e){return}if(!/^[a-z0-9][a-z0-9-]{1,94}[a-z0-9]$/.test(s))return;var n=document.querySelector('meta[name="cf-api-base"]'),b=n?(n.getAttribute("content")||"").trim():"";var a=b&&b.charAt(0)!=="%"?new URL(b.replace(/\/+$/,"")+"/",location.origin):new URL("api/v1/",new URL(".",location.href));var u=new URL("public/cards/"+encodeURIComponent(s),a).href;var p=fetch(u,{credentials:"same-origin",headers:{Accept:"application/json"}}).then(function(r){return r.json().then(function(v){return{ok:r.ok,payload:v,status:r.status}})});p.catch(function(){});window.__CF_PUBLIC_CARD_BOOTSTRAP__={endpoint:u,slug:s,promise:p}})();</script>
   </head>
   <body>
     <div id="root"></div>
