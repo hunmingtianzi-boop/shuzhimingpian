@@ -5,12 +5,10 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from starlette.requests import Request
-from starlette.responses import Response
+from fastapi import FastAPI
 
-from app.api.errors import ApiError
+from app.api.errors import ApiError, api_error_handler
 from app.api.routes import wecom_auth
-from app.api.wecom_schemas import WeComOAuthExchangeRequest
 from app.core.config import Settings
 from app.integrations.wecom import WeComMember, WeComProviderError
 from app.integrations.wecom_suite import WeComSuiteClient
@@ -72,13 +70,13 @@ async def test_login_auto_creates_verified_admin_without_installation_authorizer
     existing: bool,
     authorizer: str | None,
 ) -> None:
-    suite, store, auth, request = _mock_login(monkeypatch, existing=existing, authorizer=authorizer)
-    result = await wecom_auth.login_with_wecom(
-        WeComOAuthExchangeRequest(code="code", state="a" * 64),
-        request,
-        Response(),
-    )
-    assert result == "authenticated"
+    suite, store, auth, app = _mock_login(monkeypatch, existing=existing, authorizer=authorizer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        result = await http.post("/auth/wecom/login", json={"code": "code", "state": "a" * 64})
+    assert result.status_code == 200
+    assert result.json()["data"]["access_token"]
     auth.authenticate_trusted_identity.assert_awaited_once()
     if existing:
         suite.is_application_admin.assert_not_awaited()
@@ -98,18 +96,17 @@ async def test_unverified_member_cannot_create_admin_or_get_session(
     monkeypatch: pytest.MonkeyPatch,
     provider_failure: bool,
 ) -> None:
-    suite, store, auth, request = _mock_login(monkeypatch, existing=False, authorizer="member")
+    suite, store, auth, app = _mock_login(monkeypatch, existing=False, authorizer="member")
     if provider_failure:
         suite.is_application_admin.side_effect = WeComProviderError("WECOM_UNAVAILABLE")
     else:
         suite.is_application_admin.return_value = False
         store.resolve_or_bootstrap_identity.side_effect = ApiError(403, "ADMIN_REQUIRED", "denied")
-    with pytest.raises(ApiError):
-        await wecom_auth.login_with_wecom(
-            WeComOAuthExchangeRequest(code="code", state="a" * 64),
-            request,
-            Response(),
-        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        result = await http.post("/auth/wecom/login", json={"code": "code", "state": "a" * 64})
+    assert result.status_code == (502 if provider_failure else 403)
     auth.authenticate_trusted_identity.assert_not_awaited()
     if provider_failure:
         store.resolve_or_bootstrap_identity.assert_not_awaited()
@@ -172,11 +169,21 @@ def _mock_login(monkeypatch: pytest.MonkeyPatch, *, existing: bool, authorizer: 
     monkeypatch.setattr(wecom_auth, "WeComStore", lambda *args: store)
     monkeypatch.setattr(wecom_auth, "AuthStore", lambda *args: auth)
     monkeypatch.setattr(wecom_auth, "request_ip_hash", lambda *args: None)
-    monkeypatch.setattr(wecom_auth, "_token_envelope_with_cookies", lambda *args: "authenticated")
-    request = Request(
-        {
-            "type": "http",
-            "app": SimpleNamespace(state=SimpleNamespace(settings=None, session_factory=None)),
-        }
+    monkeypatch.setattr(
+        wecom_auth,
+        "_token_envelope_with_cookies",
+        lambda *args: {
+            "data": {
+                "access_token": "test-session",
+                "csrf_token": "c" * 64,
+                "expires_in": 3600,
+                "refresh_expires_in": 86400,
+            }
+        },
     )
-    return suite, store, auth, request
+    app = FastAPI()
+    app.state.settings = None
+    app.state.session_factory = None
+    app.add_exception_handler(ApiError, api_error_handler)
+    app.include_router(wecom_auth.router)
+    return suite, store, auth, app
