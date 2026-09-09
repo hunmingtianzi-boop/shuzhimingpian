@@ -22,6 +22,7 @@ from app.cli.seed_content import (
     seed_package,
 )
 from app.core.config import Settings
+from app.core.tokens import decode_staff_access_token
 from app.db.models import (
     AuditLog,
     Company,
@@ -134,11 +135,25 @@ async def test_wecom_members_auto_join_idempotently_with_scoped_non_admin_sessio
         assert "card.write" in authentication.identity.permissions
         assert "company.manage" not in authentication.identity.permissions
         assert "members.manage" not in authentication.identity.permissions
+        admin_auth = await AuthStore(sessions, settings).authenticate_trusted_identity(
+            user_id=first.user_id,
+            membership_id=first.membership_id,
+            tenant_id=first.tenant_id,
+            company_id=first.company_id,
+            account_hash=first.account_hash,
+            event_type="staff.wecom_login",
+        )
+        admin_principal = decode_staff_access_token(
+            admin_auth.tokens.access_token,
+            signing_key=settings.jwt_signing_key.get_secret_value(),
+            issuer=settings.app_name,
+        )
         members, _ = await MemberStore(sessions, settings).list_members(
             scope=MemberScope(
                 tenant_id=first.tenant_id,
                 company_id=first.company_id,
                 actor_user_id=first.user_id,
+                actor_session_id=admin_principal.session_id,
             ),
             limit=100,
             offset=0,
