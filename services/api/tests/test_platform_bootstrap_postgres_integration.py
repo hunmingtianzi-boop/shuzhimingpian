@@ -109,7 +109,7 @@ async def test_wecom_members_auto_join_idempotently_with_scoped_non_admin_sessio
         )
 
     try:
-        with pytest.raises(ApiError, match="首次开通"):
+        with pytest.raises(ApiError, match="WECOM_AUTHORIZER_LOGIN_REQUIRED"):
             await join(corp_id)
         first = await store.resolve_or_bootstrap_identity(
             member=admin, enterprise_name="Association", corp_id=corp_id, allow_bootstrap=True
@@ -146,7 +146,7 @@ async def test_wecom_members_auto_join_idempotently_with_scoped_non_admin_sessio
         assert sum(row.membership_id == second.membership_id for row in members) == 1
 
         other_corp = f"ww-other-{uuid.uuid4().hex}"
-        with pytest.raises(ApiError, match="首次开通"):
+        with pytest.raises(ApiError, match="WECOM_AUTHORIZER_LOGIN_REQUIRED"):
             await join(other_corp)
         await store.resolve_or_bootstrap_identity(
             member=admin, enterprise_name="Other Association",
