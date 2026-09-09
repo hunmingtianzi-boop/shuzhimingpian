@@ -51,6 +51,211 @@ class MemoryRedis:
         self.values.pop(key, None)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_code", [40014, 42001])
+@pytest.mark.parametrize("operation", ["member", "departments"])
+async def test_suite_login_refreshes_rejected_corp_token_without_replaying_oauth(
+    provider_code: int,
+    operation: str,
+) -> None:
+    requests: list[httpx.Request] = []
+    token_count = 0
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal token_count
+        requests.append(request)
+        path = request.url.path
+        if path.endswith("/get_suite_token"):
+            return httpx.Response(200, json={"suite_access_token": "suite-token"})
+        if path.endswith("/getuserinfo3rd"):
+            return httpx.Response(200, json={"CorpId": "corp", "UserId": "member"})
+        if path.endswith("/get_corp_token"):
+            token_count += 1
+            return httpx.Response(200, json={"access_token": f"corp-token-{token_count}"})
+        if request.url.params["access_token"] == "corp-token-1":  # noqa: S105 - test credential
+            return httpx.Response(200, json={"errcode": provider_code})
+        assert request.url.params["access_token"] == "corp-token-2"  # noqa: S105 - test credential
+        return httpx.Response(200, json={"userid": "member", "department": []})
+
+    redis = MemoryRedis()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+        connector = WeComSuiteClient(
+            settings=_settings(wecom_suite_id="suite", wecom_suite_secret="test-secret"),  # noqa: S106 - test credential
+            http_client=http,
+            redis=redis,
+        )
+        await connector.store_suite_ticket("ticket")
+        await connector.corp_access_token(auth_corpid="corp", permanent_code="grant")
+        identity = await connector.get_user_identity(code="one-use-code")
+        kwargs = {"auth_corpid": identity.corp_id, "permanent_code": "grant"}
+        if operation == "member":
+            assert (
+                await connector.get_member(**kwargs, user_id=identity.user_id)
+            ).user_id == "member"
+        else:
+            assert await connector.list_departments(**kwargs) == ()
+        assert await connector.corp_access_token(**kwargs) == "corp-token-2"
+    assert token_count == 2
+    assert sum(r.url.path.endswith("/getuserinfo3rd") for r in requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_code", [40014, 40082, 42009])
+@pytest.mark.parametrize("operation", ["identity", "corp_token"])
+async def test_suite_login_refreshes_rejected_suite_token(
+    provider_code: int,
+    operation: str,
+) -> None:
+    token_count = 0
+    operation_count = 0
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal token_count, operation_count
+        if request.url.path.endswith("/get_suite_token"):
+            token_count += 1
+            return httpx.Response(200, json={"suite_access_token": f"suite-token-{token_count}"})
+        operation_count += 1
+        if request.url.params["suite_access_token"] == "suite-token-1":  # noqa: S105 - test credential
+            return httpx.Response(200, json={"errcode": provider_code})
+        assert request.url.params["suite_access_token"] == "suite-token-2"  # noqa: S105 - test credential
+        return httpx.Response(
+            200, json={"CorpId": "corp", "UserId": "member", "access_token": "corp-token"}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+        connector = WeComSuiteClient(
+            settings=_settings(wecom_suite_id="suite", wecom_suite_secret="test-secret"),  # noqa: S106 - test credential
+            http_client=http,
+            redis=MemoryRedis(),
+        )
+        await connector.store_suite_ticket("ticket")
+        await connector.suite_access_token()
+        if operation == "identity":
+            assert (await connector.get_user_identity(code="code")).user_id == "member"
+        else:
+            assert (
+                await connector.corp_access_token(auth_corpid="corp", permanent_code="grant")
+                == "corp-token"
+            )
+    assert token_count == operation_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_code, expected_calls", [(40014, 2), (40029, 1), (60011, 1)])
+async def test_suite_token_retry_is_bounded_and_does_not_retry_other_errors(
+    provider_code: int,
+    expected_calls: int,
+) -> None:
+    operation_count = 0
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal operation_count
+        if request.url.path.endswith("/get_suite_token"):
+            return httpx.Response(200, json={"suite_access_token": "suite-token"})
+        operation_count += 1
+        return httpx.Response(200, json={"errcode": provider_code})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+        connector = WeComSuiteClient(
+            settings=_settings(wecom_suite_id="suite", wecom_suite_secret="test-secret"),  # noqa: S106 - test credential
+            http_client=http,
+            redis=MemoryRedis(),
+        )
+        await connector.store_suite_ticket("ticket")
+        with pytest.raises(WeComProviderError) as caught:
+            await connector.get_user_identity(code="code")
+        assert caught.value.provider_code == provider_code
+    assert operation_count == expected_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_code, expected_calls", [(40014, 2), (42001, 2), (60011, 1)])
+async def test_corp_token_retry_preserves_permissions_and_stops_after_one_refresh(
+    provider_code: int,
+    expected_calls: int,
+) -> None:
+    member_calls = 0
+    token_calls = 0
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal member_calls, token_calls
+        if request.url.path.endswith("/get_suite_token"):
+            return httpx.Response(200, json={"suite_access_token": "suite-token"})
+        if request.url.path.endswith("/get_corp_token"):
+            token_calls += 1
+            return httpx.Response(200, json={"access_token": f"corp-{token_calls}"})
+        member_calls += 1
+        return httpx.Response(200, json={"errcode": provider_code})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+        connector = WeComSuiteClient(
+            settings=_settings(
+                wecom_suite_id="suite",
+                wecom_suite_secret="test-secret",  # noqa: S106 - fixture
+            ),
+            http_client=http,
+            redis=MemoryRedis(),
+        )
+        await connector.store_suite_ticket("ticket")
+        with pytest.raises(WeComProviderError) as caught:
+            await connector.get_member(auth_corpid="corp", permanent_code="grant", user_id="member")
+        assert caught.value.provider_code == provider_code
+    assert member_calls == token_calls == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_reinstallation_and_secret_rotation_do_not_reuse_cached_credentials() -> None:
+    suite_count = 0
+    corp_count = 0
+    ticket_count = 0
+
+    async def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal suite_count, corp_count, ticket_count
+        if request.url.path.endswith("/get_suite_token"):
+            suite_count += 1
+            return httpx.Response(200, json={"suite_access_token": f"suite-{suite_count}"})
+        if request.url.path.endswith("/get_corp_token"):
+            corp_count += 1
+            return httpx.Response(200, json={"access_token": f"corp-{corp_count}"})
+        ticket_count += 1
+        return httpx.Response(200, json={"ticket": f"ticket-{ticket_count}"})
+
+    redis = MemoryRedis()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+        settings = _settings(wecom_suite_id="suite", wecom_suite_secret="old-secret")  # noqa: S106 - test credential
+        connector = WeComSuiteClient(settings=settings, http_client=http, redis=redis)
+        await connector.store_suite_ticket("ticket")
+        for grant, expected in [("old-grant", 1), ("new-grant", 2), ("new-grant", 2)]:
+            assert (
+                await connector.corp_access_token(auth_corpid="corp", permanent_code=grant)
+                == f"corp-{expected}"
+            )
+            assert (
+                await connector.jsapi_ticket(
+                    auth_corpid="corp", permanent_code=grant, ticket_type="corp"
+                )
+                == f"ticket-{expected}"
+            )
+        connector = WeComSuiteClient(
+            settings=_settings(wecom_suite_id="suite", wecom_suite_secret="new-secret"),  # noqa: S106 - test credential
+            http_client=http,
+            redis=redis,
+        )
+        assert await connector.suite_access_token() == "suite-2"
+        assert (
+            await connector.corp_access_token(auth_corpid="corp", permanent_code="new-grant")
+            == "corp-3"
+        )
+        assert (
+            await connector.jsapi_ticket(
+                auth_corpid="corp", permanent_code="new-grant", ticket_type="corp"
+            )
+            == "ticket-3"
+        )
+    assert (suite_count, corp_count, ticket_count) == (2, 3, 3)
+    assert all("secret" not in key and "grant" not in key for key in redis.values)
+
+
 def _settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "_env_file": None,
@@ -208,7 +413,11 @@ async def test_wecom_suite_caches_corp_and_agent_jsapi_tickets_separately() -> N
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
+    secret_digest = hashlib.sha256(b"test-only-suite-secret").hexdigest()[:20]
+    grant_digest = hashlib.sha256(b"permanent-code").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}:{secret_digest}:{grant_digest}"
+    ] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
         assert (
@@ -263,7 +472,11 @@ async def test_wecom_suite_message_uses_corp_token_and_authorized_agent() -> Non
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
+    secret_digest = hashlib.sha256(b"test-only-suite-secret").hexdigest()[:20]
+    grant_digest = hashlib.sha256(b"permanent-code").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}:{secret_digest}:{grant_digest}"
+    ] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         result = await WeComSuiteClient(
             settings=settings,
@@ -340,7 +553,11 @@ async def test_wecom_suite_template_card_opens_the_application_report() -> None:
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
+    secret_digest = hashlib.sha256(b"test-only-suite-secret").hexdigest()[:20]
+    grant_digest = hashlib.sha256(b"permanent-code").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}:{secret_digest}:{grant_digest}"
+    ] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         result = await WeComSuiteClient(
             settings=settings,
@@ -388,7 +605,11 @@ async def test_wecom_suite_message_rejects_false_delivery_acknowledgements(
     redis = MemoryRedis()
     suite_digest = hashlib.sha256(b"wwsuite123456").hexdigest()[:20]
     corp_digest = hashlib.sha256(b"wwcorp123456").hexdigest()[:20]
-    redis.values[f"wecom:corp-access-token:{suite_digest}:{corp_digest}"] = "corp-token"
+    secret_digest = hashlib.sha256(b"test-only-suite-secret").hexdigest()[:20]
+    grant_digest = hashlib.sha256(b"permanent-code").hexdigest()[:20]
+    redis.values[
+        f"wecom:corp-access-token:{suite_digest}:{corp_digest}:{secret_digest}:{grant_digest}"
+    ] = "corp-token"
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         connector = WeComSuiteClient(settings=settings, http_client=client, redis=redis)
         with pytest.raises(
@@ -560,6 +781,9 @@ async def test_suite_oauth_uses_the_provider_suite_token_parameter(userinfo_path
     ("provider_code", "message_part"),
     [
         (40082, "服务商登录凭证无效"),
+        (40014, "接口凭证无效"),
+        (40084, "永久授权码无效"),
+        (42001, "接口凭证已过期"),
         (60020, "可信 IP"),
         (50001, "可信域名"),
         (40029, "重新点击企业微信登录"),
@@ -571,9 +795,7 @@ async def test_suite_oauth_uses_the_provider_suite_token_parameter(userinfo_path
 def test_oauth_error_exposes_safe_actionable_provider_code(
     provider_code: int, message_part: str
 ) -> None:
-    error = _oauth_error(
-        WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=provider_code)
-    )
+    error = _oauth_error(WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=provider_code))
     assert error.code == "WECOM_PROVIDER_REJECTED"
     assert error.details == {"provider_code": provider_code}
     assert message_part in error.safe_message

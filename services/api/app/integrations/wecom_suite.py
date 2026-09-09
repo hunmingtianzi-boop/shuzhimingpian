@@ -201,11 +201,10 @@ class WeComSuiteClient:
         )
 
     async def get_user_identity(self, *, code: str) -> WeComSuiteIdentity:
-        suite_token = await self.suite_access_token()
-        payload = await self._request_json(
+        payload = await self._request_with_suite_token(
             "GET",
             self._settings.wecom_suite_userinfo_path,
-            params={"suite_access_token": suite_token, "code": code},
+            params={"code": code},
         )
         corp_id = payload.get("CorpId") or payload.get("corpid")
         user_id = payload.get("UserId") or payload.get("userid")
@@ -232,16 +231,14 @@ class WeComSuiteClient:
     ) -> str:
         if self._redis is None:
             raise WeComConfigurationError("wecom_suite_token_store_unavailable")
-        cache_key = self._corp_token_key(auth_corpid)
+        cache_key = self._corp_token_key(auth_corpid, permanent_code)
         if not force_refresh:
             cached = await self._redis.get(cache_key)
             if cached:
                 return str(cached)
-        suite_token = await self.suite_access_token()
-        payload = await self._request_json(
+        payload = await self._request_with_suite_token(
             "POST",
             "/cgi-bin/service/get_corp_token",
-            params={"suite_access_token": suite_token},
             json={"auth_corpid": auth_corpid, "permanent_code": permanent_code},
         )
         token = payload.get("access_token")
@@ -265,7 +262,7 @@ class WeComSuiteClient:
             raise WeComConfigurationError("wecom_jsapi_ticket_type_invalid")
         if self._redis is None:
             raise WeComConfigurationError("wecom_suite_token_store_unavailable")
-        cache_key = self._jsapi_ticket_key(auth_corpid, ticket_type)
+        cache_key = self._jsapi_ticket_key(auth_corpid, permanent_code, ticket_type)
         if not force_refresh:
             cached = await self._redis.get(cache_key)
             if cached:
@@ -305,14 +302,11 @@ class WeComSuiteClient:
         permanent_code: str,
         user_id: str,
     ) -> WeComMember:
-        token = await self.corp_access_token(
+        payload = await self._read_with_corp_token(
+            "/cgi-bin/user/get",
             auth_corpid=auth_corpid,
             permanent_code=permanent_code,
-        )
-        payload = await self._request_json(
-            "GET",
-            "/cgi-bin/user/get",
-            params={"access_token": token, "userid": user_id},
+            params={"userid": user_id},
         )
         returned_id = payload.get("userid")
         if not isinstance(returned_id, str) or not returned_id:
@@ -413,14 +407,10 @@ class WeComSuiteClient:
         auth_corpid: str,
         permanent_code: str,
     ) -> tuple[WeComDepartment, ...]:
-        token = await self.corp_access_token(
+        payload = await self._read_with_corp_token(
+            "/cgi-bin/department/list",
             auth_corpid=auth_corpid,
             permanent_code=permanent_code,
-        )
-        payload = await self._request_json(
-            "GET",
-            "/cgi-bin/department/list",
-            params={"access_token": token},
         )
         raw_departments = payload.get("department")
         if not isinstance(raw_departments, list):
@@ -444,6 +434,67 @@ class WeComSuiteClient:
                 )
             )
         return tuple(result)
+
+    async def _request_with_suite_token(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, object] | None = None,
+        json: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        token = await self.suite_access_token()
+        try:
+            return await self._request_json(
+                method,
+                path,
+                params={**(params or {}), "suite_access_token": token},
+                json=json,
+            )
+        except WeComProviderError as exc:
+            # Only a definite token rejection is safe to retry with a one-use code.
+            # Never restart OAuth after a downstream member/department failure.
+            if exc.provider_code not in {40014, 40082, 42009}:
+                raise
+        token = await self.suite_access_token(force_refresh=True)
+        return await self._request_json(
+            method,
+            path,
+            params={**(params or {}), "suite_access_token": token},
+            json=json,
+        )
+
+    async def _read_with_corp_token(
+        self,
+        path: str,
+        *,
+        auth_corpid: str,
+        permanent_code: str,
+        params: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        token = await self.corp_access_token(
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+        )
+        try:
+            return await self._request_json(
+                "GET",
+                path,
+                params={**(params or {}), "access_token": token},
+            )
+        except WeComProviderError as exc:
+            if exc.provider_code not in {40014, 42001}:
+                raise
+        token = await self.corp_access_token(
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+            force_refresh=True,
+        )
+        return await self._request_json(
+            "GET",
+            path,
+            params={**(params or {}), "access_token": token},
+        )
 
     async def _request_json(
         self,
@@ -494,17 +545,22 @@ class WeComSuiteClient:
         return f"wecom:suite-ticket:{self._digest(suite_id)}"
 
     def _suite_token_key(self, suite_id: str) -> str:
-        return f"wecom:suite-access-token:{self._digest(suite_id)}"
+        _suite_id, secret = self._credentials()
+        return f"wecom:suite-access-token:{self._digest(suite_id)}:{self._digest(secret)}"
 
-    def _corp_token_key(self, corp_id: str) -> str:
-        suite_id, _secret = self._credentials()
-        return f"wecom:corp-access-token:{self._digest(suite_id)}:{self._digest(corp_id)}"
+    def _corp_token_key(self, corp_id: str, permanent_code: str) -> str:
+        suite_id, secret = self._credentials()
+        return (
+            f"wecom:corp-access-token:{self._digest(suite_id)}:{self._digest(corp_id)}:"
+            f"{self._digest(secret)}:{self._digest(permanent_code)}"
+        )
 
-    def _jsapi_ticket_key(self, corp_id: str, ticket_type: str) -> str:
-        suite_id, _secret = self._credentials()
+    def _jsapi_ticket_key(self, corp_id: str, permanent_code: str, ticket_type: str) -> str:
+        suite_id, secret = self._credentials()
         return (
             f"wecom:jsapi-ticket:{self._digest(suite_id)}:"
-            f"{self._digest(corp_id)}:{ticket_type}"
+            f"{self._digest(corp_id)}:{ticket_type}:"
+            f"{self._digest(secret)}:{self._digest(permanent_code)}"
         )
 
 
