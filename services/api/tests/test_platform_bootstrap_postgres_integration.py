@@ -19,7 +19,9 @@ from app.cli.seed_content import (
 )
 from app.core.config import Settings
 from app.db.models import AuditLog, ModelConfig, PromptVersion
+from app.integrations.wecom import WeComMember
 from app.services.auth_store import AuthStore
+from app.services.wecom_store import WeComStore
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -30,6 +32,49 @@ pytestmark = [
         reason="set RUN_PLATFORM_INTEGRATION=1 against a disposable migrated database",
     ),
 ]
+
+
+@pytest.mark.asyncio
+async def test_wecom_first_admin_auto_creation_is_idempotent_and_login_ready() -> None:
+    settings = Settings()
+    runtime = create_async_engine(settings.database_url, pool_pre_ping=True)
+    sessions = async_sessionmaker(runtime, expire_on_commit=False)
+    store = WeComStore(sessions, settings)
+    corp_id = f"ww-integration-{uuid.uuid4().hex}"
+    member = WeComMember(
+        user_id="verified-admin",
+        name="WeCom Admin",
+        departments=(),
+        position=None,
+        avatar_url=None,
+        status=1,
+    )
+    try:
+        first = await store.resolve_or_bootstrap_identity(
+            member=member,
+            enterprise_name="WeCom Test Enterprise",
+            corp_id=corp_id,
+            allow_bootstrap=True,
+        )
+        second = await store.resolve_or_bootstrap_identity(
+            member=member,
+            enterprise_name="WeCom Test Enterprise",
+            corp_id=corp_id,
+            allow_bootstrap=True,
+        )
+        assert second == first
+        authentication = await AuthStore(sessions, settings).authenticate_trusted_identity(
+            user_id=first.user_id,
+            membership_id=first.membership_id,
+            tenant_id=first.tenant_id,
+            company_id=first.company_id,
+            account_hash=first.account_hash,
+            event_type="staff.wecom_login",
+        )
+        assert authentication.identity.role == "company_admin"
+        assert authentication.tokens.access_token
+    finally:
+        await runtime.dispose()
 
 
 @pytest.mark.asyncio

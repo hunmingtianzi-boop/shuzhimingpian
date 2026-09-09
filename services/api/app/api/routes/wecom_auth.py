@@ -229,10 +229,6 @@ async def login_with_wecom(
                 permanent_code=authorization.permanent_code,
             )
             corp_id = authorization.auth_corpid
-            allow_bootstrap = (
-                authorization.authorizer_user_id is not None
-                and authorization.authorizer_user_id == identity.user_id
-            )
             enterprise_name = authorization.corp_name or _enterprise_name(departments)
         else:
             client = _client(request)
@@ -247,12 +243,28 @@ async def login_with_wecom(
         request.app.state.session_factory,
         request.app.state.settings,
     )
-    resolved = await store.resolve_or_bootstrap_identity(
-        member=member,
-        enterprise_name=enterprise_name,
-        corp_id=corp_id,
-        allow_bootstrap=allow_bootstrap,
-    )
+    try:
+        resolved = await store.resolve_identity(wecom_user_id=member.user_id, corp_id=corp_id)
+    except ApiError as exc:
+        if exc.code != "WECOM_ACCOUNT_NOT_BOUND":
+            raise
+        if _uses_suite(request):
+            try:
+                # Installation metadata may omit the authorizer. Ask WeCom for
+                # current management authority only when creating a new account.
+                allow_bootstrap = await suite_client.is_application_admin(
+                    auth_corpid=authorization.auth_corpid,
+                    permanent_code=authorization.permanent_code,
+                    user_id=identity.user_id,
+                )
+            except (WeComConfigurationError, WeComProviderError) as provider_error:
+                raise _oauth_error(provider_error) from provider_error
+        resolved = await store.resolve_or_bootstrap_identity(
+            member=member,
+            enterprise_name=enterprise_name,
+            corp_id=corp_id,
+            allow_bootstrap=allow_bootstrap,
+        )
     authentication = await AuthStore(
         request.app.state.session_factory,
         request.app.state.settings,

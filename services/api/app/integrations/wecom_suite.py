@@ -326,6 +326,35 @@ class WeComSuiteClient:
             status=payload.get("status") if isinstance(payload.get("status"), int) else None,
         )
 
+    async def is_application_admin(
+        self,
+        *,
+        auth_corpid: str,
+        permanent_code: str,
+        user_id: str,
+    ) -> bool:
+        """Verify current management authority using the corporation-scoped API."""
+        payload = await self._read_with_corp_token(
+            "/cgi-bin/agent/get_admin_list",
+            method="POST",
+            auth_corpid=auth_corpid,
+            permanent_code=permanent_code,
+        )
+        admins = payload.get("admin", [])
+        if not isinstance(admins, list):
+            raise WeComProviderError("WECOM_INVALID_RESPONSE")
+        for admin in admins:
+            if not isinstance(admin, dict):
+                raise WeComProviderError("WECOM_INVALID_RESPONSE")
+            # auth_type=0 only permits sending messages; it cannot claim a company.
+            if (
+                admin.get("userid") == user_id
+                and type(admin.get("auth_type")) is int
+                and admin["auth_type"] == 1
+            ):
+                return True
+        return False
+
     async def send_text(
         self,
         *,
@@ -468,6 +497,7 @@ class WeComSuiteClient:
         self,
         path: str,
         *,
+        method: str = "GET",
         auth_corpid: str,
         permanent_code: str,
         params: dict[str, object] | None = None,
@@ -478,7 +508,7 @@ class WeComSuiteClient:
         )
         try:
             return await self._request_json(
-                "GET",
+                method,
                 path,
                 params={**(params or {}), "access_token": token},
             )
@@ -491,7 +521,7 @@ class WeComSuiteClient:
             force_refresh=True,
         )
         return await self._request_json(
-            "GET",
+            method,
             path,
             params={**(params or {}), "access_token": token},
         )

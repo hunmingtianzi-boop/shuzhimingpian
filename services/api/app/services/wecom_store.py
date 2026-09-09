@@ -307,7 +307,7 @@ class WeComStore:
                 raise ApiError(
                     403,
                     "WECOM_AUTHORIZER_LOGIN_REQUIRED",
-                    "请由完成应用授权的企业管理员首次进入并完成开通",
+                    "首次开通需要拥有此应用管理权限的企业管理员登录",
                 )
             raise ApiError(
                 403,
