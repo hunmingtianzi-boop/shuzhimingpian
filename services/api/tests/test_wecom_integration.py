@@ -11,7 +11,7 @@ import pytest
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from pydantic import ValidationError
 
-from app.api.routes.wecom_auth import _enterprise_name
+from app.api.routes.wecom_auth import _enterprise_name, _oauth_error
 from app.core.config import Settings
 from app.core.tokens import StaffPrincipal
 from app.integrations.wecom import WeComClient, WeComDepartment, WeComProviderError
@@ -516,6 +516,68 @@ async def test_wecom_internal_oauth_uses_self_built_app_identity_endpoint() -> N
 
     assert identity.user_id == "ZhouZiHan"
     assert identity.device_id == "device-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "userinfo_path",
+    ["/cgi-bin/service/auth/getuserinfo3rd", "/cgi-bin/service/getuserinfo3rd"],
+)
+async def test_suite_oauth_uses_the_provider_suite_token_parameter(userinfo_path: str) -> None:
+    async def provider(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/cgi-bin/service/get_suite_token":
+            return httpx.Response(
+                200,
+                json={"suite_access_token": "test-suite-token", "expires_in": 7200},
+            )
+        assert request.url.path == userinfo_path
+        # Both official third-party identity endpoints require this parameter.
+        # An access_token query is not a substitute for suite_access_token.
+        if request.url.params.get("suite_access_token") != "test-suite-token":
+            return httpx.Response(200, json={"errcode": 40082, "errmsg": "invalid token"})
+        assert "access_token" not in request.url.params
+        assert request.url.params["code"] == "one-time-login-code"
+        return httpx.Response(
+            200,
+            json={"errcode": 0, "CorpId": "ww-authorized-corp", "UserId": "member-1"},
+        )
+
+    settings = _settings(
+        wecom_suite_id="wwsuite123456",
+        wecom_suite_secret="test-only-suite-secret",  # noqa: S106 - fixture
+        wecom_suite_userinfo_path=userinfo_path,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        connector = WeComSuiteClient(settings=settings, http_client=client, redis=MemoryRedis())
+        await connector.store_suite_ticket("test-suite-ticket")
+        identity = await connector.get_user_identity(code="one-time-login-code")
+
+    assert identity.corp_id == "ww-authorized-corp"
+    assert identity.user_id == "member-1"
+
+
+@pytest.mark.parametrize(
+    ("provider_code", "message_part"),
+    [
+        (40082, "服务商登录凭证无效"),
+        (60020, "可信 IP"),
+        (50001, "可信域名"),
+        (40029, "重新点击企业微信登录"),
+        (48004, "应用授权"),
+        (60021, "可见范围"),
+        (99999, "身份校验"),
+    ],
+)
+def test_oauth_error_exposes_safe_actionable_provider_code(
+    provider_code: int, message_part: str
+) -> None:
+    error = _oauth_error(
+        WeComProviderError("WECOM_PROVIDER_REJECTED", provider_code=provider_code)
+    )
+    assert error.code == "WECOM_PROVIDER_REJECTED"
+    assert error.details == {"provider_code": provider_code}
+    assert message_part in error.safe_message
+    assert str(provider_code) in error.safe_message
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Annotated, Literal
 
+import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.api.auth_schemas import AuthEnvelope
@@ -37,6 +38,25 @@ from app.services.wecom_suite_store import WeComSuiteStore
 
 router = APIRouter(prefix="/auth/wecom", tags=["WeCom Authentication"])
 StaffDependency = Annotated[StaffPrincipal, Depends(get_staff_principal)]
+logger = structlog.get_logger(__name__)
+
+_PROVIDER_LOGIN_MESSAGES = {
+    40001: "企业微信应用密钥无效，请联系平台管理员核对应用配置",
+    40013: "企业微信企业编号无效，请联系平台管理员核对接入企业",
+    40029: "企业微信授权码无效或已使用，请重新点击企业微信登录",
+    40082: "企业微信服务商登录凭证无效，请联系平台管理员检查凭证配置",
+    40083: "企业微信服务商应用编号无效，请联系平台管理员核对应用配置",
+    40085: "企业微信服务商票据无效，请联系平台管理员检查企微回调",
+    42003: "企业微信授权码已过期，请重新点击企业微信登录",
+    42009: "企业微信服务商登录凭证已过期，请重新登录或联系平台管理员",
+    48002: "企业微信应用缺少接口权限，请联系企业管理员检查授权范围",
+    48004: "企业微信应用授权无效，请联系企业管理员确认已安装并授权此应用",
+    50001: "企业微信登录回调域名未登记为可信域名，请联系平台管理员配置",
+    50002: "当前成员不在应用权限范围内，请联系企业管理员调整可见范围",
+    60011: "企业微信应用无权读取成员或部门，请联系企业管理员检查授权范围",
+    60020: "服务器出口 IP 未被企业微信信任，请联系平台管理员配置可信 IP",
+    60021: "当前成员不在应用可见范围内，请联系企业管理员调整可见范围",
+}
 
 
 def _client(request: Request) -> WeComClient:
@@ -93,10 +113,23 @@ def _oauth_error(exc: Exception) -> ApiError:
             if exc.provider_code is not None
             else None
         )
+        # Provider errmsg may contain credentials, IP addresses or user IDs.
+        # Report only our own guidance and the numeric provider code.
+        message = _PROVIDER_LOGIN_MESSAGES.get(
+            exc.provider_code, "企业微信暂时无法完成身份校验，请稍后重试"
+        )
+        if exc.provider_code is not None:
+            message = f"{message}（企微错误码：{exc.provider_code}）"
+        logger.warning(
+            "wecom_oauth_provider_failed",
+            error_code=exc.code,
+            provider_code=exc.provider_code,
+            request_id=request_id_ctx.get(),
+        )
         return ApiError(
             502,
             exc.code,
-            "企业微信暂时无法完成身份校验，请稍后重试",
+            message,
             details=details,
         )
     return ApiError(500, "WECOM_OAUTH_FAILED", "企业微信登录暂时不可用")

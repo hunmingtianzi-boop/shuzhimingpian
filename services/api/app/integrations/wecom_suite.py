@@ -205,7 +205,7 @@ class WeComSuiteClient:
         payload = await self._request_json(
             "GET",
             self._settings.wecom_suite_userinfo_path,
-            params={"access_token": suite_token, "code": code},
+            params={"suite_access_token": suite_token, "code": code},
         )
         corp_id = payload.get("CorpId") or payload.get("corpid")
         user_id = payload.get("UserId") or payload.get("userid")
