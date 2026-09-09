@@ -136,7 +136,7 @@ export function LoginPage() {
     <main className="login-page">
       <section className="login-context" aria-label="工作台说明">
         <div className="login-context-content">
-          <span className="product-name">创非凡数智名片</span>
+          <span className="product-name">浙江省办公服务行业协会数智名片</span>
           <h2>统一管理企业资料、名片与 AI 知识内容。</h2>
           <p>
             所有管理操作以真实服务响应为准。未连接的接口会显示明确错误，不会填充演示数据。
