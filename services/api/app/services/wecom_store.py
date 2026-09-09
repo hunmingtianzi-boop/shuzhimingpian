@@ -9,11 +9,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.errors import ApiError
 from app.core.config import Settings
 from app.core.pii import PiiCipher
+from app.core.staff_auth import hash_staff_password
 from app.db.models import (
     AuthSession,
     Card,
@@ -235,14 +237,13 @@ class WeComStore:
         corp_id: str | None = None,
         allow_bootstrap: bool = True,
     ) -> WeComResolvedIdentity:
-        """Resolve a member or create the corporation's first enterprise admin.
+        """Provision members in an existing scope; only verified admins bootstrap.
 
         The provider access token and active-member check happen before this
         boundary.  PostgreSQL serializes the first-login race by corporation
         HMAC and exposes no global scope table privileges to the runtime role.
-        Once a corporation has been claimed, additional unbound members cannot
-        promote themselves; they continue through the normal administrator-led
-        member flow.
+        Additional members always receive the ordinary card-owner role. Existing
+        identities keep their assigned permissions, including disabled accounts.
         """
 
         corp_hash = self._corp_hash(corp_id)
@@ -270,6 +271,54 @@ class WeComStore:
                 corp_hash=corp_hash,
                 user_hash=user_hash,
             )
+            if resolved is None:
+                try:
+                    result = await session.execute(
+                        text(
+                            """
+                            SELECT user_id, membership_id, tenant_id, company_id, created
+                            FROM app.provision_wecom_member(
+                              :corp_hash, :user_hash, :user_ciphertext,
+                              :profile_ciphertext, :key_ref, :display_name, :password_hash
+                            )
+                            """
+                        ),
+                        {
+                            "corp_hash": corp_hash,
+                            "user_hash": user_hash,
+                            "user_ciphertext": self._cipher.encrypt(member.user_id),
+                            "profile_ciphertext": self._cipher.encrypt(profile),
+                            "key_ref": self._cipher.key_ref,
+                            "display_name": display_name,
+                            "password_hash": hash_staff_password(secrets.token_urlsafe(48)),
+                        },
+                    )
+                except DBAPIError as exc:
+                    if getattr(exc.orig, "sqlstate", None) == "P0001":
+                        raise ApiError(
+                            403,
+                            "WECOM_ACCOUNT_DISABLED",
+                            "该账号或企业已停用，请联系企业管理员",
+                        ) from exc
+                    raise
+                resolved = result.mappings().one_or_none()
+                if resolved is not None and resolved["created"]:
+                    await set_rls_context(
+                        session,
+                        tenant_id=resolved["tenant_id"],
+                        company_id=resolved["company_id"],
+                    )
+                    await append_audit(
+                        session,
+                        tenant_id=resolved["tenant_id"],
+                        company_id=resolved["company_id"],
+                        actor_user_id=resolved["user_id"],
+                        action="wecom.member.provisioned",
+                        resource_type="membership",
+                        resource_id=resolved["membership_id"],
+                        trace_id=None,
+                        event_data={"role": "card_owner"},
+                    )
             if resolved is None and allow_bootstrap:
                 result = await session.execute(
                     text(

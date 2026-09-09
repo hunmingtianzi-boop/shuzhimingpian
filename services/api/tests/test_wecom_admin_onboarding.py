@@ -109,12 +109,55 @@ async def test_unverified_member_cannot_create_admin_or_get_session(
     assert result.status_code == (502 if provider_failure else 403)
     auth.authenticate_trusted_identity.assert_not_awaited()
     if provider_failure:
-        store.resolve_or_bootstrap_identity.assert_not_awaited()
+        store.resolve_or_bootstrap_identity.assert_awaited_once()
     else:
         assert store.resolve_or_bootstrap_identity.await_args.kwargs["allow_bootstrap"] is False
 
 
-def _mock_login(monkeypatch: pytest.MonkeyPatch, *, existing: bool, authorizer: str | None):
+@pytest.mark.asyncio
+async def test_existing_enterprise_member_auto_joins_without_admin_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite, store, auth, app = _mock_login(
+        monkeypatch, existing=False, authorizer=None, enterprise_exists=True
+    )
+    suite.is_application_admin.side_effect = AssertionError("members need no admin authority")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        result = await http.post("/auth/wecom/login", json={"code": "code", "state": "a" * 64})
+    assert result.status_code == 200
+    assert result.json()["data"]["access_token"]
+    suite.is_application_admin.assert_not_awaited()
+    store.resolve_or_bootstrap_identity.assert_awaited_once()
+    assert store.resolve_or_bootstrap_identity.await_args.kwargs["allow_bootstrap"] is False
+    auth.authenticate_trusted_identity.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_disabled_member_cannot_fall_back_to_admin_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    suite, store, auth, app = _mock_login(monkeypatch, existing=False, authorizer=None)
+    store.resolve_or_bootstrap_identity.side_effect = ApiError(
+        403, "WECOM_ACCOUNT_DISABLED", "disabled"
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http:
+        result = await http.post("/auth/wecom/login", json={"code": "code", "state": "a" * 64})
+    assert result.status_code == 403
+    suite.is_application_admin.assert_not_awaited()
+    auth.authenticate_trusted_identity.assert_not_awaited()
+
+
+def _mock_login(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    existing: bool,
+    authorizer: str | None,
+    enterprise_exists: bool = False,
+):
     resolved = SimpleNamespace(
         user_id="user",
         membership_id="membership",
@@ -128,6 +171,13 @@ def _mock_login(monkeypatch: pytest.MonkeyPatch, *, existing: bool, authorizer: 
     )
     if not existing:
         store.resolve_identity.side_effect = ApiError(403, "WECOM_ACCOUNT_NOT_BOUND", "unbound")
+
+    async def provision(**kwargs):
+        if not enterprise_exists and not kwargs["allow_bootstrap"]:
+            raise ApiError(403, "WECOM_AUTHORIZER_LOGIN_REQUIRED", "admin required")
+        return resolved
+
+    store.resolve_or_bootstrap_identity.side_effect = provision
     suite = SimpleNamespace(
         get_user_identity=AsyncMock(return_value=SimpleNamespace(corp_id="corp", user_id="member")),
         get_member=AsyncMock(
