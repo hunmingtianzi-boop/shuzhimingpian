@@ -148,7 +148,7 @@ async def test_wecom_members_auto_join_idempotently_with_scoped_non_admin_sessio
             signing_key=settings.jwt_signing_key.get_secret_value(),
             issuer=settings.app_name,
         )
-        members, _ = await MemberStore(sessions, settings).list_members(
+        members, total, summary = await MemberStore(sessions, settings).list_members(
             scope=MemberScope(
                 tenant_id=first.tenant_id,
                 company_id=first.company_id,
@@ -158,7 +158,12 @@ async def test_wecom_members_auto_join_idempotently_with_scoped_non_admin_sessio
             limit=100,
             offset=0,
         )
-        assert sum(row.membership_id == second.membership_id for row in members) == 1
+        assert total == summary.total == summary.logged_in == 2
+        assert summary.administrators == 1
+        assert {row.membership_id for row in members} == {first.membership_id, second.membership_id}
+        assert all(row.last_login_at and row.wecom_connected for row in members)
+        admin_record = next(row for row in members if row.membership_id == first.membership_id)
+        assert admin_record.account is None
 
         other_corp = f"ww-other-{uuid.uuid4().hex}"
         with pytest.raises(ApiError, match="WECOM_AUTHORIZER_LOGIN_REQUIRED"):

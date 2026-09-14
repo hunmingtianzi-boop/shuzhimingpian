@@ -51,6 +51,20 @@ describe("memberApi real contract", () => {
     expect(fetcher.mock.calls[1][0]).toBe("https://api.example.test/api/v1/admin/members?limit=50&offset=0");
   });
 
+  it("accepts OAuth members without password accounts and sends directory filters", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse()).mockResolvedValueOnce(jsonResponse({
+      data: [{ ...member, account: null, has_password_account: false, wecom_connected: true, last_login_at: "2026-09-14T01:00:00Z" }],
+      total: 1, limit: 50, offset: 0, summary: { total: 102, logged_in: 80, active_last_7_days: 30, administrators: 2 },
+    }));
+    const api = await authenticatedApi(fetcher);
+    const result = await api.listMembers(50, 0, { query: "张三", role: "card_owner", loginStatus: "logged_in" });
+    expect(result.items[0]).toMatchObject({ account: null, hasPasswordAccount: false, wecomConnected: true, lastLoginAt: "2026-09-14T01:00:00Z" });
+    expect(result.summary).toEqual({ total: 102, loggedIn: 80, activeLast7Days: 30, administrators: 2 });
+    const url = new URL(String(fetcher.mock.calls[1][0]));
+    expect(url.searchParams.get("query")).toBe("张三");
+    expect(url.searchParams.get("login_status")).toBe("logged_in");
+  });
+
   it("sends exact create, update, status and password-reset payloads", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(tokenResponse())

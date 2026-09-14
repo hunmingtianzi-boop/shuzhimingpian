@@ -102,7 +102,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "企业治理",
     items: [
-      { path: APP_PATHS.members, label: "企业员工", icon: PeopleSettings24Regular, permission: "members.manage", feature: "team.members" },
+      { path: APP_PATHS.members, label: "员工看板", icon: PeopleSettings24Regular, permission: "members.manage", feature: "team.members" },
       { path: APP_PATHS.privacySettings, label: "数据与隐私", icon: ShieldLock24Regular, permission: "privacy.manage", feature: "privacy.manage" },
       { path: APP_PATHS.privacyRequests, label: "隐私请求", icon: ShieldLock24Regular, permission: "privacy.manage", feature: "privacy.manage" },
     ],

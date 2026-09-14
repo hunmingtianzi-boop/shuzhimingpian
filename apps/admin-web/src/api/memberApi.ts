@@ -68,7 +68,10 @@ function companyMember(value: unknown): CompanyMember {
   return {
     membershipId: string(item.membership_id, "membership_id"),
     userId: string(item.user_id, "user_id"),
-    account: string(item.account, "account"),
+    account: item.account === null ? null : string(item.account, "account"),
+    lastLoginAt: typeof item.last_login_at === "string" ? item.last_login_at : undefined,
+    hasPasswordAccount: typeof item.has_password_account === "boolean" ? item.has_password_account : item.account !== null,
+    wecomConnected: item.wecom_connected === true,
     displayName: string(item.display_name, "display_name"),
     jobTitle: typeof item.job_title === "string" ? item.job_title : undefined,
     avatarUrl: typeof item.avatar_url === "string" ? item.avatar_url : undefined,
@@ -153,12 +156,24 @@ function bulkResult(value: unknown): BulkMemberResult {
 
 export function createMemberApi(client: ApiClient) {
   return {
-    async listMembers(limit = 50, offset = 0) {
-      const payload = record(await client.get(`/admin/members?limit=${limit}&offset=${offset}`), "成员列表");
+    async listMembers(limit = 50, offset = 0, filters: { query?: string; role?: string; loginStatus?: string } = {}) {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (filters.query) params.set("query", filters.query);
+      if (filters.role) params.set("role", filters.role);
+      if (filters.loginStatus) params.set("login_status", filters.loginStatus);
+      const payload = record(await client.get(`/admin/members?${params}`), "成员列表");
       if (!Array.isArray(payload.data)) {
         throw new ApiError("成员列表接口响应缺少 data。", { code: "INVALID_API_RESPONSE" });
       }
+      const rawSummary = payload.summary ? record(payload.summary, "员工摘要") : undefined;
+      const summary = rawSummary ? {
+        total: number(rawSummary.total, "summary.total"),
+        loggedIn: number(rawSummary.logged_in, "summary.logged_in"),
+        activeLast7Days: number(rawSummary.active_last_7_days, "summary.active_last_7_days"),
+        administrators: number(rawSummary.administrators, "summary.administrators"),
+      } : undefined;
       return {
+        ...(summary ? { summary } : {}),
         items: payload.data.map(companyMember),
         total: number(payload.total, "total"),
         limit: number(payload.limit, "limit"),

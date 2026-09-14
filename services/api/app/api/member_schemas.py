@@ -20,9 +20,7 @@ _MOBILE_PATTERN = re.compile(r"^\+?[0-9]{6,20}$")
 _PERMISSION_PATTERN = re.compile(r"^[a-z][a-z0-9_.:-]{0,79}$")
 
 
-def _normalize_public_labels(
-    values: list[str], *, max_length: int, field_name: str
-) -> list[str]:
+def _normalize_public_labels(values: list[str], *, max_length: int, field_name: str) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for raw in values:
@@ -34,6 +32,8 @@ def _normalize_public_labels(
             normalized.append(value)
             seen.add(key)
     return normalized
+
+
 ALLOWED_COMPANY_MEMBER_PERMISSIONS = frozenset(
     {
         "analytics.read",
@@ -181,8 +181,11 @@ class BulkMemberCsvRequest(MemberModel):
 class MemberRecord(MemberModel):
     membership_id: uuid.UUID
     user_id: uuid.UUID
-    account: str
+    account: str | None
     display_name: str
+    last_login_at: datetime | None = None
+    has_password_account: bool = True
+    wecom_connected: bool = False
     job_title: str | None = None
     avatar_url: str | None = None
     business_summary: str | None = None
@@ -234,7 +237,15 @@ class BulkMemberEnvelope(MemberModel):
     data: BulkMemberResult
 
 
+class MemberDirectorySummary(MemberModel):
+    total: int = Field(ge=0)
+    logged_in: int = Field(ge=0)
+    active_last_7_days: int = Field(ge=0)
+    administrators: int = Field(ge=0)
+
+
 class MemberListEnvelope(MemberModel):
+    summary: MemberDirectorySummary | None = None
     data: list[MemberRecord]
     total: int = Field(ge=0)
     limit: int = Field(ge=1)

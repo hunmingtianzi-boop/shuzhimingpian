@@ -22,7 +22,10 @@ export type MemberRowOutcome =
 export type CompanyMember = {
   membershipId: string;
   userId: string;
-  account: string;
+  account: string | null;
+  lastLoginAt?: string;
+  hasPasswordAccount?: boolean;
+  wecomConnected?: boolean;
   displayName: string;
   jobTitle?: string;
   avatarUrl?: string;
