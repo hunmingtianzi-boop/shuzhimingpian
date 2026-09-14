@@ -30,7 +30,7 @@ import {
   LockClosed24Regular,
   LockOpen24Regular,
 } from "@fluentui/react-icons";
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import { useAuth } from "../auth/AuthContext";
 import { hasPermission } from "../auth/permissions";
@@ -55,7 +55,6 @@ import { OperationFeedback } from "../components/OperationFeedback";
 import { PageHeader } from "../components/PageHeader";
 import { PaginationBar } from "../components/PaginationBar";
 import { ResourceState } from "../components/ResourceState";
-import { StatusBadge } from "../components/StatusBadge";
 import { useResource } from "../hooks/useResource";
 import { formatTimestamp } from "../utils/format";
 
@@ -73,6 +72,14 @@ const PERMISSION_OPTIONS = [
   ["leads.write", "线索跟进"],
   ["privacy.manage", "隐私请求"],
 ] as const;
+
+const permissionLabels: Record<string, string> = {
+  ...Object.fromEntries(PERMISSION_OPTIONS),
+  "card.read": "查看名片",
+  "card.write": "编辑名片",
+  "visits.read": "查看访问记录",
+  "leads.read": "查看线索",
+};
 
 const emptyCreate: MemberCreateInput = {
   account: "",
@@ -127,6 +134,7 @@ function PermissionPicker({
   onChange: (permissions: string[]) => void;
   disabled?: boolean;
 }) {
+  const { user } = useAuth();
   return (
     <fieldset className="member-permission-fieldset">
       <legend>权限</legend>
@@ -137,7 +145,7 @@ function PermissionPicker({
             key={permission}
             checked={values.includes(permission)}
             label={label}
-            disabled={disabled}
+            disabled={disabled || (user?.role !== "company_admin" && !user?.permissions.includes(permission))}
             onChange={(_, data) =>
               onChange(
                 data.checked
@@ -165,7 +173,7 @@ function MemberEditor({
     member
       ? {
           ...emptyCreate,
-          account: member.account,
+          account: member.account ?? "",
           displayName: member.displayName,
           jobTitle: member.jobTitle ?? "",
           avatarUrl: member.avatarUrl ?? "",
@@ -587,10 +595,63 @@ const outcomeLabels: Record<string, string> = {
   failed: "失败",
 };
 
+function MemberAccessDialog({ member, onClose, onSaved }: {
+  member: CompanyMember; onClose: () => void; onSaved: (message: string) => void;
+}) {
+  const { user } = useAuth();
+  const [role, setRole] = useState(member.role);
+  const [permissions, setPermissions] = useState(member.permissions);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ApiError>();
+  const isAdmin = user?.role === "company_admin";
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
+    try {
+      await memberApi.updateMember(member.membershipId, { role, permissions });
+      onSaved(`${member.displayName} 的权限已更新。员工重新进入后台即可看到相应入口。`);
+      onClose();
+    } catch (caught) {
+      setError(friendlyMemberError(apiError(caught, "调整权限失败，请重试。")));
+    } finally { setPending(false); }
+  };
+  return <Dialog open onOpenChange={(_, data) => !data.open && !pending && onClose()}>
+    <DialogSurface className="member-dialog-surface">
+      <form onSubmit={(event) => void save(event)}>
+        <DialogBody>
+          <DialogTitle>调整权限 · {member.displayName}</DialogTitle>
+          <DialogContent className="member-dialog-content">
+            <FormFeedback error={error} />
+            <Field label="员工角色" hint="企业管理员可管理本企业的全部员工与业务；名片成员可按需增加权限。">
+              <Select value={role} disabled={pending || !isAdmin} onChange={(_, data) => setRole(data.value as MemberRole)}>
+                <option value="card_owner">名片成员</option>
+                <option value="company_admin">企业管理员</option>
+              </Select>
+            </Field>
+            {role === "company_admin" ? <MessageBar intent="info"><MessageBarBody>该员工将拥有本企业完整管理权限。</MessageBarBody></MessageBar> :
+              <PermissionPicker values={permissions} onChange={setPermissions} disabled={pending} />}
+            {member.role === "company_admin" && role !== "company_admin" &&
+              <MessageBar intent="warning"><MessageBarBody>保存后将移除该员工的管理员角色。系统会保留至少一位可用的企业管理员。</MessageBarBody></MessageBar>}
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="secondary" onClick={onClose} disabled={pending}>取消</Button>
+            <Button appearance="primary" type="submit" disabled={pending}>{pending ? "正在保存" : "保存权限"}</Button>
+          </DialogActions>
+        </DialogBody>
+      </form>
+    </DialogSurface>
+  </Dialog>;
+}
+
 export function MembersPage() {
   const auth = useAuth();
   const allowed = hasPermission(auth.user, "members.manage");
   const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({ query: "", role: "", loginStatus: "" });
+  const [accessMember, setAccessMember] = useState<CompanyMember>();
   const [editor, setEditor] = useState<CompanyMember | "create">();
   const [resetMember, setResetMember] = useState<CompanyMember>();
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>();
@@ -602,24 +663,16 @@ export function MembersPage() {
   const resource = useResource(
     () =>
       allowed
-        ? memberApi.listMembers(PAGE_SIZE, offset)
+        ? memberApi.listMembers(PAGE_SIZE, offset, filters)
         : Promise.reject(
             new ApiError("当前账号没有企业员工管理权限。", {
               code: "FORBIDDEN",
               status: 403,
             }),
           ),
-    `${offset}:${allowed}`,
+    `${offset}:${allowed}:${JSON.stringify(filters)}:${auth.user?.companyId}`,
   );
   const currentMembershipId = auth.user?.membershipId;
-
-  const counts = useMemo(() => {
-    const items = resource.data?.items ?? [];
-    return {
-      active: items.filter((item) => item.status === "active").length,
-      admins: items.filter((item) => item.role === "company_admin" && item.status === "active").length,
-    };
-  }, [resource.data]);
 
   const changed = (message: string) => {
     setNotice(message);
@@ -651,8 +704,8 @@ export function MembersPage() {
   return (
     <main className="page-stack members-page">
       <PageHeader
-        title="企业员工"
-        description="管理员工基础资料、登录、角色、权限和账号状态；员工名片会直接读取姓名、职位、头像和业务摘要。"
+        title="员工看板"
+        description="查看本企业已加入和已登录的员工，直接调整角色与权限。企微首次登录成功后，员工会自动出现在这里。"
         actions={
           allowed ? <>
             <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={resource.reload}>刷新</Button>
@@ -666,24 +719,39 @@ export function MembersPage() {
 
       {resource.status === "ready" && resource.data && (
         <section className="member-summary-strip" aria-label="企业员工摘要">
-          <div><span>员工总数</span><strong>{resource.data.total}</strong></div>
-          <div><span>本页启用</span><strong>{counts.active}</strong></div>
-          <div><span>本页启用管理员</span><strong>{counts.admins}</strong></div>
+          <div><span>员工总数</span><strong>{resource.data.summary?.total ?? resource.data.total}</strong></div>
+          <div><span>已登录员工</span><strong>{resource.data.summary?.loggedIn ?? "—"}</strong></div>
+          <div><span>近 7 天登录</span><strong>{resource.data.summary?.activeLast7Days ?? "—"}</strong></div>
+          <div><span>启用管理员</span><strong>{resource.data.summary?.administrators ?? "—"}</strong></div>
           <p>停用用户会立即撤销登录会话；系统阻止停用或降级最后一位启用中的企业管理员。</p>
         </section>
       )}
 
+      {allowed && <form className="member-directory-filters" onSubmit={(event) => {
+        event.preventDefault(); setOffset(0); setFilters({ ...filters, query: search.trim() });
+      }}>
+        <Field label="搜索员工"><Input value={search} maxLength={100} placeholder="姓名、账号或职位" onChange={(_, data) => setSearch(data.value)} /></Field>
+        <Field label="角色筛选"><Select value={filters.role} onChange={(_, data) => { setOffset(0); setFilters({ ...filters, role: data.value }); }}>
+          <option value="">全部角色</option><option value="company_admin">企业管理员</option><option value="card_owner">名片成员</option>
+        </Select></Field>
+        <Field label="登录情况"><Select value={filters.loginStatus} onChange={(_, data) => { setOffset(0); setFilters({ ...filters, loginStatus: data.value }); }}>
+          <option value="">全部员工</option><option value="logged_in">已有登录记录</option><option value="not_logged_in">暂无登录记录</option>
+        </Select></Field>
+        <Button type="submit" appearance="secondary">搜索</Button>
+        {(filters.query || filters.role || filters.loginStatus) && <Button onClick={() => { setSearch(""); setOffset(0); setFilters({ query: "", role: "", loginStatus: "" }); }}>清除筛选</Button>}
+      </form>}
       <section className="content-panel data-panel members-panel">
         {resource.status === "ready" && resource.data ? (
           resource.data.items.length === 0 ? (
             <ResourceState
               status="empty"
-            title="尚未创建企业员工"
-            description="创建企业管理员或名片成员后，可在这里维护员工资料、权限与登录状态。"
-            emptyAction={<Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建第一位员工</Button>}
+            title={filters.query || filters.role || filters.loginStatus ? "没有符合条件的员工" : "尚未创建企业员工"}
+            description={filters.query || filters.role || filters.loginStatus ? "请调整搜索条件，或清除筛选查看全部员工。" : "员工首次企微登录成功后会自动加入；也可以手动创建密码账号。"}
+            emptyAction={filters.query || filters.role || filters.loginStatus ? undefined : <Button appearance="primary" icon={<Add24Regular />} onClick={() => setEditor("create")}>创建第一位员工</Button>}
             />
           ) : (
             <>
+              <p className="member-mobile-scroll-hint">左右滑动列表，可查看登录时间和调整权限。</p>
               <div className="table-scroll">
                 <Table aria-label="企业员工列表" size="small">
                   <TableHeader>
@@ -691,7 +759,7 @@ export function MembersPage() {
                       <TableHeaderCell>企业员工</TableHeaderCell>
                       <TableHeaderCell>角色与权限</TableHeaderCell>
                       <TableHeaderCell>状态</TableHeaderCell>
-                      <TableHeaderCell>更新时间</TableHeaderCell>
+                      <TableHeaderCell>登录与加入时间</TableHeaderCell>
                       <TableHeaderCell>操作</TableHeaderCell>
                     </TableRow>
                   </TableHeader>
@@ -703,26 +771,30 @@ export function MembersPage() {
                           <TableCell>
                             <div className="member-identity-cell">
                               <strong>{member.displayName}{self && <Badge appearance="outline" size="small">当前账号</Badge>}</strong>
-                              <span>{member.account}</span>
+                              <span>{member.wecomConnected ? "已绑定企业微信" : member.account || "未设置密码账号"}</span>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="member-access-cell">
                               <strong>{MEMBER_ROLE_LABELS[member.role]}</strong>
-                              <span>{member.role === "company_admin" ? "完整企业治理权限" : member.permissions.length ? member.permissions.join("、") : "未分配额外权限"}</span>
+                              <span>{member.role === "company_admin" ? "完整企业治理权限" : member.permissions.length ? member.permissions.map((permission) => permissionLabels[permission] ?? permission).join("、") : "未分配额外权限"}</span>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="member-status-cell">
-                              <StatusBadge status={member.status} />
+                              <Badge appearance="tint" color={member.status === "active" ? "success" : "subtle"}>{MEMBER_STATUS_LABELS[member.status]}</Badge>
                               {!member.credentialEnabled && <span>凭据已禁用</span>}
                             </div>
                           </TableCell>
-                          <TableCell className="updated-column">{formatTimestamp(member.updatedAt)}</TableCell>
+                          <TableCell className="updated-column"><div className="member-status-cell">
+                            <span>最近登录：{member.lastLoginAt ? formatTimestamp(member.lastLoginAt) : "暂无登录记录"}</span>
+                            <span>加入：{formatTimestamp(member.createdAt)}</span>
+                          </div></TableCell>
                           <TableCell className="member-actions-column">
                             <div className="row-actions member-row-actions">
+                              <Button appearance="secondary" size="small" onClick={() => setAccessMember(member)} disabled={!allowed || actionPending}>调整权限</Button>
                               <Button appearance="subtle" size="small" icon={<Edit24Regular />} onClick={() => setEditor(member)} disabled={!allowed}>编辑</Button>
-                              <Button appearance="subtle" size="small" icon={<KeyReset24Regular />} onClick={() => setResetMember(member)} disabled={!allowed}>重置密码</Button>
+                              <Button appearance="subtle" size="small" icon={<KeyReset24Regular />} onClick={() => setResetMember(member)} disabled={!allowed || member.hasPasswordAccount === false} title={member.hasPasswordAccount === false ? "该员工使用企微登录，没有密码账号" : undefined}>重置密码</Button>
                               <Button
                                 appearance="subtle"
                                 size="small"
@@ -784,6 +856,7 @@ export function MembersPage() {
       )}
 
       {editor && <MemberEditor key={editor === "create" ? "create" : editor.membershipId} member={editor === "create" ? undefined : editor} onClose={() => setEditor(undefined)} onSaved={changed} />}
+      {accessMember && <MemberAccessDialog key={accessMember.membershipId} member={accessMember} onClose={() => setAccessMember(undefined)} onSaved={changed} />}
       {resetMember && <PasswordDialog member={resetMember} onClose={() => setResetMember(undefined)} onSaved={changed} />}
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} onImported={imported} />}
       {confirmAction && (

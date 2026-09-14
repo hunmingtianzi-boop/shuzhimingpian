@@ -155,4 +155,35 @@ describe("MembersPage", () => {
     expect(await screen.findByText("逐行导入结果")).toBeInTheDocument();
     expect(screen.getByText(/密码过短/)).toHaveTextContent("字段：password");
   });
+  it("shows OAuth-only members, company-wide counts, and saves a role promotion", async () => {
+    const user = userEvent.setup();
+    const oauth = { ...cardOwner, account: null, hasPasswordAccount: false, wecomConnected: true, lastLoginAt: "2026-09-14T01:00:00Z" };
+    vi.mocked(memberApi.listMembers).mockResolvedValue({ items: [oauth], total: 1, limit: 50, offset: 0,
+      summary: { total: 105, loggedIn: 87, activeLast7Days: 31, administrators: 3 } });
+    const update = vi.spyOn(memberApi, "updateMember").mockResolvedValue({ ...oauth, role: "company_admin" });
+    renderPage();
+    expect(await screen.findByText("已绑定企业微信")).toBeInTheDocument();
+    expect(screen.getByText("员工总数").nextSibling).toHaveTextContent("105");
+    expect(screen.getByText("已登录员工").nextSibling).toHaveTextContent("87");
+    expect(screen.getByRole("button", { name: "重置密码" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "调整权限" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "员工角色" }), "company_admin");
+    await user.click(screen.getByRole("button", { name: "保存权限" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("membership-member", { role: "company_admin", permissions: ["card.read"] }));
+    expect(await screen.findByText(/张三 的权限已更新/)).toBeInTheDocument();
+  });
+
+  it("filters the directory on the server and clears filters", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("member@example.test");
+    await user.type(screen.getByRole("textbox", { name: "搜索员工" }), " 张三 ");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(memberApi.listMembers).toHaveBeenLastCalledWith(50, 0, { query: "张三", role: "", loginStatus: "" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "登录情况" }), "logged_in");
+    await waitFor(() => expect(memberApi.listMembers).toHaveBeenLastCalledWith(50, 0, { query: "张三", role: "", loginStatus: "logged_in" }));
+    await user.click(screen.getByRole("button", { name: "清除筛选" }));
+    await waitFor(() => expect(memberApi.listMembers).toHaveBeenLastCalledWith(50, 0, { query: "", role: "", loginStatus: "" }));
+  });
+
 });

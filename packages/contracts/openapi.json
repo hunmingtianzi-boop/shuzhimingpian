@@ -7089,6 +7089,63 @@
             }
           },
           {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "company_admin",
+                    "card_owner"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "login_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "logged_in",
+                    "not_logged_in"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Login Status"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -25875,6 +25932,39 @@
         ],
         "title": "ManagedCardRecord"
       },
+      "MemberDirectorySummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "logged_in": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Logged In"
+          },
+          "active_last_7_days": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Active Last 7 Days"
+          },
+          "administrators": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Administrators"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "logged_in",
+          "active_last_7_days",
+          "administrators"
+        ],
+        "title": "MemberDirectorySummary"
+      },
       "MemberEnvelope": {
         "properties": {
           "data": {
@@ -25890,6 +25980,16 @@
       },
       "MemberListEnvelope": {
         "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberDirectorySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/MemberRecord"
@@ -25936,12 +26036,41 @@
             "title": "User Id"
           },
           "account": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Account"
           },
           "display_name": {
             "type": "string",
             "title": "Display Name"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "has_password_account": {
+            "type": "boolean",
+            "title": "Has Password Account",
+            "default": true
+          },
+          "wecom_connected": {
+            "type": "boolean",
+            "title": "Wecom Connected",
+            "default": false
           },
           "job_title": {
             "anyOf": [

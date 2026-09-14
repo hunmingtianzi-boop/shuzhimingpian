@@ -14,6 +14,7 @@ from app.api.member_schemas import (
     BulkMemberResult,
     BulkMemberRowResult,
     BulkMemberSummary,
+    MemberDirectorySummary,
     MemberRecord,
     PasswordResetRecord,
 )
@@ -26,9 +27,15 @@ class RouteMemberStore:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.member = _member()
 
-    async def list_members(self, **kwargs: Any) -> tuple[list[MemberRecord], int]:
+    async def list_members(
+        self, **kwargs: Any
+    ) -> tuple[list[MemberRecord], int, MemberDirectorySummary]:
         self.calls.append(("list", kwargs))
-        return [self.member], 1
+        return (
+            [self.member],
+            1,
+            MemberDirectorySummary(total=1, logged_in=1, active_last_7_days=1, administrators=1),
+        )
 
     async def create_member(self, **kwargs: Any) -> MemberRecord:
         self.calls.append(("create", kwargs))
@@ -148,9 +155,10 @@ def test_member_router_exposes_complete_user_management_contract(
     assert paths["/api/v1/admin/members/{membership_id}/status"]["put"]["operationId"] == (
         "updateCompanyMemberStatus"
     )
-    assert paths["/api/v1/admin/members/{membership_id}/password:reset"]["post"][
-        "operationId"
-    ] == "resetCompanyMemberPassword"
+    assert (
+        paths["/api/v1/admin/members/{membership_id}/password:reset"]["post"]["operationId"]
+        == "resetCompanyMemberPassword"
+    )
     assert paths["/api/v1/admin/members/bulk"]["post"]["operationId"] == (
         "bulkUpsertCompanyMembers"
     )
@@ -368,8 +376,7 @@ def test_json_and_csv_bulk_routes_reject_more_than_one_hundred_rows(
         for index in range(101)
     ]
     csv_rows = "".join(
-        f"member-{index},Member {index},Member-Password-2026!\n"
-        for index in range(101)
+        f"member-{index},Member {index},Member-Password-2026!\n" for index in range(101)
     )
 
     json_response = client.post(
@@ -387,3 +394,23 @@ def test_json_and_csv_bulk_routes_reject_more_than_one_hundred_rows(
     assert csv_response.status_code == 422
     assert csv_response.json()["error"]["code"] == "CSV_TOO_MANY_ROWS"
     assert store.calls == []
+
+
+def test_member_directory_accepts_filters_and_returns_summary(route_client):
+    client, store, _ = route_client
+    store.member = store.member.model_copy(
+        update={"account": None, "has_password_account": False, "wecom_connected": True}
+    )
+    response = client.get(
+        "/api/v1/admin/members",
+        params={"query": " 张三 ", "role": "card_owner", "login_status": "logged_in"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"][0]["account"] is None
+    assert payload["summary"]["logged_in"] == 1
+    assert store.calls[-1][1]["query"] == "张三"
+    assert store.calls[-1][1]["role"] == "card_owner"
+    assert store.calls[-1][1]["login_status"] == "logged_in"
+    assert client.get("/api/v1/admin/members?role=platform_admin").status_code == 422
+    assert client.get("/api/v1/admin/members?login_status=unknown").status_code == 422

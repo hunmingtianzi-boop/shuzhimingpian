@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -93,13 +93,21 @@ async def list_members(
     principal: StaffDependency,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    query: Annotated[str | None, Query(max_length=100)] = None,
+    role: Literal["company_admin", "card_owner"] | None = None,
+    login_status: Literal["logged_in", "not_logged_in"] | None = None,
 ) -> MemberListEnvelope:
-    records, total = await _store(request).list_members(
+    records, total, summary = await _store(request).list_members(
         scope=_scope(principal),
         limit=limit,
         offset=offset,
+        query=query.strip() if query else None,
+        role=role,
+        login_status=login_status,
     )
-    return MemberListEnvelope(data=records, total=total, limit=limit, offset=offset)
+    return MemberListEnvelope(
+        data=records, total=total, limit=limit, offset=offset, summary=summary
+    )
 
 
 @router.post(

@@ -2367,7 +2367,7 @@ a:hover {
 
 .member-summary-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(130px, 0.5fr)) minmax(280px, 1.7fr);
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
   align-items: stretch;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -7095,4 +7095,22 @@ div.template-inspector-empty {
 .card-plugin-item span,
 .card-plugin-item small {
   color: var(--colorNeutralForeground3);
+}
+
+.member-summary-strip p { grid-column: 1 / -1; border-top: 1px solid var(--border); }
+.member-directory-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.member-directory-filters > :first-child { flex: 1 1 220px; }
+.member-directory-filters select { min-width: 140px; }
+
+.members-page { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.members-page > * { min-width: 0; }
+.member-status-cell > .fui-Badge { justify-self: start; }
+@media (max-width: 900px) {
+  .members-page .member-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .members-page .member-summary-strip p { grid-column: 1 / -1; }
+}
+
+.member-mobile-scroll-hint { display: none; }
+@media (max-width: 900px) {
+  .member-mobile-scroll-hint { display: block; margin: 0; padding: 12px 16px; color: var(--muted); font-size: 12px; }
 }

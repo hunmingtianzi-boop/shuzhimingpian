@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import and_, exists, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,6 +17,7 @@ from app.api.member_schemas import (
     BulkMemberRow,
     BulkMemberRowResult,
     BulkMemberSummary,
+    MemberDirectorySummary,
     MemberRecord,
     MemberRowError,
     PasswordResetRecord,
@@ -33,6 +34,7 @@ from app.db.models import (
     MembershipRole,
     StaffCredential,
     User,
+    WeComUserBinding,
 )
 from app.db.session import set_rls_context
 from app.services.audit import append_audit
@@ -110,9 +112,7 @@ class MemberStore:
                 {"key": f"staff-account:{row.account}"},
             )
             credential = await session.scalar(
-                select(StaffCredential.id).where(
-                    StaffCredential.account_normalized == row.account
-                )
+                select(StaffCredential.id).where(StaffCredential.account_normalized == row.account)
             )
             if credential is not None:
                 raise ApiError(409, "ACCOUNT_CONFLICT", "The account is unavailable.")
@@ -279,37 +279,120 @@ class MemberStore:
         scope: MemberScope,
         limit: int,
         offset: int,
-    ) -> tuple[list[MemberRecord], int]:
+        query: str | None = None,
+        role: str | None = None,
+        login_status: str | None = None,
+    ) -> tuple[list[MemberRecord], int, MemberDirectorySummary]:
         async with self._sessions() as session, session.begin():
             await self._set_scope(session, scope)
-            filters = (
-                Membership.tenant_id == scope.tenant_id,
-                Membership.company_id == scope.company_id,
-                # This endpoint is the enterprise employee directory. Platform
-                # operators can hold a scoped membership for access control, but
-                # they are not employees and the public response contract must
-                # never project platform_admin as a company member.
-                Membership.role.in_(
-                    (MembershipRole.COMPANY_ADMIN, MembershipRole.CARD_OWNER)
-                ),
+            last_session = (
+                select(func.max(AuthSession.created_at))
+                .where(
+                    AuthSession.user_id == Membership.user_id,
+                    AuthSession.tenant_id == scope.tenant_id,
+                    AuthSession.company_id == scope.company_id,
+                )
+                .correlate(Membership)
+                .scalar_subquery()
             )
-            total = int(
-                await session.scalar(select(func.count(Membership.id)).where(*filters)) or 0
+            last_login = func.greatest(StaffCredential.last_authenticated_at, last_session)
+            connected = exists().where(
+                WeComUserBinding.membership_id == Membership.id,
+                WeComUserBinding.tenant_id == scope.tenant_id,
+                WeComUserBinding.company_id == scope.company_id,
+                WeComUserBinding.revoked_at.is_(None),
             )
             statement = (
-                select(Membership, User, StaffCredential)
+                select(
+                    Membership,
+                    User,
+                    StaffCredential,
+                    last_login.label("last_login"),
+                    connected.label("wecom_connected"),
+                )
                 .join(User, User.id == Membership.user_id)
-                .join(StaffCredential, StaffCredential.membership_id == Membership.id)
-                .where(*filters)
-                .order_by(Membership.created_at, Membership.id)
-                .limit(limit)
-                .offset(offset)
+                .outerjoin(StaffCredential, StaffCredential.membership_id == Membership.id)
+                .where(
+                    Membership.tenant_id == scope.tenant_id,
+                    Membership.company_id == scope.company_id,
+                    Membership.role.in_((MembershipRole.COMPANY_ADMIN, MembershipRole.CARD_OWNER)),
+                    User.deleted_at.is_(None),
+                )
             )
-            rows = (await session.execute(statement)).all()
-            return [
-                _member_record(membership, user, credential, self._cipher)
-                for membership, user, credential in rows
-            ], total
+            directory = statement.subquery()
+            summary_row = (
+                (
+                    await session.execute(
+                        select(
+                            func.count().label("total"),
+                            func.count()
+                            .filter(directory.c.last_login.is_not(None))
+                            .label("logged_in"),
+                            func.count()
+                            .filter(directory.c.last_login >= datetime.now(UTC) - timedelta(days=7))
+                            .label("active_last_7_days"),
+                            func.count()
+                            .filter(
+                                directory.c.role == MembershipRole.COMPANY_ADMIN,
+                                directory.c.status == LifecycleStatus.ACTIVE,
+                                directory.c.status_1 == LifecycleStatus.ACTIVE,
+                                or_(
+                                    directory.c.is_enabled.is_(True),
+                                    and_(
+                                        directory.c.is_enabled.is_(None),
+                                        directory.c.wecom_connected.is_(True),
+                                    ),
+                                ),
+                            )
+                            .label("administrators"),
+                        )
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            summary = MemberDirectorySummary(**summary_row)
+            if query:
+                statement = statement.where(
+                    or_(
+                        User.display_name.icontains(query, autoescape=True),
+                        StaffCredential.account_normalized.icontains(query, autoescape=True),
+                        Membership.job_title.icontains(query, autoescape=True),
+                    )
+                )
+            if role:
+                statement = statement.where(Membership.role == MembershipRole(role))
+            if login_status == "logged_in":
+                statement = statement.where(last_login.is_not(None))
+            elif login_status == "not_logged_in":
+                statement = statement.where(last_login.is_(None))
+            total = int(
+                await session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+            )
+            rows = (
+                await session.execute(
+                    statement.order_by(
+                        last_login.desc().nullslast(), Membership.created_at.desc(), Membership.id
+                    )
+                    .limit(limit)
+                    .offset(offset)
+                )
+            ).all()
+            return (
+                [
+                    _member_record(
+                        membership,
+                        user,
+                        credential,
+                        self._cipher,
+                        last_login_at=last_login_at,
+                        wecom_connected=wecom_connected,
+                    )
+                    for membership, user, credential, last_login_at, wecom_connected in rows
+                ],
+                total,
+                summary,
+            )
 
     async def get_member(
         self,
@@ -373,14 +456,14 @@ class MemberStore:
         *,
         membership: Membership,
         user: User,
-        credential: StaffCredential,
+        credential: StaffCredential | None,
     ) -> None:
         if (
             membership.user_id != scope.actor_user_id
             or membership.status != LifecycleStatus.ACTIVE
             or user.status != LifecycleStatus.ACTIVE
             or user.deleted_at is not None
-            or not credential.is_enabled
+            or (credential is not None and not credential.is_enabled)
         ):
             raise ApiError(
                 403,
@@ -539,6 +622,12 @@ class MemberStore:
                 membership=membership,
                 desired_role=membership.role,
             )
+            if credential is None:
+                raise ApiError(
+                    409,
+                    "MEMBER_PASSWORD_NOT_CONFIGURED",
+                    "该成员通过企业微信登录，没有可重置的密码账号",
+                )
             changed_at = datetime.now(UTC)
             credential.password_hash = hash_staff_password(password)
             credential.password_changed_at = changed_at
@@ -605,8 +694,9 @@ class MemberStore:
                 membership=membership,
                 desired_role=membership.role,
             )
-            changed = membership.status != desired or credential.is_enabled != (
-                desired == LifecycleStatus.ACTIVE
+            changed = membership.status != desired or (
+                credential is not None
+                and credential.is_enabled != (desired == LifecycleStatus.ACTIVE)
             )
             await self._guard_admin_transition(
                 session,
@@ -617,12 +707,13 @@ class MemberStore:
                 desired_status=desired,
             )
             membership.status = desired
-            credential.is_enabled = desired == LifecycleStatus.ACTIVE
-            if desired == LifecycleStatus.ACTIVE:
-                credential.failed_attempts = 0
-                credential.locked_until = None
-                credential.last_failed_at = None
-            else:
+            if credential is not None:
+                credential.is_enabled = desired == LifecycleStatus.ACTIVE
+                if desired == LifecycleStatus.ACTIVE:
+                    credential.failed_attempts = 0
+                    credential.locked_until = None
+                    credential.last_failed_at = None
+            if desired != LifecycleStatus.ACTIVE:
                 await self._revoke_sessions(
                     session,
                     scope=scope,
@@ -651,19 +742,20 @@ class MemberStore:
         scope: MemberScope,
         membership_id: uuid.UUID,
         for_update: bool = False,
-    ) -> tuple[Membership, User, StaffCredential]:
+    ) -> tuple[Membership, User, StaffCredential | None]:
         statement = (
             select(Membership, User, StaffCredential)
             .join(User, User.id == Membership.user_id)
-            .join(StaffCredential, StaffCredential.membership_id == Membership.id)
+            .outerjoin(StaffCredential, StaffCredential.membership_id == Membership.id)
             .where(
                 Membership.id == membership_id,
+                Membership.role.in_((MembershipRole.COMPANY_ADMIN, MembershipRole.CARD_OWNER)),
                 Membership.tenant_id == scope.tenant_id,
                 Membership.company_id == scope.company_id,
             )
         )
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update(of=(Membership, User))
         row = (await session.execute(statement)).one_or_none()
         if row is None:
             raise ApiError(
@@ -672,6 +764,12 @@ class MemberStore:
                 "The member does not exist in the current company scope.",
             )
         membership, user, credential = row
+        if for_update and credential is not None:
+            await session.execute(
+                select(StaffCredential.id)
+                .where(StaffCredential.id == credential.id)
+                .with_for_update()
+            )
         return membership, user, credential
 
     async def _upsert_row(
@@ -796,10 +894,7 @@ class MemberStore:
             password_hash=hash_staff_password(row.password.get_secret_value()),
             is_enabled=desired_status == LifecycleStatus.ACTIVE,
         )
-        if (
-            role == MembershipRole.COMPANY_ADMIN
-            and desired_status != LifecycleStatus.ACTIVE
-        ):
+        if role == MembershipRole.COMPANY_ADMIN and desired_status != LifecycleStatus.ACTIVE:
             raise _RowConflict(
                 "INACTIVE_ADMIN_NOT_ALLOWED",
                 "A company administrator must be created in active status.",
@@ -981,14 +1076,28 @@ class MemberStore:
         await self._acquire_company_admin_guard(session, scope=scope)
         other_admin = await session.scalar(
             select(Membership.id)
-            .join(StaffCredential, StaffCredential.membership_id == Membership.id)
+            .join(User, User.id == Membership.user_id)
+            .outerjoin(StaffCredential, StaffCredential.membership_id == Membership.id)
             .where(
                 Membership.tenant_id == scope.tenant_id,
                 Membership.company_id == scope.company_id,
                 Membership.id != exclude_membership_id,
+                User.status == LifecycleStatus.ACTIVE,
+                User.deleted_at.is_(None),
                 Membership.role == MembershipRole.COMPANY_ADMIN,
                 Membership.status == LifecycleStatus.ACTIVE,
-                StaffCredential.is_enabled.is_(True),
+                or_(
+                    StaffCredential.is_enabled.is_(True),
+                    and_(
+                        StaffCredential.id.is_(None),
+                        exists().where(
+                            WeComUserBinding.membership_id == Membership.id,
+                            WeComUserBinding.revoked_at.is_(None),
+                            WeComUserBinding.tenant_id == scope.tenant_id,
+                            WeComUserBinding.company_id == scope.company_id,
+                        ),
+                    ),
+                ),
             )
             .limit(1)
         )
@@ -1019,14 +1128,14 @@ class MemberStore:
         *,
         scope: MemberScope,
         membership: Membership,
-        credential: StaffCredential,
+        credential: StaffCredential | None,
         desired_role: MembershipRole,
         desired_status: LifecycleStatus,
     ) -> None:
         if (
             membership.role == MembershipRole.COMPANY_ADMIN
             and membership.status == LifecycleStatus.ACTIVE
-            and credential.is_enabled
+            and (credential is None or credential.is_enabled)
             and (
                 desired_role != MembershipRole.COMPANY_ADMIN
                 or desired_status != LifecycleStatus.ACTIVE
@@ -1156,14 +1265,22 @@ def _summarize(results: list[BulkMemberRowResult]) -> BulkMemberSummary:
 def _member_record(
     membership: Membership,
     user: User,
-    credential: StaffCredential,
+    credential: StaffCredential | None,
     cipher: PiiCipher,
+    *,
+    last_login_at: datetime | None = None,
+    wecom_connected: bool = False,
 ) -> MemberRecord:
-    timestamps = [membership.updated_at, user.updated_at, credential.updated_at]
+    timestamps = [membership.updated_at, user.updated_at]
+    if credential is not None:
+        timestamps.append(credential.updated_at)
     return MemberRecord(
         membership_id=membership.id,
         user_id=user.id,
-        account=credential.account_normalized,
+        account=credential.account_normalized if credential else None,
+        has_password_account=credential is not None,
+        wecom_connected=wecom_connected,
+        last_login_at=last_login_at or (credential.last_authenticated_at if credential else None),
         display_name=user.display_name,
         job_title=membership.job_title,
         avatar_url=membership.avatar_url,
@@ -1176,7 +1293,7 @@ def _member_record(
         role=membership.role.value,
         permissions=list(membership.permissions),
         status=membership.status.value,
-        credential_enabled=credential.is_enabled,
+        credential_enabled=credential.is_enabled if credential else True,
         created_at=membership.created_at,
         updated_at=max(timestamps),
     )
@@ -1186,11 +1303,13 @@ async def _refresh_member_timestamps(
     session: AsyncSession,
     membership: Membership,
     user: User,
-    credential: StaffCredential,
+    credential: StaffCredential | None,
 ) -> None:
     """Reload timestamps changed by PostgreSQL triggers without implicit async I/O."""
 
     for model in (membership, user, credential):
+        if model is None:
+            continue
         await session.refresh(model, attribute_names=["created_at", "updated_at"])
 
 
