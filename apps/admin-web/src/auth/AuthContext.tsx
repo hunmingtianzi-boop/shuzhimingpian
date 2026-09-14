@@ -42,6 +42,27 @@ export type AuthContextValue = {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+const WECOM_RECOVERY_KEY = "cf-admin-wecom-recovery-attempted";
+
+function clearWeComRecovery(): void {
+  try {
+    globalThis.sessionStorage.removeItem(WECOM_RECOVERY_KEY);
+  } catch {
+    // Manual login remains available without browser storage.
+  }
+}
+
+function claimWeComRecovery(): boolean {
+  try {
+    if (globalThis.sessionStorage.getItem(WECOM_RECOVERY_KEY)) return false;
+    globalThis.sessionStorage.setItem(WECOM_RECOVERY_KEY, "1");
+    return true;
+  } catch {
+    // A redirect reloads the page, so an in-memory guard cannot prevent loops.
+    return false;
+  }
+}
+
 type AuthProviderProps = {
   children: ReactNode;
   externalRedirect?: (url: string) => void;
@@ -101,20 +122,21 @@ export function AuthProvider({
         return;
       }
 
+      let callbackFlow: "login" | "bind" = "login";
       try {
         const appPath = appPathFromBrowser(globalThis.location.pathname);
         const query = new URLSearchParams(globalThis.location.search);
         const code = query.get("code");
         const state = query.get("state");
         const isWeComCallback = appPath === WECOM_CALLBACK_PATH;
+        if (isWeComCallback) callbackFlow = apiClient.consumeWeComFlow();
         if (isWeComCallback && (!code || !state)) {
           throw new ApiError("企业微信没有返回完整的登录凭证，请重新进入应用。", {
             code: "WECOM_OAUTH_CALLBACK_INVALID",
           });
         }
         if (isWeComCallback && code && state) {
-          const flow = apiClient.consumeWeComFlow();
-          if (flow === "bind") {
+          if (callbackFlow === "bind") {
             await apiClient.refreshSession();
             await apiClient.bindWithWeCom(code, state);
           } else {
@@ -125,6 +147,7 @@ export function AuthProvider({
             "",
             apiClient.consumeWeComReturnTo(),
           );
+          clearWeComRecovery();
         } else {
           await apiClient.refreshSession();
         }
@@ -141,6 +164,7 @@ export function AuthProvider({
         if (!active) return;
         const appPath = appPathFromBrowser(globalThis.location.pathname);
         if (appPath === WECOM_ENTRY_PATH) {
+          clearWeComRecovery();
           // The dedicated workbench URL is intentionally login-only. Keeping
           // this state on the boot screen avoids flashing the password form
           // between the session probe and the WeCom authorization redirect.
@@ -151,7 +175,20 @@ export function AuthProvider({
           return;
         }
         if (appPath === WECOM_CALLBACK_PATH) {
-          setError(asApiError(caught));
+          const callbackError = asApiError(caught);
+          if (
+            callbackFlow === "login" &&
+            callbackError.code === "WECOM_OAUTH_STATE_INVALID" &&
+            claimWeComRecovery()
+          ) {
+            const returnTo = apiClient.consumeWeComReturnTo();
+            setStatus("bootstrapping");
+            await beginWeComLogin(
+              returnTo === "/" ? appHref(APP_PATHS.setup) : returnTo,
+            ).catch(() => undefined);
+            return;
+          }
+          setError(callbackError);
         }
         setStatus("unauthenticated");
       }
@@ -223,7 +260,10 @@ export function AuthProvider({
   }, []);
 
   const wecomLogin = useCallback(
-    () => beginWeComLogin(appHref(APP_PATHS.setup)),
+    () => {
+      clearWeComRecovery();
+      return beginWeComLogin(appHref(APP_PATHS.setup));
+    },
     [beginWeComLogin],
   );
 
