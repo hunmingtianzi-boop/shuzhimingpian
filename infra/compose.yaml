@@ -198,6 +198,10 @@ services:
       <<: *api-environment
       DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-cf_ai_card_app}:${APP_DB_PASSWORD:-change-me-app-local-only}@postgres:5432/${POSTGRES_DB:-cf_ai_card}
       WECOM_CORP_ID: ${WECOM_CORP_ID:-}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      WECHAT_OAUTH_REDIRECT_URI: ${WECHAT_OAUTH_REDIRECT_URI:-}
+      WECHAT_TIMEOUT_SECONDS: ${WECHAT_TIMEOUT_SECONDS:-8}
       WECOM_AGENT_ID: ${WECOM_AGENT_ID:-}
       WECOM_APP_SECRET: ${WECOM_APP_SECRET:-}
       WECOM_TENANT_ID: ${WECOM_TENANT_ID:-}

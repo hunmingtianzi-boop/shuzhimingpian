@@ -1314,6 +1314,7 @@ export function createAdminApi(client: ApiClient) {
       role: optionalString(membership.role) || undefined,
       permissions,
       mustChangePassword: data.must_change_password === true,
+      personalWorkspace: data.personal_workspace === true,
     };
   },
 

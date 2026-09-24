@@ -229,6 +229,7 @@ export type AssistantConfig = {
   launcherLabel: string;
   initialMessage: AssistantMessage;
   quickQuestionIds: string[];
+  suggestedQuestions?: string[];
   labels: AssistantLabels;
   disclaimer: string;
   knowledgeBase: KnowledgeItem[];

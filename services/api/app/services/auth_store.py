@@ -63,6 +63,7 @@ class StaffIdentity:
     role: str
     permissions: tuple[str, ...]
     must_change_password: bool = False
+    personal_workspace: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -608,6 +609,9 @@ class AuthStore:
             tenant_id=membership.tenant_id,
             company_id=company_id,
             display_name=user.display_name,
+            personal_workspace=(getattr(company, "settings", None) or {}).get(
+                "workspace_kind"
+            ) == "personal",
             role=membership.role.value,
             permissions=tuple(dict.fromkeys(membership.permissions)),
             must_change_password=bool(

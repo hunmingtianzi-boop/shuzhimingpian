@@ -2311,13 +2311,30 @@ class CatalogStore:
         )
         if membership is None:
             raise ApiError(422, "INVALID_CARD_OWNER", "员工身份资料不存在")
+        # Only an independently provisioned personal workspace owns its base
+        # identity. Enterprise employees continue to inherit administrator data.
+        company = await session.get(Company, membership.company_id)
+        display_name = employee_identity.display_name
+        job_title = employee_identity.job_title
+        if (
+            company is not None
+            and _dict_value(company.settings).get("workspace_kind") == "personal"
+        ):
+            user = await session.get(User, membership.user_id)
+            if user is None:
+                raise ApiError(422, "INVALID_CARD_OWNER", "名片身份资料不存在")
+            if len(body.display_name) > 120:
+                raise ApiError(422, "INVALID_DISPLAY_NAME", "姓名不能超过 120 个字符")
+            user.display_name = body.display_name
+            membership.job_title = body.title
+            display_name, job_title = body.display_name, body.title
         membership.public_positioning = body.identity_positioning or None
         membership.identity_titles = list(body.identity_titles)
         membership.professional_tags = list(body.identity_tags)
         return EmployeeIdentityProjection(
             membership_id=employee_identity.membership_id,
-            display_name=employee_identity.display_name,
-            job_title=employee_identity.job_title,
+            display_name=display_name,
+            job_title=job_title,
             avatar_url=employee_identity.avatar_url,
             business_summary=employee_identity.business_summary,
             public_positioning=membership.public_positioning,

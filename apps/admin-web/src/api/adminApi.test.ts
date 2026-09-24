@@ -348,6 +348,7 @@ describe("adminApi real contract", () => {
       role: "company_admin",
       permissions: ["company.profile.read"],
       mustChangePassword: false,
+      personalWorkspace: false,
     });
   });
 

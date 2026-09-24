@@ -31,6 +31,10 @@ def _redact_secrets(
 
 def configure_logging(level: str) -> None:
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level.upper())
+    # WeChat OAuth puts AppSecret/code in query parameters. HTTP client request
+    # logging must not copy those URLs into production logs (including DEBUG).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

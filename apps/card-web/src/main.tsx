@@ -8,6 +8,7 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { TenantLoading } from "./components/TenantLoading";
 import { TenantNotFound } from "./components/TenantNotFound";
 import type { EnterpriseCardConfig } from "./domain/card";
+import { mergePublishedCard } from "./lib/publicCard";
 import {
   fetchPublicCard,
   type PublicCardData,
@@ -82,11 +83,8 @@ if (tenantSlug) {
 
 async function bootstrapTenant() {
   if (!tenantSlug) return;
-  // Start every critical public-card dependency together. The public card
-  // request may already be in flight from the inline document bootstrap, so the
-  // renderer, merge logic and fallback template should never form a serial
-  // waterfall behind it.
-  const mergeModulePromise = import("./lib/publicCard");
+  // The renderer, merge logic and generic template are in the entry bundle.
+  // Start the optional registered tenant alongside the early public request.
   const fallbackTenantPromise = loadTenant("template");
   const registeredTenantPromise = loadTenant(tenantSlug)
     .then((tenant) => ({ tenant, error: undefined }))
@@ -112,10 +110,7 @@ async function bootstrapTenant() {
 
   try {
     if (publishedResult.error) throw publishedResult.error;
-    const [{ mergePublishedCard }, fallbackTemplate] = await Promise.all([
-      mergeModulePromise,
-      fallbackTenantPromise,
-    ]);
+    const fallbackTemplate = await fallbackTenantPromise;
     const publishedCard = publishedResult.card;
     if (publishedCard) {
       const fallbackTenant = registeredTenant ?? fallbackTemplate;

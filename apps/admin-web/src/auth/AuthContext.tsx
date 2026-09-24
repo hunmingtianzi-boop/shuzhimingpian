@@ -22,6 +22,8 @@ import {
   wecomEntryReturnTo,
   WECOM_CALLBACK_PATH,
   WECOM_ENTRY_PATH,
+  WECHAT_ENTRY_PATH,
+  WECHAT_CALLBACK_PATH,
 } from "../routing";
 
 type AuthStatus = "bootstrapping" | "unauthenticated" | "authenticated";
@@ -35,12 +37,34 @@ export type AuthContextValue = {
   apiConfigured: boolean;
   login: (input: LoginInput) => Promise<void>;
   wecomLogin?: () => Promise<void>;
+  wechatLogin?: () => Promise<void>;
   wecomBind?: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
+
+const WECOM_RECOVERY_KEY = "cf-admin-wecom-recovery-attempted";
+
+function clearWeComRecovery(): void {
+  try {
+    globalThis.sessionStorage.removeItem(WECOM_RECOVERY_KEY);
+  } catch {
+    // Manual login remains available without browser storage.
+  }
+}
+
+function claimWeComRecovery(): boolean {
+  try {
+    if (globalThis.sessionStorage.getItem(WECOM_RECOVERY_KEY)) return false;
+    globalThis.sessionStorage.setItem(WECOM_RECOVERY_KEY, "1");
+    return true;
+  } catch {
+    // A redirect reloads the page, so an in-memory guard cannot prevent loops.
+    return false;
+  }
+}
 
 type AuthProviderProps = {
   children: ReactNode;
@@ -66,6 +90,39 @@ export function AuthProvider({
   const [entitlements, setEntitlements] = useState<CommercialEntitlements>();
   const [error, setError] = useState<ApiError>();
   const [loginPending, setLoginPending] = useState(false);
+  const [wechatAvailable, setWechatAvailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (apiClient.isConfigured() && /micromessenger/i.test(navigator.userAgent)
+      && !/wxwork/i.test(navigator.userAgent)) {
+      void apiClient.wechatAvailable().then((enabled) => {
+        if (active) setWechatAvailable(enabled);
+      }).catch(() => undefined);
+    }
+    return () => { active = false; };
+  }, []);
+
+  const beginWeChatLogin = useCallback(async () => {
+    setLoginPending(true);
+    setError(undefined);
+    try {
+      if (!/micromessenger/i.test(navigator.userAgent) || /wxwork/i.test(navigator.userAgent)) {
+        throw new ApiError("请在普通微信中打开服务号菜单，进入我的名片。", {
+          code: "WECHAT_BROWSER_REQUIRED",
+        });
+      }
+      const url = await apiClient.createWeChatLoginUrl(appHref(APP_PATHS.cards));
+      externalRedirect(url);
+    } catch (caught) {
+      const apiError = asApiError(caught);
+      setError(apiError);
+      setStatus("unauthenticated");
+      throw apiError;
+    } finally {
+      setLoginPending(false);
+    }
+  }, [externalRedirect]);
 
   const beginWeComLogin = useCallback(
     async (returnTo: string) => {
@@ -101,20 +158,27 @@ export function AuthProvider({
         return;
       }
 
+      let callbackFlow: "login" | "bind" = "login";
       try {
         const appPath = appPathFromBrowser(globalThis.location.pathname);
         const query = new URLSearchParams(globalThis.location.search);
         const code = query.get("code");
         const state = query.get("state");
         const isWeComCallback = appPath === WECOM_CALLBACK_PATH;
+        if (isWeComCallback) callbackFlow = apiClient.consumeWeComFlow();
         if (isWeComCallback && (!code || !state)) {
           throw new ApiError("企业微信没有返回完整的登录凭证，请重新进入应用。", {
             code: "WECOM_OAUTH_CALLBACK_INVALID",
           });
         }
-        if (isWeComCallback && code && state) {
-          const flow = apiClient.consumeWeComFlow();
-          if (flow === "bind") {
+        if (appPath === WECHAT_CALLBACK_PATH) {
+          if (!code || !state) throw new ApiError("微信未返回登录凭证，请重新进入服务号。", {
+            code: "WECHAT_OAUTH_CALLBACK_INVALID",
+          });
+          const returnTo = await apiClient.loginWithWeChat(code, state);
+          globalThis.history.replaceState({}, "", returnTo);
+        } else if (isWeComCallback && code && state) {
+          if (callbackFlow === "bind") {
             await apiClient.refreshSession();
             await apiClient.bindWithWeCom(code, state);
           } else {
@@ -125,6 +189,7 @@ export function AuthProvider({
             "",
             apiClient.consumeWeComReturnTo(),
           );
+          clearWeComRecovery();
         } else {
           await apiClient.refreshSession();
         }
@@ -137,10 +202,22 @@ export function AuthProvider({
         setEntitlements(currentEntitlements);
         setStatus("authenticated");
       } catch (caught) {
-        apiClient.clearSession();
         if (!active) return;
+        apiClient.clearSession();
         const appPath = appPathFromBrowser(globalThis.location.pathname);
+        if (appPath === WECHAT_ENTRY_PATH) {
+          setStatus("bootstrapping");
+          await beginWeChatLogin().catch(() => undefined);
+          return;
+        }
+        if (appPath === WECHAT_CALLBACK_PATH) {
+          globalThis.history.replaceState({}, "", appHref(WECHAT_CALLBACK_PATH));
+          setError(asApiError(caught));
+          setStatus("unauthenticated");
+          return;
+        }
         if (appPath === WECOM_ENTRY_PATH) {
+          clearWeComRecovery();
           // The dedicated workbench URL is intentionally login-only. Keeping
           // this state on the boot screen avoids flashing the password form
           // between the session probe and the WeCom authorization redirect.
@@ -151,7 +228,20 @@ export function AuthProvider({
           return;
         }
         if (appPath === WECOM_CALLBACK_PATH) {
-          setError(asApiError(caught));
+          const callbackError = asApiError(caught);
+          if (
+            callbackFlow === "login" &&
+            callbackError.code === "WECOM_OAUTH_STATE_INVALID" &&
+            claimWeComRecovery()
+          ) {
+            const returnTo = apiClient.consumeWeComReturnTo();
+            setStatus("bootstrapping");
+            await beginWeComLogin(
+              returnTo === "/" ? appHref(APP_PATHS.setup) : returnTo,
+            ).catch(() => undefined);
+            return;
+          }
+          setError(callbackError);
         }
         setStatus("unauthenticated");
       }
@@ -162,7 +252,7 @@ export function AuthProvider({
       active = false;
       globalThis.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleExpired);
     };
-  }, [beginWeComLogin]);
+  }, [beginWeComLogin, beginWeChatLogin]);
 
   const login = useCallback(async ({ account, credential }: LoginInput) => {
     setLoginPending(true);
@@ -223,7 +313,10 @@ export function AuthProvider({
   }, []);
 
   const wecomLogin = useCallback(
-    () => beginWeComLogin(appHref(APP_PATHS.setup)),
+    () => {
+      clearWeComRecovery();
+      return beginWeComLogin(appHref(APP_PATHS.setup));
+    },
     [beginWeComLogin],
   );
 
@@ -252,11 +345,13 @@ export function AuthProvider({
       apiConfigured: apiClient.isConfigured(),
       login,
       wecomLogin,
+      wechatLogin: wechatAvailable ? beginWeChatLogin : undefined,
       wecomBind,
       logout,
       changePassword,
     }),
-    [changePassword, entitlements, error, login, loginPending, logout, status, user, wecomBind, wecomLogin],
+    [changePassword, entitlements, error, login, loginPending, logout, status, user,
+      wecomBind, wecomLogin, wechatAvailable, beginWeChatLogin],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

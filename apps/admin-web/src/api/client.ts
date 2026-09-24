@@ -191,6 +191,44 @@ export class ApiClient {
     return authorizeUrl;
   }
 
+  async wechatAvailable(): Promise<boolean> {
+    const payload = await this.execute("/auth/wechat/availability", { method: "GET" },
+      { authenticated: false, retryAfterRefresh: false });
+    const data = unwrapData(payload);
+    return isRecord(data) && data.enabled === true;
+  }
+
+  async createWeChatLoginUrl(returnTo: string): Promise<string> {
+    const payload = await this.execute(
+      `/auth/wechat/login-url?return_to=${encodeURIComponent(safeRelativePath(returnTo))}`,
+      { method: "GET" }, { authenticated: false, retryAfterRefresh: false },
+    );
+    const data = unwrapData(payload);
+    if (!isRecord(data)) throw new ApiError("微信登录响应无效");
+    return requiredString(data.authorize_url, "authorize_url");
+  }
+
+  private wechatExchange?: { state: string; promise: Promise<string> };
+
+  loginWithWeChat(code: string, state: string): Promise<string> {
+    // React StrictMode can run bootstrap twice. OAuth codes are single-use.
+    if (this.wechatExchange?.state === state) return this.wechatExchange.promise;
+    const promise = this.exchangeWeChatCode(code, state);
+    this.wechatExchange = { state, promise };
+    return promise;
+  }
+
+  private async exchangeWeChatCode(code: string, state: string): Promise<string> {
+    const payload = await this.execute("/auth/wechat/login", {
+      method: "POST", body: JSON.stringify({ code, state }),
+    }, { authenticated: false, retryAfterRefresh: false });
+    const data = unwrapData(payload);
+    if (!isRecord(data)) throw new ApiError("微信登录响应无效");
+    const returnTo = safeRelativePath(requiredString(data.return_to, "return_to"));
+    this.storeSessionTokens(readSessionTokens(payload));
+    return returnTo;
+  }
+
   async createWeComBindingUrl(returnTo = "/"): Promise<string> {
     const safeReturnTo = safeRelativePath(returnTo);
     const payload = await this.get(

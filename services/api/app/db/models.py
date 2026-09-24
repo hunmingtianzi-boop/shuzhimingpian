@@ -486,6 +486,34 @@ class WeComUserBinding(UUIDPrimaryKeyMixin, TimestampMixin, CompanyScopeMixin, B
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WeChatAccountBinding(Base):
+    """Global identity index; runtime access only through its provisioning function."""
+
+    __tablename__ = "wechat_accounts"
+    __table_args__ = (
+        CheckConstraint("length(identity_hmac) = 64", name="identity_hmac_length"),
+        ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["membership_id"], ["memberships.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["tenant_id", "company_id"], ["companies.tenant_id", "companies.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("membership_id"),
+    )
+
+    identity_hmac: Mapped[str] = mapped_column(String(64), primary_key=True)
+    openid_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encryption_key_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    membership_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+
 class WeComEnterpriseScope(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Global, non-PII mapping from one WeCom corporation to its tenant scope.
 
