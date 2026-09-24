@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     embedding_dimension: int = Field(default=1_024, ge=64, le=4_096)
     embedding_timeout_seconds: float = Field(default=20.0, ge=2, le=120)
 
+    # WeChat Official Account H5 identity. Independent of WeCom credentials.
+    wechat_app_id: str | None = None
+    wechat_app_secret: SecretStr | None = None
+    wechat_oauth_redirect_uri: str | None = None
+    wechat_timeout_seconds: float = Field(default=8.0, ge=2, le=30)
+
     # Enterprise WeChat (WeCom) pilot connector. Provider credentials remain
     # environment-backed while identity bindings and callbacks are encrypted,
     # tenant-scoped database records.
@@ -244,6 +250,7 @@ class Settings(BaseSettings):
         "field_encryption_previous_keys",
         "metrics_bearer_token",
         "wecom_app_secret",
+        "wechat_app_secret",
         "wecom_callback_token",
         "wecom_callback_encoding_aes_key",
         "wecom_suite_secret",
@@ -277,6 +284,8 @@ class Settings(BaseSettings):
 
     @field_validator(
         "wecom_corp_id",
+        "wechat_app_id",
+        "wechat_oauth_redirect_uri",
         "wecom_oauth_redirect_uri",
         "wecom_suite_id",
         "wecom_suite_callback_corp_id",

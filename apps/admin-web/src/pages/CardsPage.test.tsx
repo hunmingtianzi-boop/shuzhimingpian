@@ -173,6 +173,29 @@ describe("CardsPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("lets a personal WeChat owner edit their name and title without enterprise setup", async () => {
+    const user = userEvent.setup();
+    const personalCard = { ...draftCard, ownerUserId: employeeMember.userId };
+    vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([personalCard]);
+    vi.spyOn(memberApi, "listMembers").mockRejectedValue(new ApiError("无成员列表权限"));
+    const save = vi.spyOn(adminApi, "updateManagedCard").mockResolvedValue(personalCard);
+    renderPage({ ...cardOwnerAuth, user: { ...cardOwnerAuth.user!, personalWorkspace: true } });
+    await screen.findByRole("table", { name: "个人名片列表" });
+    expect(screen.queryByRole("button", { name: "企微联系入口" })).not.toBeInTheDocument();
+    expect(screen.queryByText("企业官方名片")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    const name = await screen.findByRole("textbox", { name: "姓名" });
+    await user.clear(name);
+    await user.type(name, "张三");
+    const title = screen.getByRole("textbox", { name: "职业或身份" });
+    await user.clear(title);
+    await user.type(title, "设计师");
+    expect(screen.queryByRole("combobox", { name: "选择企业员工" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存名片", hidden: true }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(personalCard.id, personalCard.version,
+      expect.objectContaining({ displayName: "张三", title: "设计师" })));
+  });
+
   it("shows the executive template on the management page and opens it directly", async () => {
     const user = userEvent.setup();
     vi.spyOn(adminApi, "listManagedCards").mockResolvedValue([draftCard]);

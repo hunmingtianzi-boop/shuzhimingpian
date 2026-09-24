@@ -318,6 +318,113 @@
         }
       }
     },
+    "/auth/wechat/availability": {
+      "get": {
+        "tags": [
+          "WeChat Auth"
+        ],
+        "summary": "Availability",
+        "operationId": "getWeChatLoginAvailability",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeChatAvailabilityEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/wechat/login-url": {
+      "get": {
+        "tags": [
+          "WeChat Auth"
+        ],
+        "summary": "Login Url",
+        "operationId": "createWeChatLoginUrl",
+        "parameters": [
+          {
+            "name": "return_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "default": "/",
+              "title": "Return To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeChatLoginUrlEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/wechat/login": {
+      "post": {
+        "tags": [
+          "WeChat Auth"
+        ],
+        "summary": "Login",
+        "operationId": "loginWithWeChat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeChatOAuthExchange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeChatLoginEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/entitlements": {
       "get": {
         "tags": [
@@ -13984,6 +14091,59 @@
         }
       }
     },
+    "/public/cards/{slug}/wechat-js-sdk": {
+      "get": {
+        "tags": [
+          "Public WeChat"
+        ],
+        "summary": "Config",
+        "operationId": "getPublicCardWeChatJSSDKConfig",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeChatShareConfigEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/dashboard": {
       "get": {
         "tags": [
@@ -20610,6 +20770,11 @@
           "must_change_password": {
             "type": "boolean",
             "title": "Must Change Password",
+            "default": false
+          },
+          "personal_workspace": {
+            "type": "boolean",
+            "title": "Personal Workspace",
             "default": false
           }
         },
@@ -34391,6 +34556,186 @@
           "observed_at"
         ],
         "title": "VisitorProfileSourceView"
+      },
+      "WeChatAvailability": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "WeChatAvailability"
+      },
+      "WeChatAvailabilityEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WeChatAvailability"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "WeChatAvailabilityEnvelope"
+      },
+      "WeChatLoginEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WeChatTokenData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "WeChatLoginEnvelope"
+      },
+      "WeChatLoginUrl": {
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "title": "Authorize Url"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "default": 600
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authorize_url"
+        ],
+        "title": "WeChatLoginUrl"
+      },
+      "WeChatLoginUrlEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WeChatLoginUrl"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "WeChatLoginUrlEnvelope"
+      },
+      "WeChatOAuthExchange": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "state": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "state"
+        ],
+        "title": "WeChatOAuthExchange"
+      },
+      "WeChatShareConfig": {
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "title": "App Id"
+          },
+          "timestamp": {
+            "type": "integer",
+            "title": "Timestamp"
+          },
+          "nonce_str": {
+            "type": "string",
+            "title": "Nonce Str"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "app_id",
+          "timestamp",
+          "nonce_str",
+          "signature"
+        ],
+        "title": "WeChatShareConfig"
+      },
+      "WeChatShareConfigEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WeChatShareConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "WeChatShareConfigEnvelope"
+      },
+      "WeChatTokenData": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "csrf_token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Csrf Token"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "Bearer",
+            "title": "Token Type",
+            "default": "Bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 60.0,
+            "title": "Expires In"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "minimum": 3600.0,
+            "title": "Refresh Expires In"
+          },
+          "return_to": {
+            "type": "string",
+            "title": "Return To"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "access_token",
+          "csrf_token",
+          "expires_in",
+          "refresh_expires_in",
+          "return_to"
+        ],
+        "title": "WeChatTokenData"
       },
       "WeComBindingEnvelope": {
         "properties": {

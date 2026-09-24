@@ -285,6 +285,7 @@ def _current_staff_envelope(identity: StaffIdentity) -> CurrentStaffEnvelope:
                 permissions=identity.permissions,
             ),
             must_change_password=identity.must_change_password,
+            personal_workspace=identity.personal_workspace,
         )
     )
 

@@ -119,15 +119,14 @@ export function createMockPublicCard(
           ],
         },
         {
-          id: "executive-image-hero",
-          type: "image_gallery",
-          title: "品牌展示",
+          id: "executive-ai-assistant",
+          type: "ai_assistant",
+          title: "AI 客服",
+          body: "创非凡企业助手 · 业务与合作咨询",
           visible: true,
           show_title: false,
           directory_enabled: false,
           sort_order: 30,
-          layout_variant: "list",
-          gallery_items: [{ id: "hero", image_url: employeeAsset("brand-hero.webp"), badge_mode: "none", alt_text: "创非凡品牌展示" }],
         },
         {
           id: "executive-image-2",
@@ -186,7 +185,7 @@ export function createMockPublicCard(
           show_title: true,
           directory_enabled: false,
           sort_order: 80,
-          video_url: "https://pubres.wshoto.com/base-material-server/wpDkH9EAAAzz_ESuYzhQ_DI5F3MfUnKA/17568884576262024骞绰犵5灞婁笘鐣屼細闀垮浼毬犻珮娓呰棰懧__x264_20250903_16282710_20250903_16320156.mp4",
+          video_url: "https://pubres.wshoto.com/base-material-server/wpDkH9EAAAzz_ESuYzhQ_DI5F3MfUnKA/17568884576262024%E9%AA%9E%E7%BB%B0%E7%8A%B55%E7%81%9E%E5%A9%81%E7%AC%98%E9%90%A3%E5%B1%BC%E7%B4%B0%E9%97%80%E5%9E%AE%E6%B5%BC%E6%AF%AC%E7%8A%BB%E7%8F%AE%E5%A8%93%E5%91%B0%E6%A3%B0%E6%87%A7__x264_20250903_16282710_20250903_16320156.mp4",
           video_cover_url: employeeAsset("video-history.webp"),
         },
         {

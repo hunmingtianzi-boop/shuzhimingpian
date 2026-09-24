@@ -18,6 +18,7 @@ import {
   useVisitAnalytics,
 } from "./lib/visitAnalytics";
 import { canonicalShareUrl } from "./lib/publicExperienceApi";
+import { configureWeChatShare } from "./lib/wechatShare";
 import {
   BusinessCardPrototypeApp,
   type BusinessCardPrototypeAppHandle,
@@ -49,6 +50,13 @@ export default function App({
     [mockCardKind, tenant],
   );
   const renderedCard = mockCard ?? publishedCard;
+  useEffect(() => {
+    if (!publishedCard) return;
+    const controller = new AbortController();
+    // Browsing, QR codes and copied links remain usable if signing is unavailable.
+    void configureWeChatShare(publishedCard, controller.signal).catch(() => undefined);
+    return () => controller.abort();
+  }, [publishedCard]);
   const isUnconfiguredTemplate = tenant.isBlankTemplate && !renderedCard;
   const assistantEnabled =
     !mockCard &&

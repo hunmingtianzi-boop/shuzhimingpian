@@ -1436,6 +1436,9 @@ function SharePanel({ card }: { card: PublicCardData }) {
           复制链接
         </button>
       </div>
+      {/micromessenger/i.test(navigator.userAgent) && !/wxwork/i.test(navigator.userAgent) && (
+        <p>点击微信右上角“…”发送给朋友或分享到朋友圈，也可以复制链接或分享二维码。</p>
+      )}
       <p className="share-status" aria-live="polite">{status}</p>
     </div>
   );

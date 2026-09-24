@@ -33,8 +33,10 @@ from app.api.routes import (
     platform_operations,
     public_catalog,
     public_conversations,
+    public_wechat,
     public_wecom,
     visitor_profiles,
+    wechat_auth,
     wecom,
     wecom_auth,
     wecom_callbacks,
@@ -202,6 +204,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router, prefix=runtime_settings.api_prefix)
     app.include_router(auth.router, prefix=runtime_settings.api_prefix)
+    app.include_router(wechat_auth.router, prefix=runtime_settings.api_prefix)
     app.include_router(admin.router, prefix=runtime_settings.api_prefix)
     app.include_router(card_assets.router, prefix=runtime_settings.api_prefix)
     app.include_router(enterprise_content.router, prefix=runtime_settings.api_prefix)
@@ -218,6 +221,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public_conversations.router, prefix=runtime_settings.api_prefix)
     app.include_router(public_catalog.router, prefix=runtime_settings.api_prefix)
     app.include_router(public_wecom.router, prefix=runtime_settings.api_prefix)
+    app.include_router(public_wechat.router, prefix=runtime_settings.api_prefix)
     app.include_router(workflow.router, prefix=runtime_settings.api_prefix)
     app.include_router(workflow.public_router, prefix=runtime_settings.api_prefix)
     app.include_router(visitor_profiles.router, prefix=runtime_settings.api_prefix)

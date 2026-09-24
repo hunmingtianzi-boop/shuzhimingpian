@@ -45,6 +45,7 @@ class CurrentStaffData(StrictAuthModel):
     user: StaffUserView
     membership: StaffMembershipView
     must_change_password: bool = False
+    personal_workspace: bool = False
 
 
 class ChangePasswordRequest(StrictAuthModel):

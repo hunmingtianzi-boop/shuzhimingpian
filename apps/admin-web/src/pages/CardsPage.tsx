@@ -74,6 +74,7 @@ export async function copyManagedCardText(value: string): Promise<void> {
 }
 
 type CardTableProps = {
+  personal?: boolean;
   cards: ManagedCard[];
   kind: ManagedCard["cardKind"];
   onCreate?: () => void;
@@ -86,6 +87,7 @@ type CardTableProps = {
 };
 
 function CardTable({
+  personal = false,
   cards,
   kind,
   onCreate,
@@ -116,10 +118,10 @@ function CardTable({
 
   return (
     <div className="table-scroll">
-      <Table aria-label={enterprise ? "企业名片列表" : "员工名片列表"} size="small">
+      <Table aria-label={personal ? "个人名片列表" : enterprise ? "企业名片列表" : "员工名片列表"} size="small">
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>{enterprise ? "企业官方名片" : "员工名片"}</TableHeaderCell>
+            <TableHeaderCell>{personal ? "个人名片" : enterprise ? "企业官方名片" : "员工名片"}</TableHeaderCell>
             <TableHeaderCell className="status-column">状态</TableHeaderCell>
             <TableHeaderCell className="updated-column">更新时间</TableHeaderCell>
             <TableHeaderCell className="catalog-actions-column">操作</TableHeaderCell>
@@ -157,7 +159,7 @@ function CardTable({
                       编辑内容
                     </Button>
                   )}
-                  {!enterprise && (
+                  {!enterprise && !personal && (
                     <Button
                       appearance="subtle"
                       size="small"
@@ -190,14 +192,14 @@ function CardTable({
                       </Button>
                     </>
                   )}
-                  <Button
+                  {!personal && <Button
                     appearance="subtle"
                     size="small"
                     icon={<Settings24Regular />}
                     onClick={() => onOverride(card)}
                   >
                     内容覆盖
-                  </Button>
+                  </Button>}
                   {card.status !== "published" ? (
                     <Button
                       appearance="subtle"
@@ -436,6 +438,7 @@ export function CardsPage() {
 
   const deactivating = action?.type === "deactivate";
   const canManageEnterpriseCards = auth.user?.role === "company_admin";
+  const personal = auth.user?.personalWorkspace === true;
   const enterpriseCards = resource.data?.filter((card) => card.cardKind === "enterprise") ?? [];
   const employeeCards = resource.data?.filter((card) => card.cardKind === "employee") ?? [];
 
@@ -479,10 +482,10 @@ export function CardsPage() {
   return (
     <main className="page-stack">
       <PageHeader
-        title="企业与员工名片"
-        description="企业官方名片归企业所有并可独立发布；员工名片绑定具体成员。两类名片共享同一安全公开页合同。"
+        title={personal ? "我的名片" : "企业与员工名片"}
+        description={personal ? "完善姓名、职业和头像，编辑名片内容，发布后即可分享给微信好友。" : "企业官方名片归企业所有并可独立发布；员工名片绑定具体成员。两类名片共享同一安全公开页合同。"}
         actions={
-          resource.status === "permission" ? undefined : (
+          resource.status === "permission" || personal ? undefined : (
             <div className="row-actions">
               {auth.wecomBind && (
                 <Button
@@ -537,7 +540,7 @@ export function CardsPage() {
         </MessageBar>
       )}
 
-      {resource.status !== "permission" && (
+      {resource.status !== "permission" && !personal && (
         <CardTemplateLibraryPanel
           canManageEnterpriseCards={canManageEnterpriseCards}
           onSelect={openDefaultTemplate}
@@ -584,7 +587,7 @@ export function CardsPage() {
       {resource.status === "ready" && (
         <>
           {canManageEnterpriseCards ? <CardPluginPanel /> : null}
-          <section
+          {!personal && <section
             className="content-panel catalog-panel catalog-section-panel"
             aria-labelledby="enterprise-card-title"
           >
@@ -605,7 +608,7 @@ export function CardsPage() {
               onWeCom={provisionWeCom}
               onAction={requestAction}
             />
-          </section>
+          </section>}
 
           <section
             className="content-panel catalog-panel catalog-section-panel"
@@ -613,12 +616,13 @@ export function CardsPage() {
           >
             <div className="section-heading-row">
               <div>
-                <h2 id="employee-card-title">员工名片</h2>
-                <p>绑定具体企业成员，用于个人对外展示与客户跟进。</p>
+                <h2 id="employee-card-title">{personal ? "个人名片" : "员工名片"}</h2>
+                <p>{personal ? "保存草稿后可继续编辑；发布后，好友可直接打开公开名片。" : "绑定具体企业成员，用于个人对外展示与客户跟进。"}</p>
               </div>
             </div>
             <CardTable
               cards={employeeCards}
+              personal={personal}
               kind="employee"
               onCreate={() => openCreate("employee")}
               onEdit={edit}

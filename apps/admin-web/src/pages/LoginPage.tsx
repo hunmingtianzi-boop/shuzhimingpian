@@ -23,6 +23,7 @@ export type LoginFormProps = {
   error?: ApiError;
   onLogin: (input: LoginInput) => Promise<void>;
   onWeComLogin?: () => Promise<void>;
+  onWeChatLogin?: () => Promise<void>;
 };
 
 export function LoginForm({
@@ -31,6 +32,7 @@ export function LoginForm({
   error,
   onLogin,
   onWeComLogin,
+  onWeChatLogin,
 }: LoginFormProps) {
   const [account, setAccount] = useState("");
   const [credential, setCredential] = useState("");
@@ -48,8 +50,8 @@ export function LoginForm({
           <Building24Regular />
         </div>
         <div>
-          <h1>企业管理工作台</h1>
-          <p>使用企业管理员账号登录。</p>
+          <h1>{onWeChatLogin ? "我的数智名片" : "企业管理工作台"}</h1>
+          <p>{onWeChatLogin ? "微信登录，制作并分享自己的名片。" : "使用企业管理员账号登录。"}</p>
         </div>
       </div>
 
@@ -74,6 +76,14 @@ export function LoginForm({
             )}
           </MessageBarBody>
         </MessageBar>
+      )}
+
+      {onWeChatLogin && (
+        <Button type="button" appearance="primary" size="large" icon={<Chat24Regular />}
+          disabled={!apiConfigured || pending}
+          onClick={() => void onWeChatLogin().catch(() => undefined)}>
+          微信登录，进入我的名片
+        </Button>
       )}
 
       <Field label="账号" required>
@@ -150,6 +160,7 @@ export function LoginPage() {
           error={auth.error}
           onLogin={auth.login}
           onWeComLogin={auth.wecomLogin}
+          onWeChatLogin={auth.wechatLogin}
         />
       </section>
     </main>

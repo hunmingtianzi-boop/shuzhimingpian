@@ -245,6 +245,13 @@ export function mergePublishedCard(
       subtitle: "企业知识库 · 实时 AI 回答",
       launcherAriaLabel: `打开${card.ai_assistant.display_name}`,
       launcherKicker: "资料内回答",
+      launcherLabel: card.ai_assistant.display_name,
+      labels: {
+        ...base.assistant.labels,
+        input: `向${card.ai_assistant.display_name}提问`,
+        placeholder: `询问${card.company.name}的业务与合作`,
+      },
+      suggestedQuestions: card.ai_assistant.suggested_questions,
       initialMessage: {
         text: card.ai_assistant.welcome_message,
         source: "企业已发布知识库",

@@ -7,6 +7,7 @@ export type AdminUser = {
   role?: string;
   permissions: string[];
   mustChangePassword?: boolean;
+  personalWorkspace?: boolean;
 };
 
 export type MemberRole = "company_admin" | "card_owner";

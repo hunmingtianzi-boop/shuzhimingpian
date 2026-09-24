@@ -48,6 +48,7 @@ import {
   usePathname,
   wecomEntryReturnTo,
   WECOM_ENTRY_PATH,
+  WECHAT_ENTRY_PATH,
 } from "./routing";
 import { confirmOnboardingWithRecovery } from "./utils/platformOnboarding";
 import {
@@ -1157,11 +1158,13 @@ export function SessionGate() {
   const landingPath =
     workspace === "platform" ? APP_PATHS.platformOverview : APP_PATHS.overview;
   const authenticationLandingPath =
-    pathname === WECOM_ENTRY_PATH && workspace === "enterprise"
+    pathname === WECHAT_ENTRY_PATH
+      ? appHref(APP_PATHS.cards)
+      : pathname === WECOM_ENTRY_PATH && workspace === "enterprise"
       ? wecomEntryReturnTo(globalThis.location.search)
       : appHref(landingPath);
   const isAuthenticationEntry =
-    pathname === "/login" || pathname === WECOM_ENTRY_PATH;
+    pathname === "/login" || pathname === WECOM_ENTRY_PATH || pathname === WECHAT_ENTRY_PATH;
 
   useEffect(() => {
     if (auth.status === "authenticated" && isAuthenticationEntry && workspace) {

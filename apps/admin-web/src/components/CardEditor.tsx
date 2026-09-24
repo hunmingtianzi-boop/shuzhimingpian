@@ -329,9 +329,10 @@ export function CardEditor({
   const titlesValid =
     identityTitles.length <= 8 && identityTitles.every((value) => value.length <= 80);
   const ownerValid = form.cardKind === "enterprise" || Boolean(form.ownerUserId?.trim());
+  const isPersonalWorkspace = auth.user?.personalWorkspace === true;
   const valid =
     ownerValid &&
-    (form.cardKind === "employee" || (Boolean(form.displayName.trim()) && Boolean(form.title.trim()))) &&
+    ((form.cardKind === "employee" && !isPersonalWorkspace) || (Boolean(form.displayName.trim()) && Boolean(form.title.trim()))) &&
     questionsValid &&
     titlesValid;
   const selectedEmployee = employees.find((member) => member.userId === form.ownerUserId);
@@ -541,7 +542,7 @@ export function CardEditor({
             />
           }
         >
-          {item
+          {isPersonalWorkspace ? "编辑我的名片" : item
             ? `编辑${item.cardKind === "enterprise" ? "企业" : "员工"}名片`
             : `新建${createKind === "enterprise" ? "企业" : "员工"}名片`}
         </DrawerHeaderTitle>
@@ -560,6 +561,18 @@ export function CardEditor({
 
           {form.cardKind === "employee" ? (
             <>
+              {isPersonalWorkspace ? (
+                <div className="form-grid two-columns">
+                  <Field label="姓名" required validationState={attempted && !form.displayName.trim() ? "error" : "none"}>
+                    <Input value={form.displayName} maxLength={120} disabled={saving}
+                      onChange={(_, data) => update("displayName", data.value)} />
+                  </Field>
+                  <Field label="职业或身份" required validationState={attempted && !form.title.trim() ? "error" : "none"}>
+                    <Input value={form.title} maxLength={200} disabled={saving}
+                      onChange={(_, data) => update("title", data.value)} />
+                  </Field>
+                </div>
+              ) : <>
               <section className="immutable-resource-note" aria-labelledby="employee-card-identity-title">
                 <strong id="employee-card-identity-title">绑定企业员工</strong>
                 <span>姓名、职位、头像和业务摘要统一来自企业员工；在这里上传头像也会同步到对应员工资料。</span>
@@ -618,6 +631,7 @@ export function CardEditor({
                   onChange={(_, data) => setContactVisibility("email", data.checked === true)}
                 />
               </section>
+              </>}
             </>
           ) : (
             <>

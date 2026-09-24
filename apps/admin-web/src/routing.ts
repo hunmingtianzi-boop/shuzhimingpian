@@ -42,6 +42,8 @@ export const APP_PATHS = {
 // consumed by AuthProvider before the authenticated shell is mounted.
 export const WECOM_ENTRY_PATH = "/wecom/entry";
 export const WECOM_CALLBACK_PATH = "/wecom/callback";
+export const WECHAT_ENTRY_PATH = "/wechat/entry";
+export const WECHAT_CALLBACK_PATH = "/wechat/callback";
 
 export type AppPath = (typeof APP_PATHS)[keyof typeof APP_PATHS];
 export const PLATFORM_ENTERPRISE_SECTIONS = [
